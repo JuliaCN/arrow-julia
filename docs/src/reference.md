@@ -26,6 +26,13 @@ Modules = [Arrow]
 Order   = [:type, :function]
 ```
 
+## Flight
+
+```@autodocs
+Modules = [Arrow.Flight]
+Order   = [:type, :function]
+```
+
 ## Internals: `Arrow.FlatBuffers`
 
 The `FlatBuffers` module is not part of Arrow.jl's public API, and these functions may change without notice.

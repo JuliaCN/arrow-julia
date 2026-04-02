@@ -18,4 +18,5 @@
 include("server/types.jl")
 include("server/descriptors.jl")
 include("server/handlers.jl")
+include("server/exchange_helpers.jl")
 include("server/dispatch.jl")

@@ -94,9 +94,12 @@ const Meta = Flatbuf
 
 using ArrowTypes
 include("utils.jl")
+include("logicaltypes.jl")
 include("arraytypes/arraytypes.jl")
 include("eltypes.jl")
+include("logicaltypes_builtin.jl")
 include("table.jl")
+include("metadata/overlay.jl")
 include("write.jl")
 include("append.jl")
 include("show.jl")

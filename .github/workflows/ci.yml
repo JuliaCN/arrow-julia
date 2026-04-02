@@ -127,7 +127,9 @@ jobs:
         with:
           project: ${{ matrix.pkg.dir }}
       - uses: julia-actions/julia-processcoverage@v1
+        if: matrix.pkg.name == 'Arrow.jl' && matrix.version == '1' && matrix.os == 'macos-latest' && matrix.nthreads == 1
       - uses: codecov/codecov-action@v5
+        if: matrix.pkg.name == 'Arrow.jl' && matrix.version == '1' && matrix.os == 'macos-latest' && matrix.nthreads == 1
         with:
           files: lcov.info
   test_monorepo:
@@ -219,6 +221,13 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: julia-actions/julia-buildpkg@latest
+      - name: Dev local packages for docs
+        shell: julia --project=docs {0}
+        run: |
+          using Pkg
+          Pkg.develop(PackageSpec(path="."))
+          Pkg.develop(PackageSpec(path="src/ArrowTypes"))
+          Pkg.instantiate()
       - uses: julia-actions/julia-docdeploy@latest
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

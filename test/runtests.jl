@@ -56,10 +56,9 @@ module EnumRoundtripModule
 @enum RankingStrategy lexical=1 semantic=2 hybrid=3
 end
 
-const RankingStrategy = EnumRoundtripModule.RankingStrategy
-const lexical = EnumRoundtripModule.lexical
-const semantic = EnumRoundtripModule.semantic
-const hybrid = EnumRoundtripModule.hybrid
+module WideEnumRoundtripModule
+@enum WideRanking::UInt64 tiny=1 colossal=0xffffffffffffffff
+end
 
 @testset ExtendedTestSet "Arrow" begin
     @testset "table roundtrips" begin
@@ -249,6 +248,26 @@ const hybrid = EnumRoundtripModule.hybrid
             @test Arrow.getmetadata(tt.col2)["colkey1"] == "colvalue1"
             @test Arrow.getmetadata(tt.col2)["colkey2"] == "colvalue2"
             @test Arrow.getmetadata(tt.col3)["colkey3"] == "colvalue3"
+
+            source = Arrow.withmetadata(
+                (col1=collect(1:3), col2=["a", "b", "c"]);
+                metadata=["source" => "base"],
+                colmetadata=Dict(:col1 => ["semantic.role" => "left"]),
+            )
+            overlay = Arrow.withmetadata(
+                source;
+                metadata=["overlay" => "yes"],
+                colmetadata=Dict(
+                    :col1 => ["unit" => "count"],
+                    :col2 => ["semantic.role" => "right"],
+                ),
+            )
+            overlay_tt = Arrow.Table(Arrow.tobuffer(overlay))
+            @test Arrow.getmetadata(overlay_tt)["source"] == "base"
+            @test Arrow.getmetadata(overlay_tt)["overlay"] == "yes"
+            @test Arrow.getmetadata(overlay_tt.col1)["semantic.role"] == "left"
+            @test Arrow.getmetadata(overlay_tt.col1)["unit"] == "count"
+            @test Arrow.getmetadata(overlay_tt.col2)["semantic.role"] == "right"
         end
 
         @testset "# custom compressors" begin
@@ -468,8 +487,11 @@ const hybrid = EnumRoundtripModule.hybrid
 
         @testset "# Julia Enum extension logical type roundtrip" begin
             t = (
-                col1=[lexical, hybrid],
-                col2=Union{Missing, RankingStrategy}[missing, semantic],
+                col1=[EnumRoundtripModule.lexical, EnumRoundtripModule.hybrid],
+                col2=Union{Missing,EnumRoundtripModule.RankingStrategy}[
+                    missing,
+                    EnumRoundtripModule.semantic,
+                ],
             )
 
             bytes = read(Arrow.tobuffer(t))
@@ -477,22 +499,70 @@ const hybrid = EnumRoundtripModule.hybrid
             raw = Arrow.Table(IOBuffer(bytes); convert=false)
 
             @test length(tt) == length(t)
-            @test eltype(tt.col1) == RankingStrategy
-            @test eltype(tt.col2) == Union{Missing, RankingStrategy}
-            @test tt.col1 == [lexical, hybrid]
+            @test eltype(tt.col1) == EnumRoundtripModule.RankingStrategy
+            @test eltype(tt.col2) == Union{Missing,EnumRoundtripModule.RankingStrategy}
+            @test tt.col1 == [EnumRoundtripModule.lexical, EnumRoundtripModule.hybrid]
             @test isequal(
                 tt.col2,
-                Union{Missing, RankingStrategy}[missing, semantic],
+                Union{Missing,EnumRoundtripModule.RankingStrategy}[
+                    missing,
+                    EnumRoundtripModule.semantic,
+                ],
             )
             @test eltype(raw.col1) == Int32
-            @test eltype(raw.col2) == Union{Missing, Int32}
+            @test eltype(raw.col2) == Union{Missing,Int32}
             @test raw.col1 == Int32[1, 3]
-            @test isequal(raw.col2, Union{Missing, Int32}[missing, 2])
+            @test isequal(raw.col2, Union{Missing,Int32}[missing, 2])
             @test Arrow.getmetadata(tt.col1)["ARROW:extension:name"] == "JuliaLang.Enum"
             @test occursin(
                 "Main.EnumRoundtripModule.RankingStrategy",
                 Arrow.getmetadata(tt.col1)["ARROW:extension:metadata"],
             )
+        end
+
+        @testset "# Julia Enum extension contract edge cases" begin
+            t = (
+                col=[WideEnumRoundtripModule.tiny, WideEnumRoundtripModule.colossal],
+                nullable=Union{Missing,WideEnumRoundtripModule.WideRanking}[
+                    missing,
+                    WideEnumRoundtripModule.colossal,
+                ],
+            )
+            bytes = read(Arrow.tobuffer(t))
+            tt = Arrow.Table(IOBuffer(bytes))
+            raw = Arrow.Table(IOBuffer(bytes); convert=false)
+
+            @test eltype(tt.col) == WideEnumRoundtripModule.WideRanking
+            @test eltype(tt.nullable) == Union{Missing,WideEnumRoundtripModule.WideRanking}
+            @test tt.col == [WideEnumRoundtripModule.tiny, WideEnumRoundtripModule.colossal]
+            @test isequal(
+                tt.nullable,
+                Union{Missing,WideEnumRoundtripModule.WideRanking}[
+                    missing,
+                    WideEnumRoundtripModule.colossal,
+                ],
+            )
+            @test eltype(raw.col) == UInt64
+            @test eltype(raw.nullable) == Union{Missing,UInt64}
+            @test raw.col == UInt64[1, typemax(UInt64)]
+            @test isequal(raw.nullable, Union{Missing,UInt64}[missing, typemax(UInt64)])
+
+            mismatch_metadata = "type=Main.WideEnumRoundtripModule.WideRanking;labels=tiny:1,colossal:2"
+            @test_logs (:warn, r"unsupported ARROW:extension:name type: \"JuliaLang.Enum\"") begin
+                mismatch_tt = Arrow.Table(
+                    Arrow.tobuffer(
+                        (col=UInt64[1, typemax(UInt64)],);
+                        colmetadata=Dict(
+                            :col => Dict(
+                                "ARROW:extension:name" => "JuliaLang.Enum",
+                                "ARROW:extension:metadata" => mismatch_metadata,
+                            ),
+                        ),
+                    ),
+                )
+                @test eltype(mismatch_tt.col) == UInt64
+                @test copy(mismatch_tt.col) == UInt64[1, typemax(UInt64)]
+            end
         end
 
         @testset "# 76" begin
@@ -721,17 +791,30 @@ const hybrid = EnumRoundtripModule.hybrid
         end
 
         @testset "canonical timestamp_with_offset" begin
-            values = Union{Missing,Arrow.TimestampWithOffset{Arrow.Meta.TimeUnit.MILLISECOND}}[
-                Arrow.TimestampWithOffset(
-                    Arrow.Timestamp{Arrow.Meta.TimeUnit.MILLISECOND,:UTC}(1577836800000),
-                    330,
-                ),
-                missing,
-                Arrow.TimestampWithOffset(
-                    Arrow.Timestamp{Arrow.Meta.TimeUnit.MILLISECOND,:UTC}(1577923200000),
-                    -480,
-                ),
-            ]
+            values =
+                Union{Missing,Arrow.TimestampWithOffset{Arrow.Meta.TimeUnit.MILLISECOND}}[
+                    Arrow.TimestampWithOffset(
+                        Arrow.Timestamp{Arrow.Meta.TimeUnit.MILLISECOND,:UTC}(
+                            1577836800000,
+                        ),
+                        330,
+                    ),
+                    missing,
+                    Arrow.TimestampWithOffset(
+                        Arrow.Timestamp{Arrow.Meta.TimeUnit.MILLISECOND,:UTC}(
+                            1577923200000,
+                        ),
+                        -480,
+                    ),
+                ]
+            @test ArrowTypes.JuliaType(
+                Val(Symbol("arrow.timestamp_with_offset")),
+                NamedTuple{
+                    (:timestamp, :offset_minutes),
+                    Tuple{Arrow.Timestamp{Arrow.Meta.TimeUnit.MILLISECOND,:UTC},Int16},
+                },
+                "",
+            ) == Arrow.TimestampWithOffset{Arrow.Meta.TimeUnit.MILLISECOND}
             tt = Arrow.Table(Arrow.tobuffer((col=values,)))
             @test eltype(tt.col) ==
                   Union{Missing,Arrow.TimestampWithOffset{Arrow.Meta.TimeUnit.MILLISECOND}}
@@ -740,15 +823,11 @@ const hybrid = EnumRoundtripModule.hybrid
                   "arrow.timestamp_with_offset"
 
             raw_tt = Arrow.Table(Arrow.tobuffer((col=values,)); convert=false)
-            @test eltype(raw_tt.col) ==
-                  Union{
+            @test eltype(raw_tt.col) == Union{
                 Missing,
                 NamedTuple{
                     (:timestamp, :offset_minutes),
-                    Tuple{
-                        Arrow.Timestamp{Arrow.Meta.TimeUnit.MILLISECOND,:UTC},
-                        Int16,
-                    },
+                    Tuple{Arrow.Timestamp{Arrow.Meta.TimeUnit.MILLISECOND,:UTC},Int16},
                 },
             }
             @test isequal(
@@ -757,25 +836,20 @@ const hybrid = EnumRoundtripModule.hybrid
                     Missing,
                     NamedTuple{
                         (:timestamp, :offset_minutes),
-                        Tuple{
-                            Arrow.Timestamp{Arrow.Meta.TimeUnit.MILLISECOND,:UTC},
-                            Int16,
-                        },
+                        Tuple{Arrow.Timestamp{Arrow.Meta.TimeUnit.MILLISECOND,:UTC},Int16},
                     },
                 }[
                     (
-                        timestamp=Arrow.Timestamp{
-                            Arrow.Meta.TimeUnit.MILLISECOND,
-                            :UTC,
-                        }(1577836800000),
+                        timestamp=Arrow.Timestamp{Arrow.Meta.TimeUnit.MILLISECOND,:UTC}(
+                            1577836800000,
+                        ),
                         offset_minutes=Int16(330),
                     ),
                     missing,
                     (
-                        timestamp=Arrow.Timestamp{
-                            Arrow.Meta.TimeUnit.MILLISECOND,
-                            :UTC,
-                        }(1577923200000),
+                        timestamp=Arrow.Timestamp{Arrow.Meta.TimeUnit.MILLISECOND,:UTC}(
+                            1577923200000,
+                        ),
                         offset_minutes=Int16(-480),
                     ),
                 ],
@@ -797,11 +871,15 @@ const hybrid = EnumRoundtripModule.hybrid
             @test collect(batches[1].x) == expected
 
             @test_throws ArgumentError(Arrow.RUN_END_ENCODED_UNSUPPORTED) Arrow.tobuffer(tt)
-            @test_throws ArgumentError(Arrow.RUN_END_ENCODED_UNSUPPORTED) Arrow.tobuffer((x=tt.x,))
+            @test_throws ArgumentError(Arrow.RUN_END_ENCODED_UNSUPPORTED) Arrow.tobuffer((
+                x=tt.x,
+            ))
         end
 
         @testset "canonical bool8/json/opaque" begin
-            bools = Union{Missing,Arrow.Bool8}[Arrow.Bool8(true), missing, Arrow.Bool8(false)]
+            bools =
+                Union{Missing,Arrow.Bool8}[Arrow.Bool8(true), missing, Arrow.Bool8(false)]
+            @test ArrowTypes.JuliaType(Val(Symbol("arrow.bool8")), Int8, "") == Arrow.Bool8
             tt = Arrow.Table(Arrow.tobuffer((col=bools,)))
             @test eltype(tt.col) == Union{Missing,Arrow.Bool8}
             @test isequal(copy(tt.col), bools)
@@ -816,6 +894,8 @@ const hybrid = EnumRoundtripModule.hybrid
                 missing,
                 Arrow.JSONText("[1,2,3]"),
             ]
+            @test ArrowTypes.JuliaType(Val(Symbol("arrow.json")), String, "") ==
+                  Arrow.JSONText{String}
             json_tt = Arrow.Table(Arrow.tobuffer((col=jsons,)))
             @test eltype(json_tt.col) == Union{Missing,Arrow.JSONText{String}}
             @test isequal(copy(json_tt.col), jsons)
@@ -823,9 +903,14 @@ const hybrid = EnumRoundtripModule.hybrid
 
             raw_json_tt = Arrow.Table(Arrow.tobuffer((col=jsons,)); convert=false)
             @test eltype(raw_json_tt.col) == Union{Missing,String}
-            @test isequal(copy(raw_json_tt.col), Union{Missing,String}["{\"a\":1}", missing, "[1,2,3]"])
+            @test isequal(
+                copy(raw_json_tt.col),
+                Union{Missing,String}["{\"a\":1}", missing, "[1,2,3]"],
+            )
 
             opaque_meta = Arrow.opaquemetadata("pkg.Type", "vendor.example")
+            @test ArrowTypes.JuliaType(Val(Symbol("arrow.opaque")), String, opaque_meta) ==
+                  String
             opaque_tt = Arrow.Table(
                 Arrow.tobuffer(
                     (col=["a", "b"],);
@@ -840,7 +925,8 @@ const hybrid = EnumRoundtripModule.hybrid
             @test eltype(opaque_tt.col) == String
             @test copy(opaque_tt.col) == ["a", "b"]
             @test Arrow.getmetadata(opaque_tt.col)["ARROW:extension:name"] == "arrow.opaque"
-            @test Arrow.getmetadata(opaque_tt.col)["ARROW:extension:metadata"] == opaque_meta
+            @test Arrow.getmetadata(opaque_tt.col)["ARROW:extension:metadata"] ==
+                  opaque_meta
         end
 
         @testset "canonical advanced passthrough" begin
@@ -872,6 +958,18 @@ const hybrid = EnumRoundtripModule.hybrid
                 dim_names=["axis0"],
                 permutation=[0],
             )
+            @test ArrowTypes.JuliaType(Val(Symbol("arrow.parquet.variant")), String, "") ==
+                  String
+            @test ArrowTypes.JuliaType(
+                Val(Symbol("arrow.fixed_shape_tensor")),
+                NTuple{4,Int32},
+                fixed_metadata,
+            ) == NTuple{4,Int32}
+            @test ArrowTypes.JuliaType(
+                Val(Symbol("arrow.variable_shape_tensor")),
+                NamedTuple{(:data, :shape),Tuple{Vector{Int32},NTuple{1,Int32}}},
+                variable_metadata,
+            ) == NamedTuple{(:data, :shape),Tuple{Vector{Int32},NTuple{1,Int32}}}
             @test JSON3.read(variable_metadata)["uniform_shape"] == [2]
             @test JSON3.read(variable_metadata)["dim_names"] == ["axis0"]
             @test JSON3.read(variable_metadata)["permutation"] == [0]
@@ -886,14 +984,12 @@ const hybrid = EnumRoundtripModule.hybrid
                 permutation=[0],
             )
 
-            variant_values = Union{
-                Missing,
-                NamedTuple{(:metadata, :value),Tuple{String,String}},
-            }[
-                (metadata="json", value="{\"a\":1}"),
-                missing,
-                (metadata="str", value="abc"),
-            ]
+            variant_values =
+                Union{Missing,NamedTuple{(:metadata, :value),Tuple{String,String}}}[
+                    (metadata="json", value="{\"a\":1}"),
+                    missing,
+                    (metadata="str", value="abc"),
+                ]
             @test_logs min_level=Base.CoreLogging.Warn begin
                 variant_tt = Arrow.Table(
                     Arrow.tobuffer(
@@ -986,7 +1082,8 @@ const hybrid = EnumRoundtripModule.hybrid
                 colmetadata=Dict(
                     :col => Dict(
                         "ARROW:extension:name" => "arrow.fixed_shape_tensor",
-                        "ARROW:extension:metadata" => Arrow.fixedshapetensormetadata([3, 2]),
+                        "ARROW:extension:metadata" =>
+                            Arrow.fixedshapetensormetadata([3, 2]),
                     ),
                 ),
             )
@@ -1000,9 +1097,10 @@ const hybrid = EnumRoundtripModule.hybrid
                 colmetadata=Dict(
                     :col => Dict(
                         "ARROW:extension:name" => "arrow.variable_shape_tensor",
-                        "ARROW:extension:metadata" => Arrow.variableshapetensormetadata(
-                            uniform_shape=Union{Nothing,Int}[1],
-                        ),
+                        "ARROW:extension:metadata" =>
+                            Arrow.variableshapetensormetadata(
+                                uniform_shape=Union{Nothing,Int}[1],
+                            ),
                     ),
                 ),
             )
@@ -1010,6 +1108,155 @@ const hybrid = EnumRoundtripModule.hybrid
                 () -> Arrow.Table(invalid_variable_bytes),
                 "invalid canonical arrow.variable_shape_tensor extension",
             )
+        end
+
+        @testset "logical extension runtime contract" begin
+            uuid = UUID("550e8400-e29b-41d4-a716-446655440000")
+            @test Arrow._builtinarrowtype(UUID) == NTuple{16,UInt8}
+            @test Arrow._builtintoarrow(uuid) ==
+                  ArrowTypes._cast(NTuple{16,UInt8}, uuid.value)
+            @test Arrow._builtinarrowname(UUID) == Symbol("arrow.uuid")
+            @test ArrowTypes.ArrowType(UUID) == Arrow._builtinarrowtype(UUID)
+            @test ArrowTypes.toarrow(uuid) == Arrow._builtintoarrow(uuid)
+            @test ArrowTypes.arrowname(UUID) == Arrow._builtinarrowname(UUID)
+            @test ArrowTypes.JuliaType(Val(Symbol("arrow.uuid"))) == UUID
+            @test ArrowTypes.JuliaType(Val(Symbol("JuliaLang.UUID"))) == UUID
+            uuid_spec = Arrow._extensionspec(UUID)
+            @test uuid_spec isa Arrow.ExtensionTypeSpec
+            @test uuid_spec.name == Arrow.ArrowTypes.UUIDSYMBOL
+            @test uuid_spec.metadata == ""
+            @test Arrow._resolveextensionjuliatype(
+                Arrow.ExtensionTypeSpec(Arrow.ArrowTypes.LEGACY_UUIDSYMBOL, ""),
+                NTuple{16,UInt8},
+            ) == UUID
+
+            bool8_spec = Arrow._extensionspec(Arrow.Bool8)
+            @test bool8_spec isa Arrow.ExtensionTypeSpec
+            @test bool8_spec.name == Symbol("arrow.bool8")
+            @test Arrow._builtinarrowtype(Arrow.Bool8) == Int8
+            @test Arrow._builtintoarrow(Arrow.Bool8(true)) == Int8(1)
+            @test Arrow._builtinarrowname(Arrow.Bool8) == Symbol("arrow.bool8")
+            @test Arrow._builtinfromarrow(Arrow.Bool8, Int8(1)) == Arrow.Bool8(true)
+            @test Arrow._builtindefault(Arrow.Bool8) == Arrow.Bool8(false)
+            @test Arrow._resolveextensionjuliatype(bool8_spec, Int8) == Arrow.Bool8
+
+            @test Arrow._builtinarrowtype(Arrow.JSONText{String}) == String
+            @test Arrow._builtintoarrow(Arrow.JSONText("abc")) == "abc"
+            @test Arrow._builtinarrowname(Arrow.JSONText{String}) == Symbol("arrow.json")
+            @test Arrow._builtinfromarrow(Arrow.JSONText{String}, pointer("abc"), 3) ==
+                  Arrow.JSONText("abc")
+            @test Arrow._builtinfromarrow(Arrow.JSONText{String}, "xyz") ==
+                  Arrow.JSONText("xyz")
+            @test Arrow._builtindefault(Arrow.JSONText{String}) == Arrow.JSONText("")
+
+            timestamp_storage = NamedTuple{
+                (:timestamp, :offset_minutes),
+                Tuple{Arrow.Timestamp{Arrow.Meta.TimeUnit.MILLISECOND,:UTC},Int16},
+            }
+            zdt = ZonedDateTime(Dates.DateTime(2020), tz"Europe/Paris")
+            @test Arrow._builtinarrowtype(ZonedDateTime) == Arrow.Timestamp
+            @test Arrow._builtintoarrow(zdt) == convert(
+                Arrow.Timestamp{Arrow.Meta.TimeUnit.MILLISECOND,Symbol("Europe/Paris")},
+                zdt,
+            )
+            @test Arrow._builtinarrowname(ZonedDateTime) ==
+                  Symbol("JuliaLang.ZonedDateTime-UTC")
+            paris_timestamp =
+                Arrow.Timestamp{Arrow.Meta.TimeUnit.MILLISECOND,Symbol("Europe/Paris")}(0)
+            @test Arrow._builtinfromarrow(ZonedDateTime, paris_timestamp) ==
+                  convert(ZonedDateTime, paris_timestamp)
+            @test Arrow._builtindefault(ZonedDateTime) ==
+                  ZonedDateTime(1, 1, 1, 1, 1, 1, tz"UTC")
+            @test Arrow._builtinarrowname(
+                Arrow.TimestampWithOffset{Arrow.Meta.TimeUnit.MILLISECOND},
+            ) == Symbol("arrow.timestamp_with_offset")
+            @test Arrow._builtinarrowtype(
+                Arrow.TimestampWithOffset{Arrow.Meta.TimeUnit.MILLISECOND},
+            ) == NamedTuple{
+                (:timestamp, :offset_minutes),
+                Tuple{Arrow.Timestamp{Arrow.Meta.TimeUnit.MILLISECOND,:UTC},Int16},
+            }
+            ts_with_offset = Arrow.TimestampWithOffset(
+                Arrow.Timestamp{Arrow.Meta.TimeUnit.MILLISECOND,:UTC}(123),
+                Int16(-480),
+            )
+            @test Arrow._builtintoarrow(ts_with_offset) == (
+                timestamp=Arrow.Timestamp{Arrow.Meta.TimeUnit.MILLISECOND,:UTC}(123),
+                offset_minutes=Int16(-480),
+            )
+            @test ArrowTypes.ArrowType(
+                Arrow.TimestampWithOffset{Arrow.Meta.TimeUnit.MILLISECOND},
+            ) == Arrow._builtinarrowtype(
+                Arrow.TimestampWithOffset{Arrow.Meta.TimeUnit.MILLISECOND},
+            )
+            @test ArrowTypes.toarrow(ts_with_offset) ==
+                  Arrow._builtintoarrow(ts_with_offset)
+            @test Arrow._builtindefault(
+                Arrow.TimestampWithOffset{Arrow.Meta.TimeUnit.MILLISECOND},
+            ) == zero(Arrow.TimestampWithOffset{Arrow.Meta.TimeUnit.MILLISECOND})
+            @test Arrow._builtinfromarrowstruct(
+                Arrow.TimestampWithOffset{Arrow.Meta.TimeUnit.MILLISECOND},
+                Val((:timestamp, :offset_minutes)),
+                Arrow.Timestamp{Arrow.Meta.TimeUnit.MILLISECOND,:UTC}(123),
+                Int16(-480),
+            ) == ts_with_offset
+            @test Arrow._resolveextensionjuliatype(
+                Arrow.ExtensionTypeSpec(Symbol("arrow.timestamp_with_offset"), ""),
+                timestamp_storage,
+            ) == Arrow.TimestampWithOffset{Arrow.Meta.TimeUnit.MILLISECOND}
+
+            opaque_spec = Arrow.ExtensionTypeSpec(
+                Symbol("arrow.opaque"),
+                Arrow.opaquemetadata("demo.type", "demo.vendor"),
+            )
+            @test Arrow.opaquemetadata("demo.type", "demo.vendor") ==
+                  Arrow._builtinopaquemetadata("demo.type", "demo.vendor")
+            @test Arrow._resolveextensionjuliatype(opaque_spec, Vector{UInt8}) ==
+                  Vector{UInt8}
+            @test Arrow.variantmetadata() == Arrow._builtinvariantmetadata()
+            @test Arrow.fixedshapetensormetadata(
+                [2, 2];
+                dim_names=["row", "col"],
+                permutation=[1, 0],
+            ) == Arrow._builtinfixedshapetensormetadata(
+                [2, 2];
+                dim_names=["row", "col"],
+                permutation=[1, 0],
+            )
+            @test Arrow.variableshapetensormetadata(
+                uniform_shape=[2, nothing];
+                dim_names=["row", "col"],
+                permutation=[1, 0],
+            ) == Arrow._builtinvariableshapetensormetadata(
+                uniform_shape=[2, nothing];
+                dim_names=["row", "col"],
+                permutation=[1, 0],
+            )
+            @test Arrow._builtinextensionjuliatype(
+                Val(Symbol("JuliaLang.ZonedDateTime-UTC")),
+                Arrow.Timestamp{Arrow.Meta.TimeUnit.MILLISECOND,:UTC},
+            ) == ZonedDateTime
+            @test ArrowTypes.JuliaType(
+                Val(Symbol("JuliaLang.ZonedDateTime-UTC")),
+                Arrow.Timestamp{Arrow.Meta.TimeUnit.MILLISECOND,:UTC},
+            ) == ZonedDateTime
+            @test Arrow._builtinextensionjuliatype(
+                Val(Symbol("JuliaLang.ZonedDateTime")),
+                Arrow.Timestamp{Arrow.Meta.TimeUnit.MILLISECOND,:UTC},
+            ) == Arrow.LocalZonedDateTime
+            @test ArrowTypes.JuliaType(
+                Val(Symbol("JuliaLang.ZonedDateTime")),
+                Arrow.Timestamp{Arrow.Meta.TimeUnit.MILLISECOND,:UTC},
+            ) == Arrow.LocalZonedDateTime
+            local_zdt_timestamp =
+                Arrow.Timestamp{Arrow.Meta.TimeUnit.MILLISECOND,Symbol("Europe/Paris")}(0)
+            @test Arrow._builtinfromarrow(Arrow.LocalZonedDateTime, local_zdt_timestamp) ==
+                  ArrowTypes.fromarrow(Arrow.LocalZonedDateTime, local_zdt_timestamp)
+
+            @test Arrow._resolveextensionjuliatype(
+                Arrow.ExtensionTypeSpec(Symbol("JuliaLang.ZonedDateTime"), ""),
+                Arrow.Timestamp{Arrow.Meta.TimeUnit.MILLISECOND,:UTC},
+            ) == Arrow.LocalZonedDateTime
         end
 
         @testset "tensor message boundary" begin
@@ -1026,7 +1273,9 @@ const hybrid = EnumRoundtripModule.hybrid
 
             tensor_bytes = patch_message_header_type(base, UInt8(4))
             @test_throws ArgumentError(Arrow.TENSOR_UNSUPPORTED) Arrow.Table(tensor_bytes)
-            @test_throws ArgumentError(Arrow.TENSOR_UNSUPPORTED) collect(Arrow.Stream(tensor_bytes))
+            @test_throws ArgumentError(Arrow.TENSOR_UNSUPPORTED) collect(
+                Arrow.Stream(tensor_bytes),
+            )
 
             sparse_tensor_bytes = patch_message_header_type(base, UInt8(5))
             @test_throws ArgumentError(Arrow.SPARSE_TENSOR_UNSUPPORTED) Arrow.Table(

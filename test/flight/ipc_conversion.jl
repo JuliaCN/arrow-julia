@@ -15,13 +15,13 @@
 # specific language governing permissions and limitations
 # under the License.
 
+using DataAPI
+using Tables
+using UUIDs
+
 @testset "Flight IPC conversion helpers" begin
     missing_schema_fragment = "the server may have terminated the stream before emitting the first schema-bearing FlightData message"
-    descriptor = Arrow.Flight.Protocol.FlightDescriptor(
-        Arrow.Flight.Protocol.var"FlightDescriptor.DescriptorType".PATH,
-        UInt8[],
-        ["datasets", "roundtrip"],
-    )
+    descriptor = Arrow.Flight.pathdescriptor(("datasets", "roundtrip"))
     source = Tables.partitioner((
         (id=Int64[1, 2], label=["one", "two"]),
         (id=Int64[3], label=["three"]),
@@ -42,6 +42,7 @@
     @test length(batches) == 2
     @test batches[1].id == [1, 2]
     @test batches[2].label == ["three"]
+    @test descriptor.path == ["datasets", "roundtrip"]
 
     tbl = Arrow.Flight.table(messages)
     @test tbl.id == [1, 2, 3]
@@ -75,4 +76,178 @@
     )
     @test isempty(empty_tbl.id)
     @test isempty(empty_tbl.label)
+
+    metadata_source = Tables.partitioner(((title=["red", "blue"],), (title=["green"],)))
+    metadata_messages = Arrow.Flight.flightdata(
+        metadata_source;
+        metadata=Dict("dataset" => "flight"),
+        colmetadata=Dict(:title => Dict("lang" => "en")),
+    )
+    metadata_schema_bytes = Arrow.Flight.schemaipc(first(metadata_messages))
+    metadata_info = Arrow.Flight.Protocol.FlightInfo(
+        metadata_schema_bytes[5:end],
+        nothing,
+        Arrow.Flight.Protocol.FlightEndpoint[],
+        Int64(-1),
+        Int64(-1),
+        false,
+        UInt8[],
+    )
+    metadata_batches =
+        collect(Arrow.Flight.stream(metadata_messages[2:end]; schema=metadata_info))
+    metadata_table = Arrow.Flight.table(metadata_messages[2:end]; schema=metadata_info)
+
+    @test length(metadata_batches) == 2
+    @test DataAPI.metadata(metadata_batches[1], "dataset") == "flight"
+    @test DataAPI.colmetadata(metadata_batches[1], :title, "lang") == "en"
+    @test DataAPI.metadata(metadata_batches[2], "dataset") == "flight"
+    @test DataAPI.colmetadata(metadata_batches[2], :title, "lang") == "en"
+    @test metadata_table.title == ["red", "blue", "green"]
+    @test DataAPI.metadata(metadata_table, "dataset") == "flight"
+    @test DataAPI.colmetadata(metadata_table, :title, "lang") == "en"
+    metadata_parts = collect(Tables.partitions(metadata_table))
+    @test length(metadata_parts) == 2
+    @test metadata_parts[1].title == ["red", "blue"]
+    @test metadata_parts[2].title == ["green"]
+    @test DataAPI.metadata(metadata_parts[1], "dataset") == "flight"
+    @test DataAPI.colmetadata(metadata_parts[1], :title, "lang") == "en"
+    @test DataAPI.metadata(metadata_parts[2], "dataset") == "flight"
+    @test DataAPI.colmetadata(metadata_parts[2], :title, "lang") == "en"
+
+    app_metadata_messages = Arrow.Flight.flightdata(
+        metadata_source;
+        metadata=Dict("dataset" => "flight"),
+        colmetadata=Dict(:title => Dict("lang" => "en")),
+        app_metadata=("batch:0", "batch:1"),
+    )
+    metadata_batches_with_app =
+        collect(Arrow.Flight.stream(app_metadata_messages; include_app_metadata=true))
+    metadata_table_with_app =
+        Arrow.Flight.table(app_metadata_messages; include_app_metadata=true)
+    @test length(metadata_batches_with_app) == 2
+    @test metadata_batches_with_app[1].table.title == ["red", "blue"]
+    @test metadata_batches_with_app[2].table.title == ["green"]
+    @test String(metadata_batches_with_app[1].app_metadata) == "batch:0"
+    @test String(metadata_batches_with_app[2].app_metadata) == "batch:1"
+    @test metadata_table_with_app.table.title == ["red", "blue", "green"]
+    @test String.(metadata_table_with_app.app_metadata) == ["batch:0", "batch:1"]
+
+    wrapped_metadata_source = Arrow.Flight.withappmetadata(
+        metadata_source;
+        app_metadata=("wrapped:0", "wrapped:1"),
+    )
+    wrapped_metadata_messages = Arrow.Flight.flightdata(
+        wrapped_metadata_source;
+        metadata=Dict("dataset" => "flight"),
+        colmetadata=Dict(:title => Dict("lang" => "en")),
+    )
+    wrapped_metadata_table =
+        Arrow.Flight.table(wrapped_metadata_messages; include_app_metadata=true)
+    @test wrapped_metadata_table.table.title == ["red", "blue", "green"]
+    @test String.(wrapped_metadata_table.app_metadata) == ["wrapped:0", "wrapped:1"]
+
+    single_batch_metadata_source = (title=["solo"],)
+    single_batch_messages = Arrow.Flight.flightdata(
+        single_batch_metadata_source;
+        metadata=Dict("dataset" => "single-flight"),
+        colmetadata=Dict(:title => Dict("lang" => "en")),
+        app_metadata=("single:0",),
+    )
+    single_batch_table =
+        Arrow.Flight.table(single_batch_messages; include_app_metadata=true)
+    @test single_batch_table.table.title == ["solo"]
+    @test DataAPI.metadata(single_batch_table.table, "dataset") == "single-flight"
+    @test DataAPI.colmetadata(single_batch_table.table, :title, "lang") == "en"
+    @test String.(single_batch_table.app_metadata) == ["single:0"]
+
+    reemitted_channel = Channel{Arrow.Flight.Protocol.FlightData}(8)
+    reemit_task = @async Arrow.Flight.putflightdata!(
+        reemitted_channel,
+        Arrow.Flight.withappmetadata(
+            metadata_table_with_app.table;
+            app_metadata=("batch:0", "batch:1"),
+        );
+        close=true,
+    )
+    reemitted_messages = collect(reemitted_channel)
+    wait(reemit_task)
+    @test String.(getfield.(reemitted_messages[2:end], :app_metadata)) ==
+          ["batch:0", "batch:1"]
+    reemitted_table = Arrow.Flight.table(reemitted_messages)
+    @test reemitted_table.title == metadata_table.title
+    @test DataAPI.metadata(reemitted_table, "dataset") == "flight"
+    @test DataAPI.colmetadata(reemitted_table, :title, "lang") == "en"
+
+    numeric_metadata_source = Arrow.withmetadata(
+        (vector_score=[0.9, 0.5],);
+        metadata=Dict("dataset" => "numeric-flight"),
+        colmetadata=Dict(:vector_score => Dict("semantic.role" => "score")),
+    )
+    numeric_metadata_messages = Arrow.Flight.flightdata(numeric_metadata_source)
+    numeric_metadata_table = Arrow.Flight.table(numeric_metadata_messages)
+    @test numeric_metadata_table.vector_score == [0.9, 0.5]
+    @test DataAPI.metadata(numeric_metadata_table, "dataset") == "numeric-flight"
+    @test DataAPI.colmetadata(numeric_metadata_table, :vector_score, "semantic.role") ==
+          "score"
+
+    app_metadata_error = try
+        Arrow.Flight.flightdata(metadata_source; app_metadata=("only-one",))
+        nothing
+    catch err
+        err
+    end
+    @test app_metadata_error isa ArgumentError
+    @test occursin("app_metadata was exhausted", sprint(showerror, app_metadata_error))
+
+    duplicate_app_metadata_error = try
+        Arrow.Flight.flightdata(
+            Arrow.Flight.withappmetadata(
+                metadata_source;
+                app_metadata=("wrapped:0", "wrapped:1"),
+            );
+            app_metadata=("extra:0", "extra:1"),
+        )
+        nothing
+    catch err
+        err
+    end
+    @test duplicate_app_metadata_error isa ArgumentError
+    @test occursin(
+        "Arrow.Flight.withappmetadata",
+        sprint(showerror, duplicate_app_metadata_error),
+    )
+
+    extension_source = (
+        uuid=[UUID(UInt128(1)), UUID(UInt128(2))],
+        flag=[Arrow.Bool8(true), Arrow.Bool8(false)],
+        json=Union{Missing,Arrow.JSONText{String}}[Arrow.JSONText("{\"a\":1}"), missing],
+        ts=Union{Missing,Arrow.TimestampWithOffset{Arrow.Meta.TimeUnit.MILLISECOND}}[
+            Arrow.TimestampWithOffset(
+                Arrow.Timestamp{Arrow.Meta.TimeUnit.MILLISECOND,:UTC}(123),
+                Int16(-480),
+            ),
+            missing,
+        ],
+    )
+    extension_messages = Arrow.Flight.flightdata(extension_source)
+    extension_batches = collect(Arrow.Flight.stream(extension_messages))
+    extension_tbl = Arrow.Flight.table(extension_messages)
+
+    @test Arrow.getmetadata(extension_batches[1].uuid)[Arrow.EXTENSION_NAME_KEY] ==
+          "arrow.uuid"
+    @test Arrow.getmetadata(extension_batches[1].flag)[Arrow.EXTENSION_NAME_KEY] ==
+          "arrow.bool8"
+    @test Arrow.getmetadata(extension_batches[1].json)[Arrow.EXTENSION_NAME_KEY] ==
+          "arrow.json"
+    @test Arrow.getmetadata(extension_batches[1].ts)[Arrow.EXTENSION_NAME_KEY] ==
+          "arrow.timestamp_with_offset"
+    @test Arrow.getmetadata(extension_tbl.uuid)[Arrow.EXTENSION_NAME_KEY] == "arrow.uuid"
+    @test Arrow.getmetadata(extension_tbl.flag)[Arrow.EXTENSION_NAME_KEY] == "arrow.bool8"
+    @test Arrow.getmetadata(extension_tbl.json)[Arrow.EXTENSION_NAME_KEY] == "arrow.json"
+    @test Arrow.getmetadata(extension_tbl.ts)[Arrow.EXTENSION_NAME_KEY] ==
+          "arrow.timestamp_with_offset"
+    @test copy(extension_tbl.uuid) == extension_source.uuid
+    @test Bool.(copy(extension_tbl.flag)) == Bool.(extension_source.flag)
+    @test isequal(copy(extension_tbl.json), extension_source.json)
+    @test isequal(copy(extension_tbl.ts), extension_source.ts)
 end

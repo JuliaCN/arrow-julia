@@ -15,10 +15,14 @@
 # specific language governing permissions and limitations
 # under the License.
 
+using gRPCClient
+using Tables
+
 include("server_core/support.jl")
 include("server_core/metadata_tests.jl")
 include("server_core/descriptor_tests.jl")
 include("server_core/direct_handler_tests.jl")
+include("server_core/exchange_helper_tests.jl")
 include("server_core/dispatch_tests.jl")
 
 @testset "Flight server core surface" begin
@@ -26,5 +30,6 @@ include("server_core/dispatch_tests.jl")
     flight_server_core_test_metadata(fixture)
     flight_server_core_test_descriptors(fixture)
     flight_server_core_test_direct_handlers(fixture)
+    flight_server_core_test_exchange_helpers(fixture)
     flight_server_core_test_dispatch(fixture)
 end

@@ -19,7 +19,7 @@ using Documenter
 using Arrow
 
 makedocs(;
-    modules=[Arrow],
+    modules=[Arrow, Arrow.Flight],
     repo=Remotes.GitHub("apache", "arrow-julia"),
     sitename="Arrow.jl",
     format=Documenter.HTML(;

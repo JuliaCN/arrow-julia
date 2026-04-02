@@ -28,7 +28,8 @@ tobytes(io::IO) = Base.read(io)
 tobytes(io::IOStream) = Mmap.mmap(io)
 tobytes(file_path) = open(tobytes, file_path, "r")
 
-rejectunsupported(field::Meta.Field) = (rejectunsupported(field.type); foreach(rejectunsupported, field.children))
+rejectunsupported(field::Meta.Field) =
+    (rejectunsupported(field.type); foreach(rejectunsupported, field.children))
 rejectunsupported(x) = nothing
 
 struct BatchIterator
@@ -432,17 +433,70 @@ Tables.columnnames(t::Table) = names(t)
 Tables.getcolumn(t::Table, i::Int) = columns(t)[i]
 Tables.getcolumn(t::Table, nm::Symbol) = lookup(t)[nm]
 
+struct MetadataVector{T,A<:AbstractVector{T},M} <: AbstractVector{T}
+    data::A
+    metadata::M
+end
+
+Base.IndexStyle(::Type{<:MetadataVector}) = Base.IndexLinear()
+Base.size(x::MetadataVector) = size(x.data)
+Base.axes(x::MetadataVector) = axes(x.data)
+Base.length(x::MetadataVector) = length(x.data)
+Base.getindex(x::MetadataVector, i::Int) = getindex(x.data, i)
+Base.iterate(x::MetadataVector) = iterate(x.data)
+Base.iterate(x::MetadataVector, state) = iterate(x.data, state)
+getmetadata(x::MetadataVector) = x.metadata
+
+_metadatavectordata(x::MetadataVector) = x.data
+_metadatavectordata(x) = x
+_wrapmetadata(data, metadata) = metadata === nothing ? data : MetadataVector(data, metadata)
+
 struct TablePartitions
     table::Table
     npartitions::Int
+end
+
+Base.IteratorSize(::Type{TablePartitions}) = Base.HasLength()
+Base.length(tp::TablePartitions) = tp.npartitions
+
+function _partitionarrays(col::MetadataVector)
+    data = getfield(col, :data)
+    return data isa ChainedVector ? data.arrays : nothing
+end
+
+_partitionarrays(col) = col isa ChainedVector ? col.arrays : _wrappedpartitionarrays(col)
+
+function _wrappedpartitionarrays(col)
+    if hasfield(typeof(col), :data)
+        data = getfield(col, :data)
+        data isa ChainedVector && return data.arrays
+    end
+    return nothing
+end
+
+_partitioncolumn(col::MetadataVector, i::Int) =
+    MetadataVector(getfield(col, :data).arrays[i], getfield(col, :metadata))
+
+_partitioncolumn(col, i::Int) =
+    col isa ChainedVector ? col.arrays[i] : _wrappedpartitioncolumn(col, i)
+
+function _wrappedpartitioncolumn(col, i::Int)
+    if hasfield(typeof(col), :data) && hasfield(typeof(col), :metadata)
+        data = getfield(col, :data)
+        if data isa ChainedVector
+            wrapper = getfield(parentmodule(typeof(col)), nameof(typeof(col)))
+            return wrapper(data.arrays[i], getfield(col, :metadata))
+        end
+    end
+    return col
 end
 
 function TablePartitions(table::Table)
     cols = columns(table)
     npartitions = if length(cols) == 0
         0
-    elseif cols[1] isa ChainedVector
-        length(cols[1].arrays)
+    elseif (arrays = _partitionarrays(cols[1])) !== nothing
+        length(arrays)
     else
         1
     end
@@ -453,7 +507,7 @@ function Base.iterate(tp::TablePartitions, i=1)
     i > tp.npartitions && return nothing
     tp.npartitions == 1 && return tp.table, i + 1
     cols = columns(tp.table)
-    newcols = AbstractVector[cols[j].arrays[i] for j = 1:length(cols)]
+    newcols = AbstractVector[_partitioncolumn(cols[j], i) for j = 1:length(cols)]
     nms = names(tp.table)
     tbl = Table(
         nms,
@@ -641,7 +695,8 @@ function collect_cols!(
     convert,
 )
     @wkspawn begin
-        cols = collect(VectorIterator(sch, batch, dictencodingslockable, convert))
+        cols =
+            materializecolumns(VectorIterator(sch, batch, dictencodingslockable, convert))
         @lock rb_cols_lock begin
             if length(rb_cols) < rbi
                 resize!(rb_cols, rbi)
@@ -718,6 +773,16 @@ buildmetadata(f::Union{Meta.Field,Meta.Schema}) = buildmetadata(f.custom_metadat
 buildmetadata(meta) = toidict(String(kv.key) => String(kv.value) for kv in meta)
 buildmetadata(::Nothing) = nothing
 buildmetadata(x::AbstractDict) = x
+
+function materializecolumns(x::VectorIterator)
+    cols = Vector{AbstractVector}(undef, length(x))
+    i = 1
+    for col in x
+        cols[i] = col
+        i += 1
+    end
+    return cols
+end
 
 function Base.iterate(
     x::VectorIterator,

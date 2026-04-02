@@ -245,6 +245,33 @@ Arrow.jl provides a convenient accessor for this metadata via [`Arrow.getmetadat
 
 To attach custom schema/column metadata to Arrow tables at serialization time, see the `metadata` and `colmetadata` keyword arguments to [`Arrow.write`](@ref).
 
+For lightweight overlays on existing Tables.jl sources, Arrow.jl also provides
+`Arrow.withmetadata(table_like; metadata=..., colmetadata=...)`. This keeps any
+existing schema/field metadata already exposed by the source, overlays new
+entries on top, and returns a wrapper that can be passed directly to
+[`Arrow.write`](@ref), `Arrow.tobuffer`, or the Flight IPC helpers.
+
+The Flight IPC helpers also expose batch-wise Flight `app_metadata`.
+[`Arrow.Flight.stream`](@ref) and [`Arrow.Flight.table`](@ref) can surface it
+with `include_app_metadata=true`, while [`Arrow.Flight.flightdata`](@ref),
+[`Arrow.Flight.putflightdata!`](@ref), and source-based
+[`Arrow.Flight.doexchange`](@ref) accept `app_metadata=...` to emit one payload
+per record batch without dropping down to raw protocol messages.
+[`Arrow.Flight.withappmetadata`](@ref) provides the same payload metadata as a
+lightweight wrapper around a table or partitioned source, so the metadata can
+ride with the source itself instead of being re-specified at every emit call
+site. [`Arrow.Flight.pathdescriptor`](@ref) similarly provides a small
+high-level helper for PATH-based `FlightDescriptor` construction without
+manual protocol assembly. For server-side native Julia Flight composition,
+[`Arrow.Flight.exchangeservice`](@ref), [`Arrow.Flight.tableservice`](@ref),
+and [`Arrow.Flight.streamservice`](@ref) provide the corresponding
+high-level `DoExchange` assembly so callers do not need to hand-roll request
+priming, fallback descriptor resolution, response closing, or
+`putflightdata!` plumbing. The same layer also supports source-based local
+service invocation through [`Arrow.Flight.doexchange`](@ref),
+[`Arrow.Flight.table`](@ref), and [`Arrow.Flight.stream`](@ref) when the first
+argument is an in-process `Arrow.Flight.Service`.
+
 ## Writing arrow data
 
 Ok, so that's a pretty good rundown of *reading* arrow data, but how do you *produce* arrow data? Enter `Arrow.write`.

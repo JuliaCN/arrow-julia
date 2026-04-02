@@ -37,8 +37,17 @@ function grpcserver_extension_service(protocol, fixture)
         doget=(ctx, req, response) -> begin
             @test Arrow.Flight.callheader(ctx, "authorization") == "Bearer native"
             @test req.ticket == fixture.ticket.ticket
-            foreach(message -> put!(response, message), fixture.messages)
-            close(response)
+            Arrow.Flight.putflightdata!(
+                response,
+                Tables.partitioner((
+                    (id=Int64[1, 2], name=["one", "two"]),
+                    (id=Int64[3], name=["three"]),
+                ));
+                descriptor=fixture.descriptor,
+                metadata=fixture.dataset_metadata,
+                colmetadata=fixture.dataset_colmetadata,
+                close=true,
+            )
             return :doget_ok
         end,
         listactions=(ctx, response) -> begin
@@ -56,17 +65,36 @@ function grpcserver_extension_service(protocol, fixture)
         end,
         doput=(ctx, request, response) -> begin
             @test Arrow.Flight.callheader(ctx, "authorization") == "Bearer native"
-            incoming = collect(request)
-            @test length(incoming) == length(fixture.messages)
+            incoming = collect(Arrow.Flight.stream(request; include_app_metadata=true))
+            @test length(incoming) == 2
+            @test incoming[1].table.id == [1, 2]
+            @test incoming[1].table.name == ["one", "two"]
+            @test Arrow.getmetadata(incoming[1].table)["dataset"] == "native"
+            @test Arrow.getmetadata(incoming[1].table.name)["lang"] == "en"
+            @test String.(getproperty.(incoming, :app_metadata)) ==
+                  fixture.dataset_app_metadata
+            @test incoming[2].table.id == [3]
+            @test incoming[2].table.name == ["three"]
             put!(response, protocol.PutResult(b"stored"))
             close(response)
             return :doput_ok
         end,
         doexchange=(ctx, request, response) -> begin
             @test Arrow.Flight.callheader(ctx, "authorization") == "Bearer native"
-            incoming = collect(request)
-            foreach(message -> put!(response, message), incoming)
-            close(response)
+            incoming = collect(Arrow.Flight.stream(request; include_app_metadata=true))
+            @test length(incoming) == 1
+            @test String.(getproperty.(incoming, :app_metadata)) ==
+                  fixture.exchange_app_metadata
+            @test Arrow.getmetadata(incoming[1].table)["dataset"] == "exchange"
+            @test Arrow.getmetadata(incoming[1].table.name)["lang"] == "exchange"
+            Arrow.Flight.putflightdata!(
+                response,
+                Arrow.Flight.withappmetadata(
+                    Tables.partitioner(getproperty.(incoming, :table));
+                    app_metadata=getproperty.(incoming, :app_metadata),
+                );
+                close=true,
+            )
             return :doexchange_ok
         end,
     )
