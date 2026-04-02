@@ -128,7 +128,7 @@ jobs:
           project: ${{ matrix.pkg.dir }}
       - uses: julia-actions/julia-processcoverage@v1
         if: matrix.pkg.name == 'Arrow.jl' && matrix.version == '1' && matrix.os == 'macos-latest' && matrix.nthreads == 1
-      - uses: codecov/codecov-action@v5
+      - uses: codecov/codecov-action@v6
         if: matrix.pkg.name == 'Arrow.jl' && matrix.version == '1' && matrix.os == 'macos-latest' && matrix.nthreads == 1
         with:
           files: lcov.info
