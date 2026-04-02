@@ -77,6 +77,12 @@ function grpcserver_extension_test_bidi_streaming(grpcserver, service, fixture, 
     @test doexchange_table.name == ["ten"]
     @test Arrow.getmetadata(doexchange_table)["dataset"] == "exchange"
     @test Arrow.getmetadata(doexchange_table.name)["lang"] == "exchange"
+    @test filter(!isempty, getfield.(doexchange_messages, :app_metadata)) ==
+          Vector{UInt8}.(fixture.exchange_app_metadata)
+    doexchange_table_with_app =
+        Arrow.Flight.table(doexchange_messages; include_app_metadata=true)
+    @test doexchange_table_with_app.table.id == [10]
+    @test String.(doexchange_table_with_app.app_metadata) == fixture.exchange_app_metadata
 
     failing_service = Arrow.Flight.Service(
         doexchange=(ctx, request, response) ->

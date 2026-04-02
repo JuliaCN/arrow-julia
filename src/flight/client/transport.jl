@@ -124,6 +124,8 @@ struct FlightAsyncRequest{R}
     producer::Union{Nothing,Task}
 end
 
+_start_flight_producer(f::Function) = errormonitor(@async f())
+
 function Base.wait(req::FlightAsyncRequest)
     producer = getfield(req, :producer)
     isnothing(producer) || wait(producer)

@@ -15,13 +15,107 @@
 # specific language governing permissions and limitations
 # under the License.
 
+mutable struct FlightBodyBuffer <: IO
+    data::Vector{UInt8}
+    pos::Int
+end
+
+FlightBodyBuffer(n::Integer) = FlightBodyBuffer(Vector{UInt8}(undef, n), 1)
+
+@inline function _ensureflightbodycapacity(io::FlightBodyBuffer, n::Integer)
+    io.pos + n - 1 <= length(io.data) || throw(
+        ArgumentError("FlightData body buffer exceeded expected Arrow IPC body length"),
+    )
+    return nothing
+end
+
+@inline function Base.unsafe_write(io::FlightBodyBuffer, p::Ptr{UInt8}, n::UInt)
+    len = Int(n)
+    _ensureflightbodycapacity(io, len)
+    data = io.data
+    GC.@preserve data unsafe_copyto!(pointer(data, io.pos), p, len)
+    io.pos += len
+    return len
+end
+
+@inline function Base.write(io::FlightBodyBuffer, x::UInt8)
+    _ensureflightbodycapacity(io, 1)
+    @inbounds io.data[io.pos] = x
+    io.pos += 1
+    return 1
+end
+
+@inline function Base.write(io::FlightBodyBuffer, data::StridedVector{UInt8})
+    GC.@preserve data begin
+        return Base.unsafe_write(io, pointer(data), UInt(length(data)))
+    end
+end
+
+@inline function Base.write(io::FlightBodyBuffer, data::Vector{UInt8})
+    GC.@preserve data begin
+        return Base.unsafe_write(io, pointer(data), UInt(length(data)))
+    end
+end
+
+function ArrowParent.writezeros(io::FlightBodyBuffer, n::Integer)
+    n <= 0 && return 0
+    _ensureflightbodycapacity(io, n)
+    fill!(view(io.data, io.pos:(io.pos + n - 1)), 0x00)
+    io.pos += n
+    return n
+end
+
+function ArrowParent.writearray(
+    io::FlightBodyBuffer,
+    ::Type{UInt8},
+    col::ArrowParent.ToList{UInt8,stringtype},
+) where {stringtype}
+    total = length(col)
+    _ensureflightbodycapacity(io, total)
+    pos = io.pos
+    body = io.data
+    off = ArrowParent._tolistoffset(col)
+    data = ArrowParent._tolistdata(col)
+    if off == 0
+        for chunk in data
+            chunk === missing && continue
+            bytes = stringtype ? ArrowParent._codeunits(chunk) : chunk
+            n = stringtype ? ArrowParent._ncodeunits(chunk) : length(bytes)
+            GC.@preserve body bytes begin
+                unsafe_copyto!(pointer(body, pos), pointer(bytes), n)
+            end
+            pos += n
+        end
+    else
+        len = length(data)
+        @inbounds for i = 1:len
+            chunk = data[i + off]
+            chunk === missing && continue
+            bytes = stringtype ? ArrowParent._codeunits(chunk) : chunk
+            n = stringtype ? ArrowParent._ncodeunits(chunk) : length(bytes)
+            GC.@preserve body bytes begin
+                unsafe_copyto!(pointer(body, pos), pointer(bytes), n)
+            end
+            pos += n
+        end
+    end
+    io.pos = pos
+    return total
+end
+
+function _takeflightbody!(io::FlightBodyBuffer)
+    len = io.pos - 1
+    len == length(io.data) || resize!(io.data, len)
+    return io.data
+end
+
 function _message_body(msg::ArrowParent.Message, alignment::Integer)
     msg.columns === nothing && return UInt8[]
-    io = IOBuffer()
+    io = FlightBodyBuffer(Int(msg.bodylen))
     for col in Tables.Columns(msg.columns)
         ArrowParent.writebuffer(io, col, alignment)
     end
-    return take!(io)
+    return _takeflightbody!(io)
 end
 
 function _flightdata_message(

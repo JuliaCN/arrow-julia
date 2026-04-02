@@ -165,6 +165,14 @@ function _flight_batch(message::Protocol.FlightData, id::Integer)
     return ArrowParent.Batch(msg, message.data_body, 1, Int(id))
 end
 
+function _flight_message_header(message::Protocol.FlightData)
+    isempty(message.data_header) &&
+        throw(ArgumentError("FlightData message is missing the Arrow IPC header"))
+    msg =
+        ArrowParent.FlatBuffers.getrootas(ArrowParent.Meta.Message, message.data_header, 0)
+    return msg, msg.header
+end
+
 function _ensure_schema!(x::FlightStream)
     isnothing(getfield(x, :schema)) || return x
     while true
@@ -176,8 +184,7 @@ function _ensure_schema!(x::FlightStream)
             )
             continue
         end
-        batch = _flight_batch(message, getfield(x, :nextid))
-        header = batch.msg.header
+        _, header = _flight_message_header(message)
         if header isa ArrowParent.Meta.Schema
             _register_schema!(x, header)
             return x
@@ -344,15 +351,28 @@ function _materialize_flight_table(
     end
     first_value, _ = state
     first_table = include_app_metadata ? first_value.table : first_value
+    next_state =
+        _iterate_flight_stream!(stream_state; include_app_metadata=include_app_metadata)
+    if next_state === nothing
+        return include_app_metadata ?
+               (
+            table=first_table,
+            app_metadata=Vector{Vector{UInt8}}([first_value.app_metadata]),
+        ) : first_table
+    end
     out = _copy_flight_table(first_table)
     batch_app_metadata =
         include_app_metadata ? Vector{Vector{UInt8}}([first_value.app_metadata]) : nothing
-    batchindex = 2
+    batch_value, _ = next_state
+    batch = include_app_metadata ? batch_value.table : batch_value
+    _append_flight_batch!(out, batch, 2)
+    include_app_metadata && push!(batch_app_metadata, batch_value.app_metadata)
+    batchindex = 3
     while true
-        next =
+        next_state =
             _iterate_flight_stream!(stream_state; include_app_metadata=include_app_metadata)
-        next === nothing && break
-        batch_value, _ = next
+        next_state === nothing && break
+        batch_value, _ = next_state
         batch = include_app_metadata ? batch_value.table : batch_value
         _append_flight_batch!(out, batch, batchindex)
         include_app_metadata && push!(batch_app_metadata, batch_value.app_metadata)
@@ -372,16 +392,17 @@ function _iterate_flight_stream!(x::FlightStream; include_app_metadata::Bool=fal
             )
             continue
         end
-        batch = _flight_batch(message, getfield(x, :nextid))
-        header = batch.msg.header
+        msg, header = _flight_message_header(message)
         if header isa ArrowParent.Meta.Schema
             _register_schema!(x, header)
             continue
         elseif header isa ArrowParent.Meta.DictionaryBatch
+            batch = ArrowParent.Batch(msg, message.data_body, 1, getfield(x, :nextid))
             _store_dictionary_batch!(x, batch, header)
             continue
         elseif header isa ArrowParent.Meta.RecordBatch
-            columns = collect(
+            batch = ArrowParent.Batch(msg, message.data_body, 1, getfield(x, :nextid))
+            columns = ArrowParent.materializecolumns(
                 ArrowParent.VectorIterator(
                     getfield(x, :schema),
                     batch,
@@ -426,6 +447,13 @@ function streambytes(
     return take!(io)
 end
 
+"""
+    Arrow.Flight.stream(messages; schema=nothing, convert=true, include_app_metadata=false)
+
+Decode a stream of Flight `FlightData` messages into a native Julia iterator of
+Arrow record batches. When `include_app_metadata=true`, each yielded element is
+paired with the batch's Flight `app_metadata`.
+"""
 function stream(
     messages;
     schema=nothing,
@@ -440,6 +468,14 @@ function stream(
     return include_app_metadata ? FlightStreamWithAppMetadata(flight_stream) : flight_stream
 end
 
+"""
+    Arrow.Flight.table(messages; schema=nothing, convert=true, include_app_metadata=false)
+
+Materialize a stream of Flight `FlightData` messages as an `Arrow.Table`
+without requiring callers to first assemble a standalone IPC byte buffer.
+Schema metadata, field metadata, and optional Flight `app_metadata` are
+preserved across the materialized table.
+"""
 function table(
     messages;
     schema=nothing,

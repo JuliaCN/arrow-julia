@@ -55,5 +55,21 @@ function flight_server_core_fixture()
             return :listactions_ok
         end,
     )
-    return (; protocol, context, descriptor_info, descriptor, service, implemented)
+    sample_table = Arrow.withmetadata(
+        (doc_id=["doc-a", "doc-b"], vector_score=[0.9, 0.5]);
+        metadata=Dict("request" => "sample"),
+        colmetadata=Dict(
+            :doc_id => Dict("semantic.role" => "document-id"),
+            :vector_score => Dict("semantic.role" => "score"),
+        ),
+    )
+    return (;
+        protocol,
+        context,
+        descriptor_info,
+        descriptor,
+        service,
+        implemented,
+        sample_table,
+    )
 end

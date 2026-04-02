@@ -56,6 +56,7 @@ class InteropFlightServer(fl.FlightServerBase):
                 }
             )
         }
+        self._put_app_metadata = {}
 
     def _descriptor(self, key):
         return fl.FlightDescriptor.for_path(*key)
@@ -94,8 +95,24 @@ class InteropFlightServer(fl.FlightServerBase):
 
     def do_put(self, context, descriptor, reader, writer):
         del context
-        self._datasets[descriptor_key(descriptor)] = reader.read_all()
-        writer.write(b"stored")
+        key = descriptor_key(descriptor)
+        schema = reader.schema
+        batches = []
+        metadata = []
+        while True:
+            try:
+                chunk = reader.read_chunk()
+            except StopIteration:
+                break
+            if chunk.data is None:
+                continue
+            batches.append(chunk.data)
+            if chunk.app_metadata is not None:
+                metadata.append(bytes(chunk.app_metadata).decode("utf-8"))
+        self._datasets[key] = pa.Table.from_batches(batches, schema=schema)
+        self._put_app_metadata[key] = metadata
+        payload = "stored" if not metadata else f"stored:{'|'.join(metadata)}"
+        writer.write(payload.encode("utf-8"))
 
     def do_exchange(self, context, descriptor, reader, writer):
         del context

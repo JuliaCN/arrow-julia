@@ -21,11 +21,7 @@ using UUIDs
 
 @testset "Flight IPC conversion helpers" begin
     missing_schema_fragment = "the server may have terminated the stream before emitting the first schema-bearing FlightData message"
-    descriptor = Arrow.Flight.Protocol.FlightDescriptor(
-        Arrow.Flight.Protocol.var"FlightDescriptor.DescriptorType".PATH,
-        UInt8[],
-        ["datasets", "roundtrip"],
-    )
+    descriptor = Arrow.Flight.pathdescriptor(("datasets", "roundtrip"))
     source = Tables.partitioner((
         (id=Int64[1, 2], label=["one", "two"]),
         (id=Int64[3], label=["three"]),
@@ -46,6 +42,7 @@ using UUIDs
     @test length(batches) == 2
     @test batches[1].id == [1, 2]
     @test batches[2].label == ["three"]
+    @test descriptor.path == ["datasets", "roundtrip"]
 
     tbl = Arrow.Flight.table(messages)
     @test tbl.id == [1, 2, 3]
@@ -149,6 +146,20 @@ using UUIDs
     @test wrapped_metadata_table.table.title == ["red", "blue", "green"]
     @test String.(wrapped_metadata_table.app_metadata) == ["wrapped:0", "wrapped:1"]
 
+    single_batch_metadata_source = (title=["solo"],)
+    single_batch_messages = Arrow.Flight.flightdata(
+        single_batch_metadata_source;
+        metadata=Dict("dataset" => "single-flight"),
+        colmetadata=Dict(:title => Dict("lang" => "en")),
+        app_metadata=("single:0",),
+    )
+    single_batch_table =
+        Arrow.Flight.table(single_batch_messages; include_app_metadata=true)
+    @test single_batch_table.table.title == ["solo"]
+    @test DataAPI.metadata(single_batch_table.table, "dataset") == "single-flight"
+    @test DataAPI.colmetadata(single_batch_table.table, :title, "lang") == "en"
+    @test String.(single_batch_table.app_metadata) == ["single:0"]
+
     reemitted_channel = Channel{Arrow.Flight.Protocol.FlightData}(8)
     reemit_task = @async Arrow.Flight.putflightdata!(
         reemitted_channel,
@@ -166,6 +177,18 @@ using UUIDs
     @test reemitted_table.title == metadata_table.title
     @test DataAPI.metadata(reemitted_table, "dataset") == "flight"
     @test DataAPI.colmetadata(reemitted_table, :title, "lang") == "en"
+
+    numeric_metadata_source = Arrow.withmetadata(
+        (vector_score=[0.9, 0.5],);
+        metadata=Dict("dataset" => "numeric-flight"),
+        colmetadata=Dict(:vector_score => Dict("semantic.role" => "score")),
+    )
+    numeric_metadata_messages = Arrow.Flight.flightdata(numeric_metadata_source)
+    numeric_metadata_table = Arrow.Flight.table(numeric_metadata_messages)
+    @test numeric_metadata_table.vector_score == [0.9, 0.5]
+    @test DataAPI.metadata(numeric_metadata_table, "dataset") == "numeric-flight"
+    @test DataAPI.colmetadata(numeric_metadata_table, :vector_score, "semantic.role") ==
+          "score"
 
     app_metadata_error = try
         Arrow.Flight.flightdata(metadata_source; app_metadata=("only-one",))

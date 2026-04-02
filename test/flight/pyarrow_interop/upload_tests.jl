@@ -22,6 +22,9 @@ function pyarrow_interop_test_upload(client, upload_descriptor)
     ))
     upload_metadata = Dict("dataset" => "interop-upload")
     upload_colmetadata = Dict(:name => Dict("lang" => "en"))
+    upload_app_metadata = ["upload:0", "upload:1"]
+    upload_source =
+        Arrow.Flight.withappmetadata(upload_source; app_metadata=upload_app_metadata)
     doput_req, doput_response = Arrow.Flight.doput(
         client,
         upload_source;
@@ -33,7 +36,7 @@ function pyarrow_interop_test_upload(client, upload_descriptor)
     gRPCClient.grpc_async_await(doput_req)
 
     @test !isempty(put_results)
-    @test String(put_results[end].app_metadata) == "stored"
+    @test String(put_results[end].app_metadata) == "stored:upload:0|upload:1"
 
     uploaded_info = Arrow.Flight.getflightinfo(client, upload_descriptor)
     uploaded_req, uploaded_channel =

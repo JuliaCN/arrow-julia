@@ -695,7 +695,8 @@ function collect_cols!(
     convert,
 )
     @wkspawn begin
-        cols = collect(VectorIterator(sch, batch, dictencodingslockable, convert))
+        cols =
+            materializecolumns(VectorIterator(sch, batch, dictencodingslockable, convert))
         @lock rb_cols_lock begin
             if length(rb_cols) < rbi
                 resize!(rb_cols, rbi)
@@ -772,6 +773,16 @@ buildmetadata(f::Union{Meta.Field,Meta.Schema}) = buildmetadata(f.custom_metadat
 buildmetadata(meta) = toidict(String(kv.key) => String(kv.value) for kv in meta)
 buildmetadata(::Nothing) = nothing
 buildmetadata(x::AbstractDict) = x
+
+function materializecolumns(x::VectorIterator)
+    cols = Vector{AbstractVector}(undef, length(x))
+    i = 1
+    for col in x
+        cols[i] = col
+        i += 1
+    end
+    return cols
+end
 
 function Base.iterate(
     x::VectorIterator,

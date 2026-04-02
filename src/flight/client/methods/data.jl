@@ -89,8 +89,8 @@ function doput(
 )
     request = Channel{Protocol.FlightData}(request_capacity)
     grpc_request = doput(client, request, response; headers=headers, kwargs...)
-    producer = errormonitor(
-        Threads.@spawn putflightdata!(
+    producer = _start_flight_producer() do
+        putflightdata!(
             request,
             source;
             close=true,
@@ -106,7 +106,7 @@ function doput(
             colmetadata=colmetadata,
             app_metadata=app_metadata,
         )
-    )
+    end
     return FlightAsyncRequest(grpc_request, producer)
 end
 
@@ -200,8 +200,8 @@ function doexchange(
 )
     request = Channel{Protocol.FlightData}(request_capacity)
     grpc_request = doexchange(client, request, response; headers=headers, kwargs...)
-    producer = errormonitor(
-        Threads.@spawn putflightdata!(
+    producer = _start_flight_producer() do
+        putflightdata!(
             request,
             source;
             close=true,
@@ -217,10 +217,19 @@ function doexchange(
             colmetadata=colmetadata,
             app_metadata=app_metadata,
         )
-    )
+    end
     return FlightAsyncRequest(grpc_request, producer)
 end
 
+"""
+    Arrow.Flight.doexchange(client, source; kwargs...) -> (request, response)
+    Arrow.Flight.doexchange(client, source, response; kwargs...) -> request
+
+Open a Flight `DoExchange` call from a native Julia source. The request stream
+is encoded with [`Arrow.Flight.putflightdata!`](@ref), so callers can pass a
+Tables.jl-compatible source directly instead of manually constructing
+`FlightData` messages.
+"""
 function doexchange(
     client::Client,
     source;

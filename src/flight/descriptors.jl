@@ -15,38 +15,21 @@
 # specific language governing permissions and limitations
 # under the License.
 
-export Client,
-    Service,
-    ServerCallContext,
-    MethodDescriptor,
-    ServiceDescriptor,
-    withheaders,
-    withtoken,
-    Protocol,
-    Generated,
-    authenticate,
-    callheader,
-    servicedescriptor,
-    lookupmethod,
-    dispatch,
-    exchangeservice,
-    tableservice,
-    streamservice,
-    pathdescriptor,
-    handshake,
-    listflights,
-    getflightinfo,
-    pollflightinfo,
-    getschema,
-    doget,
-    doput,
-    doexchange,
-    doaction,
-    listactions,
-    schemaipc,
-    streambytes,
-    stream,
-    table,
-    withappmetadata,
-    flightdata,
-    putflightdata!
+_normalized_descriptor_path(path::AbstractVector{<:AbstractString}) =
+    [String(segment) for segment in path]
+_normalized_descriptor_path(path::Tuple) = [String(segment) for segment in path]
+
+"""
+    Arrow.Flight.pathdescriptor(path)
+
+Build a Flight `PATH` descriptor from a tuple or vector of path segments
+without manually constructing the generated protobuf type.
+"""
+function pathdescriptor(path)
+    descriptor_type = Protocol.var"FlightDescriptor.DescriptorType"
+    return Protocol.FlightDescriptor(
+        descriptor_type.PATH,
+        UInt8[],
+        _normalized_descriptor_path(path),
+    )
+end

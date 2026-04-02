@@ -211,6 +211,13 @@ function _emitflightdata!(
     return nothing
 end
 
+"""
+    Arrow.Flight.flightdata(source; kwargs...)
+
+Encode a Tables.jl-compatible `source` as a vector of Flight `FlightData`
+messages. Schema metadata, field metadata, and optional batch-wise
+`app_metadata` are preserved through the emitted message stream.
+"""
 function flightdata(
     source;
     descriptor::Union{Nothing,Protocol.FlightDescriptor}=nothing,
@@ -244,6 +251,13 @@ function flightdata(
     return messages
 end
 
+"""
+    Arrow.Flight.putflightdata!(sink, source; close=false, kwargs...)
+
+Stream Flight `FlightData` messages for a Tables.jl-compatible `source` into
+`sink` without materializing the full message vector first. When `close=true`,
+the sink is closed after the final message is emitted.
+"""
 function putflightdata!(
     sink,
     source;

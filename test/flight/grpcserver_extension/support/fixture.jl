@@ -22,6 +22,7 @@ function grpcserver_extension_fixture(protocol)
     ticket = protocol.Ticket(b"native-ticket")
     dataset_metadata = Dict("dataset" => "native")
     dataset_colmetadata = Dict(:name => Dict("lang" => "en"))
+    dataset_app_metadata = ["put:0", "put:1"]
     messages = Arrow.Flight.flightdata(
         Tables.partitioner((
             (id=Int64[1, 2], name=["one", "two"]),
@@ -30,6 +31,7 @@ function grpcserver_extension_fixture(protocol)
         descriptor=descriptor,
         metadata=dataset_metadata,
         colmetadata=dataset_colmetadata,
+        app_metadata=dataset_app_metadata,
     )
     schema_bytes = Arrow.Flight.schemaipc(first(messages))
     info = protocol.FlightInfo(
@@ -44,11 +46,13 @@ function grpcserver_extension_fixture(protocol)
     handshake_requests = [protocol.HandshakeRequest(UInt64(0), b"native-token")]
     exchange_metadata = Dict("dataset" => "exchange")
     exchange_colmetadata = Dict(:name => Dict("lang" => "exchange"))
+    exchange_app_metadata = ["exchange:0"]
     exchange_messages = Arrow.Flight.flightdata(
         Tables.partitioner(((id=Int64[10], name=["ten"]),));
         descriptor=descriptor,
         metadata=exchange_metadata,
         colmetadata=exchange_colmetadata,
+        app_metadata=exchange_app_metadata,
     )
     return (
         descriptor=descriptor,
@@ -59,8 +63,10 @@ function grpcserver_extension_fixture(protocol)
         handshake_requests=handshake_requests,
         dataset_metadata=dataset_metadata,
         dataset_colmetadata=dataset_colmetadata,
+        dataset_app_metadata=dataset_app_metadata,
         exchange_messages=exchange_messages,
         exchange_metadata=exchange_metadata,
         exchange_colmetadata=exchange_colmetadata,
+        exchange_app_metadata=exchange_app_metadata,
     )
 end

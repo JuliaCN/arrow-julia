@@ -260,7 +260,17 @@ per record batch without dropping down to raw protocol messages.
 [`Arrow.Flight.withappmetadata`](@ref) provides the same payload metadata as a
 lightweight wrapper around a table or partitioned source, so the metadata can
 ride with the source itself instead of being re-specified at every emit call
-site.
+site. [`Arrow.Flight.pathdescriptor`](@ref) similarly provides a small
+high-level helper for PATH-based `FlightDescriptor` construction without
+manual protocol assembly. For server-side native Julia Flight composition,
+[`Arrow.Flight.exchangeservice`](@ref), [`Arrow.Flight.tableservice`](@ref),
+and [`Arrow.Flight.streamservice`](@ref) provide the corresponding
+high-level `DoExchange` assembly so callers do not need to hand-roll request
+priming, fallback descriptor resolution, response closing, or
+`putflightdata!` plumbing. The same layer also supports source-based local
+service invocation through [`Arrow.Flight.doexchange`](@ref),
+[`Arrow.Flight.table`](@ref), and [`Arrow.Flight.stream`](@ref) when the first
+argument is an in-process `Arrow.Flight.Service`.
 
 ## Writing arrow data
 
