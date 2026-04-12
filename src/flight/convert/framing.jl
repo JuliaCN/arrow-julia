@@ -60,7 +60,7 @@ end
 function ArrowParent.writezeros(io::FlightBodyBuffer, n::Integer)
     n <= 0 && return 0
     _ensureflightbodycapacity(io, n)
-    fill!(view(io.data, io.pos:(io.pos + n - 1)), 0x00)
+    fill!(view(io.data, (io.pos):(io.pos + n - 1)), 0x00)
     io.pos += n
     return n
 end

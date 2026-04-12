@@ -53,7 +53,7 @@ function grpcserver_extension_test_bidi_streaming(grpcserver, service, fixture, 
     )
     @test doput_closed[]
     @test length(doput_messages) == 1
-    @test String(doput_messages[1].app_metadata) == "stored"
+    @test FlightTestSupport.app_metadata_string(doput_messages[1].app_metadata) == "stored"
 
     doexchange_messages, doexchange_closed, doexchange_stream =
         grpcserver_capture_bidi_stream(
@@ -82,7 +82,8 @@ function grpcserver_extension_test_bidi_streaming(grpcserver, service, fixture, 
     doexchange_table_with_app =
         Arrow.Flight.table(doexchange_messages; include_app_metadata=true)
     @test doexchange_table_with_app.table.id == [10]
-    @test String.(doexchange_table_with_app.app_metadata) == fixture.exchange_app_metadata
+    @test FlightTestSupport.app_metadata_strings(doexchange_table_with_app.app_metadata) ==
+          fixture.exchange_app_metadata
 
     failing_service = Arrow.Flight.Service(
         doexchange=(ctx, request, response) ->

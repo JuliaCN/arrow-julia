@@ -132,12 +132,14 @@ function flight_server_core_test_exchange_helpers(fixture)
         );
         include_app_metadata=true,
     )
-    @test String.(table_result_with_app.app_metadata) == ["response:table"]
+    @test FlightTestSupport.app_metadata_strings(table_result_with_app.app_metadata) ==
+          ["response:table"]
 
     request_app_table_service = Arrow.Flight.tableservice(
         request -> begin
             @test collect(request.table.doc_id) == ["doc-a", "doc-b"]
-            @test String.(request.app_metadata) == ["request:table"]
+            @test FlightTestSupport.app_metadata_strings(request.app_metadata) ==
+                  ["request:table"]
             return request.table
         end;
         include_request_app_metadata=true,
@@ -151,7 +153,8 @@ function flight_server_core_test_exchange_helpers(fixture)
         include_app_metadata=true,
     )
     @test collect(request_app_table.table.doc_id) == ["doc-a", "doc-b"]
-    @test String.(request_app_table.app_metadata) == ["response:table-request-app"]
+    @test FlightTestSupport.app_metadata_strings(request_app_table.app_metadata) ==
+          ["response:table-request-app"]
 
     batch_a = Arrow.withmetadata(
         (doc_id=["doc-a"], vector_score=[0.9]);
@@ -239,7 +242,8 @@ function flight_server_core_test_exchange_helpers(fixture)
     local_batches = collect(local_stream)
     @test length(local_batches) == 1
     @test collect(local_batches[1].table.doc_id) == ["doc-a", "doc-b"]
-    @test String(local_batches[1].app_metadata) == "response:stream"
+    @test FlightTestSupport.app_metadata_string(local_batches[1].app_metadata) ==
+          "response:stream"
     @test Arrow.getmetadata(local_batches[1].table) == Dict("service" => "stream")
     @test Arrow.getmetadata(local_batches[1].table.doc_id) ==
           Dict("response.role" => "stream-doc-id")
@@ -250,8 +254,9 @@ function flight_server_core_test_exchange_helpers(fixture)
             @test length(incoming) == 2
             @test collect(incoming[1].table.doc_id) == ["doc-a"]
             @test collect(incoming[2].table.doc_id) == ["doc-b"]
-            @test String.(getproperty.(incoming, :app_metadata)) ==
-                  ["request:stream:0", "request:stream:1"]
+            @test FlightTestSupport.app_metadata_strings(
+                getproperty.(incoming, :app_metadata),
+            ) == ["request:stream:0", "request:stream:1"]
             return Tables.partitioner(getproperty.(incoming, :table))
         end;
         include_request_app_metadata=true,
@@ -271,8 +276,9 @@ function flight_server_core_test_exchange_helpers(fixture)
     @test length(request_app_stream_batches) == 2
     @test collect(request_app_stream_batches[1].table.doc_id) == ["doc-a"]
     @test collect(request_app_stream_batches[2].table.doc_id) == ["doc-b"]
-    @test String.(getproperty.(request_app_stream_batches, :app_metadata)) ==
-          ["response:stream-request-app", "response:stream-request-app"]
+    @test FlightTestSupport.app_metadata_strings(
+        getproperty.(request_app_stream_batches, :app_metadata),
+    ) == ["response:stream-request-app", "response:stream-request-app"]
 
     local_exchange_with_app = Arrow.Flight.table(
         service,
@@ -281,5 +287,6 @@ function flight_server_core_test_exchange_helpers(fixture)
         descriptor=descriptor,
         include_app_metadata=true,
     )
-    @test String.(local_exchange_with_app.app_metadata) == ["response:exchange"]
+    @test FlightTestSupport.app_metadata_strings(local_exchange_with_app.app_metadata) ==
+          ["response:exchange"]
 end

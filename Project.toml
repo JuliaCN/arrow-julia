@@ -47,8 +47,15 @@ gRPCServer = "608c6337-0d7d-447f-bb69-0f5674ee3959"
 [extensions]
 ArrowgRPCServerExt = "gRPCServer"
 
+[extras]
+gRPCServer = "608c6337-0d7d-447f-bb69-0f5674ee3959"
+
+[targets]
+test = ["gRPCServer"]
+
 [sources]
 ArrowTypes = { path = "src/ArrowTypes" }
+gRPCServer = { url = "https://github.com/tao3k/gRPCServer.jl.git", rev = "92c75a6d75236977b8fb1b15dc2b94b0f2b202a0" }
 
 [compat]
 ArrowTypes = "1.1,2"

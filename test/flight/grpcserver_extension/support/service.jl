@@ -71,8 +71,9 @@ function grpcserver_extension_service(protocol, fixture)
             @test incoming[1].table.name == ["one", "two"]
             @test Arrow.getmetadata(incoming[1].table)["dataset"] == "native"
             @test Arrow.getmetadata(incoming[1].table.name)["lang"] == "en"
-            @test String.(getproperty.(incoming, :app_metadata)) ==
-                  fixture.dataset_app_metadata
+            @test FlightTestSupport.app_metadata_strings(
+                getproperty.(incoming, :app_metadata),
+            ) == fixture.dataset_app_metadata
             @test incoming[2].table.id == [3]
             @test incoming[2].table.name == ["three"]
             put!(response, protocol.PutResult(b"stored"))
@@ -83,8 +84,9 @@ function grpcserver_extension_service(protocol, fixture)
             @test Arrow.Flight.callheader(ctx, "authorization") == "Bearer native"
             incoming = collect(Arrow.Flight.stream(request; include_app_metadata=true))
             @test length(incoming) == 1
-            @test String.(getproperty.(incoming, :app_metadata)) ==
-                  fixture.exchange_app_metadata
+            @test FlightTestSupport.app_metadata_strings(
+                getproperty.(incoming, :app_metadata),
+            ) == fixture.exchange_app_metadata
             @test Arrow.getmetadata(incoming[1].table)["dataset"] == "exchange"
             @test Arrow.getmetadata(incoming[1].table.name)["lang"] == "exchange"
             Arrow.Flight.putflightdata!(

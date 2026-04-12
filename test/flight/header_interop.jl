@@ -23,42 +23,47 @@
         protocol = Arrow.Flight.Protocol
 
         try
-            FlightTestSupport.with_test_grpc_handle() do grpc
-                base_client =
-                    Arrow.Flight.Client("grpc://127.0.0.1:$(server.port)"; grpc=grpc)
-                client = Arrow.Flight.withheaders(
-                    base_client,
-                    "authorization" => "Bearer token1234",
-                )
+            FlightTestSupport.with_transient_flight_startup_retry() do
+                FlightTestSupport.with_test_grpc_handle() do grpc
+                    base_client = Arrow.Flight.Client(
+                        "grpc://127.0.0.1:$(server.port)";
+                        grpc=grpc,
+                        deadline=30,
+                    )
+                    client = Arrow.Flight.withheaders(
+                        base_client,
+                        "authorization" => "Bearer token1234",
+                    )
 
-                actions_req, actions_channel = Arrow.Flight.listactions(client)
-                actions = collect(actions_channel)
-                gRPCClient.grpc_async_await(actions_req)
-                @test actions == [
-                    protocol.ActionType(
-                        "echo-authorization",
-                        "Return the Authorization header",
-                    ),
-                ]
+                    actions_req, actions_channel = Arrow.Flight.listactions(client)
+                    actions = collect(actions_channel)
+                    gRPCClient.grpc_async_await(actions_req)
+                    @test actions == [
+                        protocol.ActionType(
+                            "echo-authorization",
+                            "Return the Authorization header",
+                        ),
+                    ]
 
-                action_req, action_channel = Arrow.Flight.doaction(
-                    client,
-                    protocol.Action("echo-authorization", UInt8[]),
-                )
-                action_results = collect(action_channel)
-                gRPCClient.grpc_async_await(action_req)
-                @test length(action_results) == 1
-                @test String(action_results[1].body) == "Bearer token1234"
+                    action_req, action_channel = Arrow.Flight.doaction(
+                        client,
+                        protocol.Action("echo-authorization", UInt8[]),
+                    )
+                    action_results = collect(action_channel)
+                    gRPCClient.grpc_async_await(action_req)
+                    @test length(action_results) == 1
+                    @test String(action_results[1].body) == "Bearer token1234"
 
-                call_req, call_channel = Arrow.Flight.doaction(
-                    base_client,
-                    protocol.Action("echo-authorization", UInt8[]);
-                    headers=["authorization" => "Bearer call-level"],
-                )
-                call_results = collect(call_channel)
-                gRPCClient.grpc_async_await(call_req)
-                @test length(call_results) == 1
-                @test String(call_results[1].body) == "Bearer call-level"
+                    call_req, call_channel = Arrow.Flight.doaction(
+                        base_client,
+                        protocol.Action("echo-authorization", UInt8[]);
+                        headers=["authorization" => "Bearer call-level"],
+                    )
+                    call_results = collect(call_channel)
+                    gRPCClient.grpc_async_await(call_req)
+                    @test length(call_results) == 1
+                    @test String(call_results[1].body) == "Bearer call-level"
+                end
             end
         finally
             FlightTestSupport.stop_pyarrow_flight_server(server)

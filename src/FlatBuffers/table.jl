@@ -110,7 +110,19 @@ function Array{T}(t::Table, off) where {T}
     a = vector(t, off)
     S = T <: Table ? UOffsetT : T <: Struct ? NTuple{structsizeof(T),UInt8} : T
     ptr = convert(Ptr{S}, pointer(bytes(t), a + 1))
-    data = unsafe_wrap(Base.Array, ptr, vectorlen(t, off))
+    len = vectorlen(t, off)
+    alignment = Base.datatype_alignment(S)
+    data = if alignment > 1 && (UInt(ptr) & UInt(alignment - 1)) != 0
+        copied = Base.Vector{S}(undef, len)
+        unsafe_copyto!(
+            convert(Ptr{UInt8}, pointer(copied)),
+            convert(Ptr{UInt8}, ptr),
+            len * sizeof(S),
+        )
+        copied
+    else
+        unsafe_wrap(Base.Array, ptr, len)
+    end
     return Array{T,S,typeof(t)}(t, a, data)
 end
 

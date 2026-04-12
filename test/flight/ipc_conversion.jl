@@ -127,10 +127,15 @@ using UUIDs
     @test length(metadata_batches_with_app) == 2
     @test metadata_batches_with_app[1].table.title == ["red", "blue"]
     @test metadata_batches_with_app[2].table.title == ["green"]
-    @test String(metadata_batches_with_app[1].app_metadata) == "batch:0"
-    @test String(metadata_batches_with_app[2].app_metadata) == "batch:1"
+    @test FlightTestSupport.app_metadata_string(
+        metadata_batches_with_app[1].app_metadata,
+    ) == "batch:0"
+    @test FlightTestSupport.app_metadata_string(
+        metadata_batches_with_app[2].app_metadata,
+    ) == "batch:1"
     @test metadata_table_with_app.table.title == ["red", "blue", "green"]
-    @test String.(metadata_table_with_app.app_metadata) == ["batch:0", "batch:1"]
+    @test FlightTestSupport.app_metadata_strings(metadata_table_with_app.app_metadata) ==
+          ["batch:0", "batch:1"]
 
     wrapped_metadata_source = Arrow.Flight.withappmetadata(
         metadata_source;
@@ -144,7 +149,8 @@ using UUIDs
     wrapped_metadata_table =
         Arrow.Flight.table(wrapped_metadata_messages; include_app_metadata=true)
     @test wrapped_metadata_table.table.title == ["red", "blue", "green"]
-    @test String.(wrapped_metadata_table.app_metadata) == ["wrapped:0", "wrapped:1"]
+    @test FlightTestSupport.app_metadata_strings(wrapped_metadata_table.app_metadata) ==
+          ["wrapped:0", "wrapped:1"]
 
     single_batch_metadata_source = (title=["solo"],)
     single_batch_messages = Arrow.Flight.flightdata(
@@ -158,7 +164,8 @@ using UUIDs
     @test single_batch_table.table.title == ["solo"]
     @test DataAPI.metadata(single_batch_table.table, "dataset") == "single-flight"
     @test DataAPI.colmetadata(single_batch_table.table, :title, "lang") == "en"
-    @test String.(single_batch_table.app_metadata) == ["single:0"]
+    @test FlightTestSupport.app_metadata_strings(single_batch_table.app_metadata) ==
+          ["single:0"]
 
     reemitted_channel = Channel{Arrow.Flight.Protocol.FlightData}(8)
     reemit_task = @async Arrow.Flight.putflightdata!(
@@ -171,8 +178,9 @@ using UUIDs
     )
     reemitted_messages = collect(reemitted_channel)
     wait(reemit_task)
-    @test String.(getfield.(reemitted_messages[2:end], :app_metadata)) ==
-          ["batch:0", "batch:1"]
+    @test FlightTestSupport.app_metadata_strings(
+        getfield.(reemitted_messages[2:end], :app_metadata),
+    ) == ["batch:0", "batch:1"]
     reemitted_table = Arrow.Flight.table(reemitted_messages)
     @test reemitted_table.title == metadata_table.title
     @test DataAPI.metadata(reemitted_table, "dataset") == "flight"

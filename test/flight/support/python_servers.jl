@@ -15,6 +15,43 @@
 # specific language governing permissions and limitations
 # under the License.
 
+const PYARROW_FLIGHT_SERVER_READY_TIMEOUT_SECS = 10.0
+
+function wait_for_python_flight_server(
+    process::Base.Process,
+    stderr::Pipe,
+    port::Integer;
+    timeout_secs::Real=PYARROW_FLIGHT_SERVER_READY_TIMEOUT_SECS,
+)
+    deadline = time() + Float64(timeout_secs)
+    last_error = nothing
+
+    while time() < deadline
+        if process_exited(process)
+            wait(process)
+            errout = String(read(stderr))
+            error(
+                "pyarrow Flight server exited before becoming ready: stderr=$(repr(errout))",
+            )
+        end
+
+        try
+            socket = Sockets.connect(ip"127.0.0.1", port)
+            close(socket)
+            return
+        catch err
+            last_error = err
+            sleep(0.05)
+        end
+    end
+
+    detail =
+        isnothing(last_error) ? "unknown readiness failure" : sprint(showerror, last_error)
+    error(
+        "pyarrow Flight server did not become ready on 127.0.0.1:$(port) within $(timeout_secs)s: $(detail)",
+    )
+end
+
 function start_python_flight_server(
     script_name::AbstractString;
     env_overrides::AbstractDict{<:AbstractString,<:AbstractString}=Dict{String,String}(),
@@ -44,6 +81,7 @@ function start_python_flight_server(
         )
     end
     port = parse(Int, chomp(line))
+    wait_for_python_flight_server(process, stderr, port)
     return PyArrowFlightServer(process, stdout, stderr, port)
 end
 

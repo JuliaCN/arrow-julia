@@ -15,22 +15,5 @@
 # specific language governing permissions and limitations
 # under the License.
 
-using gRPCClient
-using Tables
-
-include("flight/support.jl")
-include("flight/header_interop.jl")
-include("flight/handshake_interop.jl")
-include("flight/tls_interop.jl")
-include("flight/poll_interop.jl")
-include("flight/generated_protocol_tests.jl")
-include("flight/client_surface.jl")
-include("flight/server_core.jl")
-include("flight/grpcserver_extension.jl")
-include("flight/ipc_conversion.jl")
-include("flight/ipc_schema_separation.jl")
-include("flight/pyarrow_interop.jl")
-
-@testset "Flight generated protocol surface" begin
-    flight_test_generated_protocol_formatter_surface()
-end
+app_metadata_string(value::AbstractVector{UInt8}) = String(copy(value))
+app_metadata_strings(values) = map(app_metadata_string, values)

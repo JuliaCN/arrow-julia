@@ -34,7 +34,17 @@ end
 function readbuffer(t::AbstractVector{UInt8}, pos::Integer, ::Type{T}) where {T}
     GC.@preserve t begin
         ptr = convert(Ptr{T}, pointer(t, pos + 1))
-        x = unsafe_load(ptr)
+        alignment = Base.datatype_alignment(T)
+        if alignment > 1 && (UInt(ptr) & UInt(alignment - 1)) != 0
+            value = Ref{T}()
+            unsafe_copyto!(
+                convert(Ptr{UInt8}, Base.unsafe_convert(Ptr{T}, value)),
+                convert(Ptr{UInt8}, ptr),
+                sizeof(T),
+            )
+            return value[]
+        end
+        return unsafe_load(ptr)
     end
 end
 

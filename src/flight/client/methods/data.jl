@@ -55,6 +55,47 @@ doput(
     headers=_merge_headers(client, headers),
 )
 
+function _buffer_flightdata_request(
+    source;
+    max_send_message_length::Integer,
+    descriptor::Union{Nothing,Protocol.FlightDescriptor}=nothing,
+    compress=nothing,
+    largelists::Bool=false,
+    denseunions::Bool=true,
+    dictencode::Bool=false,
+    dictencodenested::Bool=false,
+    alignment::Integer=DEFAULT_IPC_ALIGNMENT,
+    maxdepth::Integer=ArrowParent.DEFAULT_MAX_DEPTH,
+    metadata::Union{Nothing,Any}=nothing,
+    colmetadata::Union{Nothing,Any}=nothing,
+    app_metadata=nothing,
+)
+    request = IOBuffer()
+    _emitflightdata!(
+        function (message)
+            encoded = gRPCClient.grpc_encode_request_iobuffer(
+                message;
+                max_send_message_length=max_send_message_length,
+            )
+            write(request, take!(encoded))
+        end,
+        source;
+        descriptor=descriptor,
+        compress=compress,
+        largelists=largelists,
+        denseunions=denseunions,
+        dictencode=dictencode,
+        dictencodenested=dictencodenested,
+        alignment=alignment,
+        maxdepth=maxdepth,
+        metadata=metadata,
+        colmetadata=colmetadata,
+        app_metadata=app_metadata,
+    )
+    seekstart(request)
+    return request
+end
+
 function doput(
     client::Client;
     request_capacity::Integer=DEFAULT_STREAM_BUFFER,
@@ -87,27 +128,30 @@ function doput(
     app_metadata=nothing,
     kwargs...,
 )
-    request = Channel{Protocol.FlightData}(request_capacity)
-    grpc_request = doput(client, request, response; headers=headers, kwargs...)
-    producer = _start_flight_producer() do
-        putflightdata!(
-            request,
-            source;
-            close=true,
-            descriptor=descriptor,
-            compress=compress,
-            largelists=largelists,
-            denseunions=denseunions,
-            dictencode=dictencode,
-            dictencodenested=dictencodenested,
-            alignment=alignment,
-            maxdepth=maxdepth,
-            metadata=metadata,
-            colmetadata=colmetadata,
-            app_metadata=app_metadata,
-        )
-    end
-    return FlightAsyncRequest(grpc_request, producer)
+    rpc_client = _doput_client(client; kwargs...)
+    request = _buffer_flightdata_request(
+        source;
+        max_send_message_length=rpc_client.max_send_message_length,
+        descriptor=descriptor,
+        compress=compress,
+        largelists=largelists,
+        denseunions=denseunions,
+        dictencode=dictencode,
+        dictencodenested=dictencodenested,
+        alignment=alignment,
+        maxdepth=maxdepth,
+        metadata=metadata,
+        colmetadata=colmetadata,
+        app_metadata=app_metadata,
+    )
+    grpc_request = _grpc_async_prebuffered_request(
+        client,
+        rpc_client,
+        request,
+        response;
+        headers=_merge_headers(client, headers),
+    )
+    return FlightAsyncRequest(grpc_request, nothing)
 end
 
 function doput(
@@ -199,7 +243,6 @@ function doexchange(
     kwargs...,
 )
     request = Channel{Protocol.FlightData}(request_capacity)
-    grpc_request = doexchange(client, request, response; headers=headers, kwargs...)
     producer = _start_flight_producer() do
         putflightdata!(
             request,
@@ -218,7 +261,14 @@ function doexchange(
             app_metadata=app_metadata,
         )
     end
-    return FlightAsyncRequest(grpc_request, producer)
+    try
+        grpc_request = doexchange(client, request, response; headers=headers, kwargs...)
+        return FlightAsyncRequest(grpc_request, producer)
+    catch
+        isopen(request) && close(request)
+        wait(producer)
+        rethrow()
+    end
 end
 
 """

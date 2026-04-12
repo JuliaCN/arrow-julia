@@ -774,6 +774,107 @@ buildmetadata(meta) = toidict(String(kv.key) => String(kv.value) for kv in meta)
 buildmetadata(::Nothing) = nothing
 buildmetadata(x::AbstractDict) = x
 
+function ArrowTypes.physicallayout(field::Meta.Field, convert::Bool=true)
+    dictionary = field.dictionary
+    if dictionary !== nothing
+        index_storage =
+            dictionary.indexType === nothing ? Int32 :
+            juliaeltype(field, dictionary.indexType, false)
+        return ArrowTypes.DictionaryEncodedLayout{index_storage}()
+    end
+    return ArrowTypes.physicallayout(field, field.type, convert)
+end
+
+ArrowTypes.physicallayout(field::Meta.Field, ::Meta.Null, convert::Bool=true) =
+    ArrowTypes.NullLayout()
+
+ArrowTypes.physicallayout(field::Meta.Field, ::Meta.Bool, convert::Bool=true) =
+    ArrowTypes.BooleanLayout()
+
+ArrowTypes.physicallayout(
+    field::Meta.Field,
+    ::Union{
+        Meta.Int,
+        Meta.FloatingPoint,
+        Meta.Decimal,
+        Meta.Date,
+        Meta.Time,
+        Meta.Timestamp,
+        Meta.Interval,
+        Meta.Duration,
+    },
+    convert::Bool=true,
+) = ArrowTypes.PrimitiveLayout{juliaeltype(field, field.type, false)}()
+
+ArrowTypes.physicallayout(
+    field::Meta.Field,
+    ::Union{Meta.Binary,Meta.Utf8},
+    convert::Bool=true,
+) = ArrowTypes.VariableBinaryLayout{Int32}()
+
+ArrowTypes.physicallayout(
+    field::Meta.Field,
+    ::Union{Meta.LargeBinary,Meta.LargeUtf8},
+    convert::Bool=true,
+) = ArrowTypes.VariableBinaryLayout{Int64}()
+
+ArrowTypes.physicallayout(
+    field::Meta.Field,
+    ::Union{Meta.BinaryView,Meta.Utf8View},
+    convert::Bool=true,
+) = ArrowTypes.VariableBinaryViewLayout()
+
+ArrowTypes.physicallayout(
+    field::Meta.Field,
+    layout::Meta.FixedSizeBinary,
+    convert::Bool=true,
+) = ArrowTypes.FixedSizeBinaryLayout{Int(layout.byteWidth)}()
+
+ArrowTypes.physicallayout(
+    field::Meta.Field,
+    ::Union{Meta.List,Meta.Map},
+    convert::Bool=true,
+) = ArrowTypes.VariableListLayout{Int32}()
+
+ArrowTypes.physicallayout(field::Meta.Field, ::Meta.LargeList, convert::Bool=true) =
+    ArrowTypes.VariableListLayout{Int64}()
+
+ArrowTypes.physicallayout(field::Meta.Field, ::Meta.ListView, convert::Bool=true) =
+    ArrowTypes.VariableListViewLayout{Int32}()
+
+ArrowTypes.physicallayout(field::Meta.Field, ::Meta.LargeListView, convert::Bool=true) =
+    ArrowTypes.VariableListViewLayout{Int64}()
+
+ArrowTypes.physicallayout(
+    field::Meta.Field,
+    layout::Meta.FixedSizeList,
+    convert::Bool=true,
+) = ArrowTypes.FixedSizeListLayout{Int(layout.listSize)}()
+
+ArrowTypes.physicallayout(field::Meta.Field, ::Meta.Struct, convert::Bool=true) =
+    ArrowTypes.StructLayout()
+
+function ArrowTypes.physicallayout(
+    field::Meta.Field,
+    layout::Meta.Union,
+    convert::Bool=true,
+)
+    mode = layout.mode == Meta.UnionMode.Dense ? :dense : :sparse
+    return ArrowTypes.UnionLayout{mode}()
+end
+
+function ArrowTypes.physicallayout(
+    field::Meta.Field,
+    ::Meta.RunEndEncoded,
+    convert::Bool=true,
+)
+    children = field.children
+    run_ends = children === nothing ? nothing : first(children)
+    run_end_type =
+        run_ends === nothing ? Int32 : juliaeltype(run_ends, buildmetadata(run_ends), false)
+    return ArrowTypes.RunEndEncodedLayout{run_end_type}()
+end
+
 function materializecolumns(x::VectorIterator)
     cols = Vector{AbstractVector}(undef, length(x))
     i = 1
@@ -914,16 +1015,12 @@ function reinterp(::Type{T}, batch, buf, compression) where {T}
         len, bytes = uncompress(ptr, buf, compression)
         ptr = pointer(bytes)
     end
-    # it would be technically more correct to check that T.layout->alignment > 8
-    # but the datatype alignment isn't officially exported, so we're using
-    # primitive types w/ sizeof(T) >= 16 as a proxy for types that need 16-byte alignment
-    if sizeof(T) >= 16 && (UInt(ptr) & 15) != 0
+    alignment = Base.datatype_alignment(T)
+    if alignment > 1 && (UInt(ptr) & UInt(alignment - 1)) != 0
         # https://github.com/apache/arrow-julia/issues/345
         # https://github.com/JuliaLang/julia/issues/42326
-        # need to ensure that the data/pointers are aligned to 16 bytes
-        # so we can't use unsafe_wrap here, but do an extra allocation
-        # to avoid the allocation, user needs to ensure input buffer is
-        # 16-byte aligned (somehow, it's not super straightforward how to ensure that)
+        # need to ensure that the data/pointers are aligned to T's actual
+        # storage requirement before reinterpreting the underlying bytes
         A = Vector{T}(undef, div(len, sizeof(T)))
         unsafe_copyto!(Ptr{UInt8}(pointer(A)), ptr, len)
         return bytes, A

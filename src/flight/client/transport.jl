@@ -90,6 +90,10 @@ function _grpc_async_request(
     return lock(rpc_client.grpc.lock) do
         req = gRPCClient.grpc_async_request(rpc_client, request, response)
         _apply_client_options_unlocked!(client, req, headers)
+        # gRPCClient starts request-stream uploads with an empty IOBuffer. Arm the
+        # first pause-release cycle so the producer task can fill the buffer.
+        notify(req.curl_done_reading)
+        req
     end
 end
 
@@ -103,6 +107,10 @@ function _grpc_async_request(
     return lock(rpc_client.grpc.lock) do
         req = gRPCClient.grpc_async_request(rpc_client, request, response)
         _apply_client_options_unlocked!(client, req, headers)
+        # Bidirectional uploads share the same empty-buffer startup path as
+        # client-streaming requests, so they need the same initial wakeup.
+        notify(req.curl_done_reading)
+        req
     end
 end
 
@@ -116,7 +124,42 @@ function _grpc_async_request(
     return lock(rpc_client.grpc.lock) do
         req = gRPCClient.grpc_async_request(rpc_client, request, response)
         _apply_client_options_unlocked!(client, req, headers)
+        # Bidirectional uploads also start with an empty request buffer, so the
+        # producer task needs the same first wakeup as the other streaming
+        # request modes.
+        notify(req.curl_done_reading)
+        req
     end
+end
+
+function _grpc_async_prebuffered_request(
+    client::Client,
+    rpc_client::gRPCClient.gRPCServiceClient{TRequest,true,TResponse,true},
+    request::IOBuffer,
+    response::Channel{TResponse};
+    headers::AbstractVector{HeaderPair}=HeaderPair[],
+) where {TRequest<:Any,TResponse<:Any}
+    seekstart(request)
+    req = lock(rpc_client.grpc.lock) do
+        req = gRPCClient.gRPCRequest(
+            rpc_client.grpc,
+            gRPCClient.url(rpc_client),
+            request,
+            IOBuffer(),
+            gRPCClient.NOCHANNEL,
+            Channel{IOBuffer}(16);
+            deadline=rpc_client.deadline,
+            keepalive=rpc_client.keepalive,
+            max_send_message_length=rpc_client.max_send_message_length,
+            max_recieve_message_length=rpc_client.max_recieve_message_length,
+        )
+        _apply_client_options_unlocked!(client, req, headers)
+    end
+
+    response_task = Threads.@spawn gRPCClient.grpc_async_stream_response(req, response)
+    errormonitor(response_task)
+
+    return req
 end
 
 struct FlightAsyncRequest{R}

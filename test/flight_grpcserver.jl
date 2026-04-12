@@ -51,11 +51,16 @@ function locate_grpcserver()
         return candidate
     end
     for root in flight_grpcserver_roots(TEST_ROOT)
-        candidate = joinpath(root, ".cache", "vendor", "gRPCServer.jl")
-        isdir(candidate) && return candidate
+        for candidate in (
+            joinpath(root, ".data", "gRPCServer.jl"),
+            joinpath(root, "gRPCServer.jl"),
+            joinpath(root, ".cache", "vendor", "gRPCServer.jl"),
+        )
+            isdir(candidate) && return candidate
+        end
     end
     error(
-        "Could not locate vendored gRPCServer.jl. " *
+        "Could not locate local gRPCServer.jl checkout. " *
         "Set ARROW_FLIGHT_GRPCSERVER_PATH to an explicit checkout path.",
     )
 end

@@ -18,8 +18,11 @@
 module FlightTestSupport
 
 using gRPCClient
+using Sockets
 
 export PyArrowFlightServer,
+    app_metadata_string,
+    app_metadata_strings,
     flight_test_roots,
     pyarrow_flight_python,
     start_pyarrow_flight_server,
@@ -28,12 +31,14 @@ export PyArrowFlightServer,
     start_poll_flight_server,
     start_tls_flight_server,
     stop_pyarrow_flight_server,
+    with_transient_flight_startup_retry,
     with_test_grpc_handle,
     load_grpcserver,
     generate_test_tls_certificate,
     next_message_factory
 
 include("support/types.jl")
+include("support/app_metadata.jl")
 include("support/paths.jl")
 include("support/python_servers.jl")
 include("support/grpc.jl")

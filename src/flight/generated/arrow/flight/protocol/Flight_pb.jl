@@ -175,7 +175,7 @@ function PB._encoded_size(x::Action)
     return encoded_size
 end
 
-@enumx var"FlightDescriptor.DescriptorType" UNKNOWN=0 PATH=1 CMD=2
+@enumx var"FlightDescriptor.DescriptorType" UNKNOWN = 0 PATH = 1 CMD = 2
 
 struct Criteria
     expression::Vector{UInt8}
@@ -350,8 +350,8 @@ PB.field_numbers(::Type{var"SessionOptionValue.StringListValue"}) = (; values=1)
 
 function PB.decode(
     d::PB.AbstractProtoDecoder,
-    ::Type{<:var"SessionOptionValue.StringListValue"},
-)
+    ::Type{T},
+) where {T<:var"SessionOptionValue.StringListValue"}
     values = PB.BufferedVector{String}()
     while !PB.message_done(d)
         field_number, wire_type = PB.decode_tag(d)
@@ -405,7 +405,8 @@ function PB._encoded_size(x::SchemaResult)
     return encoded_size
 end
 
-@enumx CancelStatus CANCEL_STATUS_UNSPECIFIED=0 CANCEL_STATUS_CANCELLED=1 CANCEL_STATUS_CANCELLING=2 CANCEL_STATUS_NOT_CANCELLABLE=3
+@enumx CancelStatus CANCEL_STATUS_UNSPECIFIED = 0 CANCEL_STATUS_CANCELLED = 1 CANCEL_STATUS_CANCELLING =
+    2 CANCEL_STATUS_NOT_CANCELLABLE = 3
 
 struct GetSessionOptionsRequest end
 
@@ -426,7 +427,8 @@ function PB._encoded_size(x::GetSessionOptionsRequest)
     return encoded_size
 end
 
-@enumx var"SetSessionOptionsResult.ErrorValue" UNSPECIFIED=0 INVALID_NAME=1 INVALID_VALUE=2 ERROR=3
+@enumx var"SetSessionOptionsResult.ErrorValue" UNSPECIFIED = 0 INVALID_NAME = 1 INVALID_VALUE =
+    2 ERROR = 3
 
 struct Location
     uri::String
@@ -458,7 +460,8 @@ function PB._encoded_size(x::Location)
     return encoded_size
 end
 
-@enumx var"CloseSessionResult.Status" UNSPECIFIED=0 CLOSED=1 CLOSING=2 NOT_CLOSEABLE=3
+@enumx var"CloseSessionResult.Status" UNSPECIFIED = 0 CLOSED = 1 CLOSING = 2 NOT_CLOSEABLE =
+    3
 
 struct BasicAuth
     username::String
@@ -596,7 +599,7 @@ end
 function PB.encode(e::PB.AbstractProtoEncoder, x::SessionOptionValue)
     initpos = position(e.io)
     if isnothing(x.option_value)
-        ;
+
     elseif x.option_value.name === :string_value
         PB.encode(e, 1, x.option_value[]::String)
     elseif x.option_value.name === :bool_value
@@ -613,7 +616,7 @@ end
 function PB._encoded_size(x::SessionOptionValue)
     encoded_size = 0
     if isnothing(x.option_value)
-        ;
+
     elseif x.option_value.name === :string_value
         encoded_size += PB._encoded_size(x.option_value[]::String, 1)
     elseif x.option_value.name === :bool_value
@@ -668,7 +671,10 @@ PB.default_values(::Type{var"SetSessionOptionsResult.Error"}) =
     (; value=var"SetSessionOptionsResult.ErrorValue".UNSPECIFIED)
 PB.field_numbers(::Type{var"SetSessionOptionsResult.Error"}) = (; value=1)
 
-function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:var"SetSessionOptionsResult.Error"})
+function PB.decode(
+    d::PB.AbstractProtoDecoder,
+    ::Type{T},
+) where {T<:var"SetSessionOptionsResult.Error"}
     value = var"SetSessionOptionsResult.ErrorValue".UNSPECIFIED
     while !PB.message_done(d)
         field_number, wire_type = PB.decode_tag(d)
@@ -1144,8 +1150,8 @@ FlightService_Handshake_Client(
     grpc=gRPCClient.grpc_global_handle(),
     deadline=10,
     keepalive=60,
-    max_send_message_length=4*1024*1024,
-    max_recieve_message_length=4*1024*1024,
+    max_send_message_length=4 * 1024 * 1024,
+    max_recieve_message_length=4 * 1024 * 1024,
 ) = gRPCClient.gRPCServiceClient{HandshakeRequest,true,HandshakeResponse,true}(
     host,
     port,
@@ -1166,8 +1172,8 @@ FlightService_ListFlights_Client(
     grpc=gRPCClient.grpc_global_handle(),
     deadline=10,
     keepalive=60,
-    max_send_message_length=4*1024*1024,
-    max_recieve_message_length=4*1024*1024,
+    max_send_message_length=4 * 1024 * 1024,
+    max_recieve_message_length=4 * 1024 * 1024,
 ) = gRPCClient.gRPCServiceClient{Criteria,false,FlightInfo,true}(
     host,
     port,
@@ -1188,8 +1194,8 @@ FlightService_GetFlightInfo_Client(
     grpc=gRPCClient.grpc_global_handle(),
     deadline=10,
     keepalive=60,
-    max_send_message_length=4*1024*1024,
-    max_recieve_message_length=4*1024*1024,
+    max_send_message_length=4 * 1024 * 1024,
+    max_recieve_message_length=4 * 1024 * 1024,
 ) = gRPCClient.gRPCServiceClient{FlightDescriptor,false,FlightInfo,false}(
     host,
     port,
@@ -1210,8 +1216,8 @@ FlightService_PollFlightInfo_Client(
     grpc=gRPCClient.grpc_global_handle(),
     deadline=10,
     keepalive=60,
-    max_send_message_length=4*1024*1024,
-    max_recieve_message_length=4*1024*1024,
+    max_send_message_length=4 * 1024 * 1024,
+    max_recieve_message_length=4 * 1024 * 1024,
 ) = gRPCClient.gRPCServiceClient{FlightDescriptor,false,PollInfo,false}(
     host,
     port,
@@ -1232,8 +1238,8 @@ FlightService_GetSchema_Client(
     grpc=gRPCClient.grpc_global_handle(),
     deadline=10,
     keepalive=60,
-    max_send_message_length=4*1024*1024,
-    max_recieve_message_length=4*1024*1024,
+    max_send_message_length=4 * 1024 * 1024,
+    max_recieve_message_length=4 * 1024 * 1024,
 ) = gRPCClient.gRPCServiceClient{FlightDescriptor,false,SchemaResult,false}(
     host,
     port,
@@ -1254,8 +1260,8 @@ FlightService_DoGet_Client(
     grpc=gRPCClient.grpc_global_handle(),
     deadline=10,
     keepalive=60,
-    max_send_message_length=4*1024*1024,
-    max_recieve_message_length=4*1024*1024,
+    max_send_message_length=4 * 1024 * 1024,
+    max_recieve_message_length=4 * 1024 * 1024,
 ) = gRPCClient.gRPCServiceClient{Ticket,false,FlightData,true}(
     host,
     port,
@@ -1276,8 +1282,8 @@ FlightService_DoPut_Client(
     grpc=gRPCClient.grpc_global_handle(),
     deadline=10,
     keepalive=60,
-    max_send_message_length=4*1024*1024,
-    max_recieve_message_length=4*1024*1024,
+    max_send_message_length=4 * 1024 * 1024,
+    max_recieve_message_length=4 * 1024 * 1024,
 ) = gRPCClient.gRPCServiceClient{FlightData,true,PutResult,true}(
     host,
     port,
@@ -1298,8 +1304,8 @@ FlightService_DoExchange_Client(
     grpc=gRPCClient.grpc_global_handle(),
     deadline=10,
     keepalive=60,
-    max_send_message_length=4*1024*1024,
-    max_recieve_message_length=4*1024*1024,
+    max_send_message_length=4 * 1024 * 1024,
+    max_recieve_message_length=4 * 1024 * 1024,
 ) = gRPCClient.gRPCServiceClient{FlightData,true,FlightData,true}(
     host,
     port,
@@ -1320,8 +1326,8 @@ FlightService_DoAction_Client(
     grpc=gRPCClient.grpc_global_handle(),
     deadline=10,
     keepalive=60,
-    max_send_message_length=4*1024*1024,
-    max_recieve_message_length=4*1024*1024,
+    max_send_message_length=4 * 1024 * 1024,
+    max_recieve_message_length=4 * 1024 * 1024,
 ) = gRPCClient.gRPCServiceClient{Action,false,Result,true}(
     host,
     port,
@@ -1342,8 +1348,8 @@ FlightService_ListActions_Client(
     grpc=gRPCClient.grpc_global_handle(),
     deadline=10,
     keepalive=60,
-    max_send_message_length=4*1024*1024,
-    max_recieve_message_length=4*1024*1024,
+    max_send_message_length=4 * 1024 * 1024,
+    max_recieve_message_length=4 * 1024 * 1024,
 ) = gRPCClient.gRPCServiceClient{Empty,false,ActionType,true}(
     host,
     port,

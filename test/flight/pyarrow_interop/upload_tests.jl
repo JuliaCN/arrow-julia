@@ -36,7 +36,8 @@ function pyarrow_interop_test_upload(client, upload_descriptor)
     gRPCClient.grpc_async_await(doput_req)
 
     @test !isempty(put_results)
-    @test String(put_results[end].app_metadata) == "stored:upload:0|upload:1"
+    @test FlightTestSupport.app_metadata_string(put_results[end].app_metadata) ==
+          "stored:upload:0|upload:1"
 
     uploaded_info = Arrow.Flight.getflightinfo(client, upload_descriptor)
     uploaded_req, uploaded_channel =

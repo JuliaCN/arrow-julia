@@ -61,12 +61,14 @@ function pyarrow_interop_test_exchange(client, exchange_descriptor)
         collect(Arrow.Flight.stream(exchanged_messages; include_app_metadata=true))
     @test exchange_batches_with_app[1].table.id == [21, 22]
     @test exchange_batches_with_app[2].table.id == [23]
-    @test String.(getproperty.(exchange_batches_with_app, :app_metadata)) ==
-          exchange_app_metadata
+    @test FlightTestSupport.app_metadata_strings(
+        getproperty.(exchange_batches_with_app, :app_metadata),
+    ) == exchange_app_metadata
 
     exchange_table_with_app =
         Arrow.Flight.table(exchanged_messages; include_app_metadata=true)
     @test exchange_table_with_app.table.id == [21, 22, 23]
     @test exchange_table_with_app.table.name == ["twenty-one", "twenty-two", "twenty-three"]
-    @test String.(exchange_table_with_app.app_metadata) == exchange_app_metadata
+    @test FlightTestSupport.app_metadata_strings(exchange_table_with_app.app_metadata) ==
+          exchange_app_metadata
 end

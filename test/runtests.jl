@@ -53,11 +53,11 @@ struct CustomStruct2{sym}
 end
 
 module EnumRoundtripModule
-@enum RankingStrategy lexical=1 semantic=2 hybrid=3
+@enum RankingStrategy lexical = 1 semantic = 2 hybrid = 3
 end
 
 module WideEnumRoundtripModule
-@enum WideRanking::UInt64 tiny=1 colossal=0xffffffffffffffff
+@enum WideRanking::UInt64 tiny = 1 colossal = 0xffffffffffffffff
 end
 
 @testset ExtendedTestSet "Arrow" begin
@@ -291,6 +291,160 @@ end
             tt = Arrow.Table(Arrow.tobuffer(t; alignment=64))
             @test length(tt) == length(t)
             @test all(isequal.(values(t), values(tt)))
+        end
+
+        @testset "misaligned stream roundtrips core physical layouts" begin
+            source = (
+                primitive=Int64[1, 2, 3],
+                utf8=["a", "bb", "ccc"],
+                fixed=[
+                    UUID("550e8400-e29b-41d4-a716-446655440000"),
+                    UUID("550e8400-e29b-41d4-a716-446655440001"),
+                    UUID("550e8400-e29b-41d4-a716-446655440002"),
+                ],
+            )
+            bytes = read(Arrow.tobuffer(source))
+            padded = vcat(UInt8[0x00], bytes)
+            tt = Arrow.Table(padded, 2, nothing)
+            @test length(tt) == length(source)
+            columns = Tables.columntable(tt)
+            @test columns.primitive == source.primitive
+            @test columns.utf8 == source.utf8
+            @test columns.fixed == source.fixed
+        end
+
+        @testset "metadata physical layout mapping follows Arrow spec" begin
+            source = (
+                primitive=Int64[1, 2, 3],
+                utf8=["a", "bb", "ccc"],
+                list=[[1, 2], [3], Int[]],
+                uuid=[
+                    UUID("550e8400-e29b-41d4-a716-446655440000"),
+                    UUID("550e8400-e29b-41d4-a716-446655440001"),
+                    UUID("550e8400-e29b-41d4-a716-446655440002"),
+                ],
+            )
+            bytes = read(Arrow.tobuffer(source))
+            stream = Arrow.Stream(bytes)
+            Tables.schema(stream)
+            schema = getfield(stream, :schema)
+            fields = Dict(String(field.name) => field for field in schema.fields)
+
+            @test ArrowTypes.physicallayout(fields["primitive"]) ==
+                  ArrowTypes.PrimitiveLayout{Int64}()
+            null_bool_stream = Arrow.Stream(
+                read(
+                    Arrow.tobuffer((
+                        null_col=Missing[missing, missing, missing],
+                        bool_col=Bool[true, false, true],
+                    )),
+                ),
+            )
+            Tables.schema(null_bool_stream)
+            null_bool_fields = Dict(
+                String(field.name) => field for
+                field in getfield(null_bool_stream, :schema).fields
+            )
+            @test ArrowTypes.physicallayout(null_bool_fields["null_col"]) ==
+                  ArrowTypes.NullLayout()
+            @test ArrowTypes.physicallayout(null_bool_fields["bool_col"]) ==
+                  ArrowTypes.BooleanLayout()
+            @test ArrowTypes.physicallayout(fields["utf8"]) ==
+                  ArrowTypes.VariableBinaryLayout{Int32}()
+            @test ArrowTypes.physicallayout(fields["list"]) ==
+                  ArrowTypes.VariableListLayout{Int32}()
+            @test ArrowTypes.physicallayout(fields["uuid"]) ==
+                  ArrowTypes.FixedSizeBinaryLayout{16}()
+
+            pooled_bytes = read(
+                Arrow.tobuffer(
+                    (pooled=PooledArray(["alpha", "alpha", "beta"]),);
+                    dictencode=true,
+                ),
+            )
+            pooled_stream = Arrow.Stream(pooled_bytes)
+            Tables.schema(pooled_stream)
+            pooled_schema = getfield(pooled_stream, :schema)
+            pooled_field = only(pooled_schema.fields)
+            pooled_layout = ArrowTypes.physicallayout(pooled_field)
+            @test pooled_layout isa ArrowTypes.DictionaryEncodedLayout
+            @test ArrowTypes.indextype(pooled_layout) <: Integer
+
+            extended = (
+                large_utf8=["a", "bb", "ccc"],
+                large_list=[[1, 2], [3], Int[]],
+                dense_union=Arrow.DenseUnionVector(
+                    Union{Int64,Float64,Missing}[1, 2.0, missing],
+                ),
+                sparse_union=Arrow.SparseUnionVector(
+                    Union{Int64,Float64,Missing}[1, 2.0, missing],
+                ),
+            )
+            extended_bytes = read(Arrow.tobuffer(extended; largelists=true))
+            extended_stream = Arrow.Stream(extended_bytes)
+            Tables.schema(extended_stream)
+            extended_schema = getfield(extended_stream, :schema)
+            extended_fields =
+                Dict(String(field.name) => field for field in extended_schema.fields)
+
+            @test ArrowTypes.physicallayout(extended_fields["large_utf8"]) ==
+                  ArrowTypes.VariableBinaryLayout{Int64}()
+            @test ArrowTypes.physicallayout(extended_fields["large_list"]) ==
+                  ArrowTypes.VariableListLayout{Int64}()
+            @test ArrowTypes.physicallayout(extended_fields["dense_union"]) ==
+                  ArrowTypes.UnionLayout{:dense}()
+            @test ArrowTypes.physicallayout(extended_fields["sparse_union"]) ==
+                  ArrowTypes.UnionLayout{:sparse}()
+
+            nested = (
+                fixed_list=[
+                    (Int32(1), Int32(2)),
+                    (Int32(3), Int32(4)),
+                    (Int32(5), Int32(6)),
+                ],
+                struct_col=[(a=1, b="x"), (a=2, b="y"), (a=3, b="z")],
+                map_col=[Dict("a" => 1, "b" => 2), Dict("c" => 3), Dict{String,Int}()],
+            )
+            nested_stream = Arrow.Stream(read(Arrow.tobuffer(nested)))
+            Tables.schema(nested_stream)
+            nested_fields = Dict(
+                String(field.name) => field for
+                field in getfield(nested_stream, :schema).fields
+            )
+
+            @test ArrowTypes.physicallayout(nested_fields["fixed_list"]) ==
+                  ArrowTypes.FixedSizeListLayout{2}()
+            @test ArrowTypes.physicallayout(nested_fields["struct_col"]) ==
+                  ArrowTypes.StructLayout()
+            @test ArrowTypes.physicallayout(nested_fields["map_col"]) ==
+                  ArrowTypes.VariableListLayout{Int32}()
+
+            view_bytes = read(joinpath(@__DIR__, "reject_reason_trimmed.arrow"))
+            view_stream = Arrow.Stream(view_bytes)
+            Tables.schema(view_stream)
+            view_schema = getfield(view_stream, :schema)
+            @test ArrowTypes.physicallayout(only(view_schema.fields)) ==
+                  ArrowTypes.VariableBinaryViewLayout()
+
+            placeholder_stream =
+                Arrow.Stream(read(Arrow.tobuffer((primitive=Int64[1, 2, 3],))))
+            Tables.schema(placeholder_stream)
+            placeholder_field = only(getfield(placeholder_stream, :schema).fields)
+            @test ArrowTypes.physicallayout(
+                placeholder_field,
+                Arrow.Meta.ListView(UInt8[], 0),
+            ) == ArrowTypes.VariableListViewLayout{Int32}()
+            @test ArrowTypes.physicallayout(
+                placeholder_field,
+                Arrow.Meta.LargeListView(UInt8[], 0),
+            ) == ArrowTypes.VariableListViewLayout{Int64}()
+
+            ree_bytes = read(joinpath(@__DIR__, "run_end_encoded_small.arrow"))
+            ree_stream = Arrow.Stream(ree_bytes)
+            Tables.schema(ree_stream)
+            ree_schema = getfield(ree_stream, :schema)
+            @test ArrowTypes.physicallayout(only(ree_schema.fields)) ==
+                  ArrowTypes.RunEndEncodedLayout{Int16}()
         end
 
         @testset "View buffer count inference" begin
@@ -990,7 +1144,7 @@ end
                     missing,
                     (metadata="str", value="abc"),
                 ]
-            @test_logs min_level=Base.CoreLogging.Warn begin
+            @test_logs min_level = Base.CoreLogging.Warn begin
                 variant_tt = Arrow.Table(
                     Arrow.tobuffer(
                         (col=variant_values,);
@@ -1013,7 +1167,7 @@ end
                 missing,
                 (Int32(5), Int32(6), Int32(7), Int32(8)),
             ]
-            @test_logs min_level=Base.CoreLogging.Warn begin
+            @test_logs min_level = Base.CoreLogging.Warn begin
                 fixed_tensor_tt = Arrow.Table(
                     Arrow.tobuffer(
                         (col=fixed_tensor_values,);
@@ -1039,7 +1193,7 @@ end
                 missing,
                 (data=Int32[5, 6], shape=(Int32(1),)),
             ]
-            @test_logs min_level=Base.CoreLogging.Warn begin
+            @test_logs min_level = Base.CoreLogging.Warn begin
                 variable_tensor_tt = Arrow.Table(
                     Arrow.tobuffer(
                         (col=variable_tensor_values,);

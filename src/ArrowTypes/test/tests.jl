@@ -23,11 +23,11 @@ struct Person
 end
 
 module EnumTestModule
-@enum RankingStrategy lexical=1 semantic=2 hybrid=3
+@enum RankingStrategy lexical = 1 semantic = 2 hybrid = 3
 end
 
 module WideEnumTestModule
-@enum WideRanking::UInt64 small=1 colossal=0xffffffffffffffff
+@enum WideRanking::UInt64 small = 1 colossal = 0xffffffffffffffff
 end
 
 const RankingStrategy = EnumTestModule.RankingStrategy
@@ -76,6 +76,8 @@ const colossal = WideEnumTestModule.colossal
 
     @test ArrowTypes.ArrowKind(Int) == ArrowTypes.PrimitiveKind()
     @test ArrowTypes.ArrowKind(Float64) == ArrowTypes.PrimitiveKind()
+    @test ArrowTypes.physicallayout(Int) == ArrowTypes.PrimitiveLayout{Int}()
+    @test ArrowTypes.physicallayout(Float64) == ArrowTypes.PrimitiveLayout{Float64}()
 
     @test ArrowTypes.ArrowType(Char) == UInt32
     @test ArrowTypes.toarrow('1') == UInt32('1')
@@ -122,12 +124,17 @@ const colossal = WideEnumTestModule.colossal
     @test ArrowTypes.default(WideRanking) == small
 
     @test ArrowTypes.ArrowKind(Bool) == ArrowTypes.BoolKind()
+    @test ArrowTypes.physicallayout(Bool) == ArrowTypes.BooleanLayout()
 
     @test ArrowTypes.ListKind() == ArrowTypes.ListKind{false}()
     @test !ArrowTypes.isstringtype(ArrowTypes.ListKind())
     @test !ArrowTypes.isstringtype(typeof(ArrowTypes.ListKind()))
     @test ArrowTypes.ArrowKind(String) == ArrowTypes.ListKind{true}()
     @test ArrowTypes.ArrowKind(Base.CodeUnits) == ArrowTypes.ListKind{true}()
+    @test ArrowTypes.physicallayout(String) == ArrowTypes.VariableBinaryLayout{Int32}()
+    @test ArrowTypes.offsettype(ArrowTypes.physicallayout(String)) == Int32
+    @test ArrowTypes.physicallayout(Base.CodeUnits) ==
+          ArrowTypes.VariableBinaryLayout{Int32}()
 
     hey = collect(b"hey")
     @test ArrowTypes.fromarrow(String, pointer(hey), 3) == "hey"
@@ -142,6 +149,8 @@ const colossal = WideEnumTestModule.colossal
 
     @test ArrowTypes.ArrowKind(Vector{Int}) == ArrowTypes.ListKind()
     @test ArrowTypes.ArrowKind(Set{Int}) == ArrowTypes.ListKind()
+    @test ArrowTypes.physicallayout(Vector{Int}) == ArrowTypes.VariableListLayout{Int32}()
+    @test ArrowTypes.physicallayout(Set{Int}) == ArrowTypes.VariableListLayout{Int32}()
     @test ArrowTypes.ArrowType(Set{Int}) == Vector{Int}
     @test typeof(ArrowTypes.toarrow(Set([1, 2, 3]))) <: Vector{Int}
     @test ArrowTypes.arrowname(Set{Int}) == ArrowTypes.SET
@@ -152,11 +161,15 @@ const colossal = WideEnumTestModule.colossal
     @test ArrowTypes.gettype(K) == UInt8
     @test ArrowTypes.getsize(K) == 3
     @test K == ArrowTypes.FixedSizeListKind{3,UInt8}()
+    @test ArrowTypes.physicallayout(NTuple{3,UInt8}) == ArrowTypes.FixedSizeListLayout{3}()
+    @test ArrowTypes.listsize(ArrowTypes.physicallayout(NTuple{3,UInt8})) == 3
 
     u = UUID(rand(UInt128))
     ubytes = ArrowTypes._cast(NTuple{16,UInt8}, u.value)
     @test ArrowTypes.ArrowKind(u) == ArrowTypes.FixedSizeListKind{16,UInt8}()
     @test ArrowTypes.ArrowType(UUID) == NTuple{16,UInt8}
+    @test ArrowTypes.physicallayout(UUID) == ArrowTypes.FixedSizeBinaryLayout{16}()
+    @test ArrowTypes.bytewidth(ArrowTypes.physicallayout(UUID)) == 16
     @test ArrowTypes.toarrow(u) == ubytes
     @test ArrowTypes.arrowname(UUID) == ArrowTypes.UUIDSYMBOL
     @test ArrowTypes.JuliaType(Val(ArrowTypes.UUIDSYMBOL)) == UUID
@@ -175,6 +188,7 @@ const colossal = WideEnumTestModule.colossal
     ip6_ubytes = ArrowTypes._cast(NTuple{16,UInt8}, ip6.host)
     @test ArrowTypes.ArrowKind(ip6) == ArrowTypes.FixedSizeListKind{16,UInt8}()
     @test ArrowTypes.ArrowType(IPv6) == NTuple{16,UInt8}
+    @test ArrowTypes.physicallayout(IPv6) == ArrowTypes.FixedSizeBinaryLayout{16}()
     @test ArrowTypes.toarrow(ip6) == ip6_ubytes
     @test ArrowTypes.arrowname(IPv6) == ArrowTypes.IPV6_SYMBOL
     @test ArrowTypes.JuliaType(Val(ArrowTypes.IPV6_SYMBOL)) == IPv6
@@ -219,7 +233,14 @@ const colossal = WideEnumTestModule.colossal
     @test ArrowTypes.default(VersionNumber) == v"0"
 
     @test ArrowTypes.ArrowKind(Dict{String,Int}) == ArrowTypes.MapKind()
+    @test ArrowTypes.physicallayout(Dict{String,Int}) ==
+          ArrowTypes.VariableListLayout{Int32}()
+    @test ArrowTypes.offsettype(ArrowTypes.physicallayout(Dict{String,Int})) == Int32
     @test ArrowTypes.ArrowKind(Union{String,Int}) == ArrowTypes.UnionKind()
+    @test ArrowTypes.physicallayout(Union{String,Int}) == ArrowTypes.UnionLayout{:unknown}()
+    @test ArrowTypes.unionmode(ArrowTypes.physicallayout(Union{String,Int})) == :unknown
+    @test ArrowTypes.offsettype(ArrowTypes.VariableListViewLayout{Int64}()) == Int64
+    @test ArrowTypes.runendtype(ArrowTypes.RunEndEncodedLayout{Int32}()) == Int32
 
     @test ArrowTypes.default(Int) == Int(0)
     @test ArrowTypes.default(Symbol) == Symbol()

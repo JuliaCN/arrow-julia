@@ -33,6 +33,27 @@ export ArrowKind,
     StructKind,
     UnionKind,
     DictEncodedKind,
+    PhysicalLayout,
+    NullLayout,
+    PrimitiveLayout,
+    BooleanLayout,
+    VariableBinaryLayout,
+    VariableBinaryViewLayout,
+    FixedSizeBinaryLayout,
+    VariableListLayout,
+    VariableListViewLayout,
+    FixedSizeListLayout,
+    StructLayout,
+    UnionLayout,
+    DictionaryEncodedLayout,
+    RunEndEncodedLayout,
+    physicallayout,
+    offsettype,
+    indextype,
+    bytewidth,
+    listsize,
+    unionmode,
+    runendtype,
     toarrow,
     arrowname,
     fromarrow,
@@ -64,6 +85,65 @@ abstract type ArrowKind end
 
 ArrowKind(x::T) where {T} = ArrowKind(T)
 ArrowKind(::Type{T}) where {T} = isprimitivetype(T) ? PrimitiveKind() : StructKind()
+
+"""
+    ArrowTypes.PhysicalLayout
+
+Official Arrow physical memory layout descriptors, mirroring the terminology from the
+Arrow columnar format specification. These traits are narrower than [`ArrowKind`](@ref):
+they describe the on-wire/in-memory buffer shape instead of the broader serializer
+dispatch category used internally by Arrow.jl.
+"""
+abstract type PhysicalLayout end
+
+struct NullLayout <: PhysicalLayout end
+struct PrimitiveLayout{T} <: PhysicalLayout end
+struct BooleanLayout <: PhysicalLayout end
+struct VariableBinaryLayout{OffsetT} <: PhysicalLayout end
+struct VariableBinaryViewLayout <: PhysicalLayout end
+struct FixedSizeBinaryLayout{N} <: PhysicalLayout end
+struct VariableListLayout{OffsetT} <: PhysicalLayout end
+struct VariableListViewLayout{OffsetT} <: PhysicalLayout end
+struct FixedSizeListLayout{N} <: PhysicalLayout end
+struct StructLayout <: PhysicalLayout end
+struct UnionLayout{Mode} <: PhysicalLayout end
+struct DictionaryEncodedLayout{IndexT} <: PhysicalLayout end
+struct RunEndEncodedLayout{RunEndT} <: PhysicalLayout end
+
+offsettype(::VariableBinaryLayout{OffsetT}) where {OffsetT} = OffsetT
+offsettype(::VariableListLayout{OffsetT}) where {OffsetT} = OffsetT
+offsettype(::VariableListViewLayout{OffsetT}) where {OffsetT} = OffsetT
+indextype(::DictionaryEncodedLayout{IndexT}) where {IndexT} = IndexT
+
+bytewidth(::FixedSizeBinaryLayout{N}) where {N} = N
+
+listsize(::FixedSizeListLayout{N}) where {N} = N
+
+UnionLayout() = UnionLayout{:unknown}()
+unionmode(::UnionLayout{Mode}) where {Mode} = Mode
+
+runendtype(::RunEndEncodedLayout{RunEndT}) where {RunEndT} = RunEndT
+
+physicallayout(::Type{Missing}) = NullLayout()
+physicallayout(::Type{Nothing}) = NullLayout()
+physicallayout(::Type{Bool}) = BooleanLayout()
+physicallayout(::Type{T}) where {T<:Integer} = PrimitiveLayout{ArrowType(T)}()
+physicallayout(::Type{T}) where {T<:AbstractFloat} = PrimitiveLayout{ArrowType(T)}()
+physicallayout(::Type{T}) where {T<:Enum} = PrimitiveLayout{ArrowType(T)}()
+physicallayout(::Type{T}) where {T<:AbstractString} = VariableBinaryLayout{Int32}()
+physicallayout(::Type{T}) where {T<:Base.CodeUnits} = VariableBinaryLayout{Int32}()
+physicallayout(::Type{T}) where {T<:AbstractArray} = VariableListLayout{Int32}()
+physicallayout(::Type{T}) where {T<:AbstractSet} = VariableListLayout{Int32}()
+physicallayout(::Type{NTuple{N,T}}) where {N,T} = FixedSizeListLayout{N}()
+physicallayout(::Type{UUID}) = FixedSizeBinaryLayout{16}()
+physicallayout(::Type{IPv6}) = FixedSizeBinaryLayout{16}()
+physicallayout(::Type{T}) where {T<:NamedTuple} = StructLayout()
+physicallayout(::Type{T}) where {T<:Tuple} = StructLayout()
+physicallayout(::Type{T}) where {T<:AbstractDict} = VariableListLayout{Int32}()
+physicallayout(::Union) = UnionLayout()
+physicallayout(::Type{T}) where {T} =
+    ArrowType(T) === T ? (isprimitivetype(T) ? PrimitiveLayout{T}() : StructLayout()) :
+    physicallayout(ArrowType(T))
 
 """
     ArrowTypes.ArrowType(T) = S
