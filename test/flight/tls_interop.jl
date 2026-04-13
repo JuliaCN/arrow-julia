@@ -41,6 +41,7 @@
                         "grpc+tls://localhost:$(server.port)";
                         grpc=grpc,
                         tls_root_certs=cert_path,
+                        deadline=FlightTestSupport.TLS_FLIGHT_TEST_DEADLINE_SECS,
                     )
                     info = Arrow.Flight.getflightinfo(client, descriptor)
                     @test info.total_records == 3
@@ -63,6 +64,7 @@
                         "grpc+tls://localhost:$(server.port)";
                         grpc=grpc,
                         disable_server_verification=true,
+                        deadline=FlightTestSupport.TLS_FLIGHT_TEST_DEADLINE_SECS,
                     )
                     info = Arrow.Flight.getflightinfo(insecure_client, descriptor)
                     @test info.total_records == 3

@@ -21,7 +21,7 @@ function pyarrow_interop_test_discovery(client, protocol, download_descriptor)
     @test any(
         info ->
             !isnothing(info.flight_descriptor) &&
-                info.flight_descriptor.path == download_descriptor.path,
+            info.flight_descriptor.path == download_descriptor.path,
         flights,
     )
 

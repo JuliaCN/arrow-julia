@@ -15,13 +15,33 @@
 # specific language governing permissions and limitations
 # under the License.
 
-const PYARROW_FLIGHT_SERVER_READY_TIMEOUT_SECS = 10.0
+const PYARROW_FLIGHT_SERVER_READY_TIMEOUT_SECS = 60.0
+const PYARROW_FLIGHT_PROBE_DEADLINE_SECS = 5.0
+const TLS_FLIGHT_TEST_DEADLINE_SECS = 30.0
+
+function flight_readiness_client(port::Integer, grpc)
+    return Arrow.Flight.Client(
+        "grpc://127.0.0.1:$(port)";
+        grpc=grpc,
+        deadline=PYARROW_FLIGHT_PROBE_DEADLINE_SECS,
+    )
+end
+
+function wait_for_readiness_probe(readiness_probe::Function, port::Integer)
+    try
+        readiness_probe(port)
+        return true
+    catch err
+        return false, err
+    end
+end
 
 function wait_for_python_flight_server(
     process::Base.Process,
     stderr::Pipe,
     port::Integer;
     timeout_secs::Real=PYARROW_FLIGHT_SERVER_READY_TIMEOUT_SECS,
+    readiness_probe::Union{Nothing,Function}=nothing,
 )
     deadline = time() + Float64(timeout_secs)
     last_error = nothing
@@ -38,23 +58,28 @@ function wait_for_python_flight_server(
         try
             socket = Sockets.connect(ip"127.0.0.1", port)
             close(socket)
-            return
+            if isnothing(readiness_probe)
+                return
+            end
+            probe_result = wait_for_readiness_probe(readiness_probe, port)
+            probe_result === true && return
+            _, last_error = probe_result
         catch err
             last_error = err
-            sleep(0.05)
         end
+        sleep(0.05)
     end
 
+    detail_message = "pyarrow Flight server did not become ready on 127.0.0.1:$(port) within $(timeout_secs)s"
     detail =
         isnothing(last_error) ? "unknown readiness failure" : sprint(showerror, last_error)
-    error(
-        "pyarrow Flight server did not become ready on 127.0.0.1:$(port) within $(timeout_secs)s: $(detail)",
-    )
+    error("$(detail_message): $(detail)")
 end
 
 function start_python_flight_server(
     script_name::AbstractString;
     env_overrides::AbstractDict{<:AbstractString,<:AbstractString}=Dict{String,String}(),
+    readiness_probe::Union{Nothing,Function}=nothing,
 )
     python = pyarrow_flight_python()
     isnothing(python) && return nothing
@@ -81,13 +106,24 @@ function start_python_flight_server(
         )
     end
     port = parse(Int, chomp(line))
-    wait_for_python_flight_server(process, stderr, port)
+    wait_for_python_flight_server(process, stderr, port; readiness_probe=readiness_probe)
     return PyArrowFlightServer(process, stdout, stderr, port)
 end
 
-start_pyarrow_flight_server() = start_python_flight_server("flight_pyarrow_server.py")
-start_headers_flight_server() = start_python_flight_server("flight_headers_server.py")
-start_handshake_flight_server() = start_python_flight_server("flight_handshake_server.py")
+function probe_pyarrow_flight_server(port::Integer)
+    with_test_grpc_handle() do grpc
+        client = flight_readiness_client(port, grpc)
+        req, channel = Arrow.Flight.listactions(client)
+        collect(channel)
+        gRPCClient.grpc_async_await(req)
+    end
+    return
+end
+
+start_pyarrow_flight_server() = start_python_flight_server(
+    "flight_pyarrow_server.py";
+    readiness_probe=probe_pyarrow_flight_server,
+)
 start_poll_flight_server() = start_python_flight_server("flight_poll_server.py")
 function start_tls_flight_server(cert_path::AbstractString, key_path::AbstractString)
     start_python_flight_server(

@@ -90,9 +90,6 @@ function _grpc_async_request(
     return lock(rpc_client.grpc.lock) do
         req = gRPCClient.grpc_async_request(rpc_client, request, response)
         _apply_client_options_unlocked!(client, req, headers)
-        # gRPCClient starts request-stream uploads with an empty IOBuffer. Arm the
-        # first pause-release cycle so the producer task can fill the buffer.
-        notify(req.curl_done_reading)
         req
     end
 end

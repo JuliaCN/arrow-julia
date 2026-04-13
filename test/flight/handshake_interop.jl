@@ -16,56 +16,101 @@
 # under the License.
 
 @testset "Flight handshake interop" begin
-    server = FlightTestSupport.start_handshake_flight_server()
-    if isnothing(server)
-        @test true
-    else
-        protocol = Arrow.Flight.Protocol
+    protocol = Arrow.Flight.Protocol
+    client = Arrow.Flight.Client("grpc://127.0.0.1:47470"; deadline=30)
 
-        try
-            FlightTestSupport.with_test_grpc_handle() do grpc
-                client = Arrow.Flight.Client("grpc://127.0.0.1:$(server.port)"; grpc=grpc)
+    token_client = Arrow.Flight.withtoken(client, b"secret:test")
+    @test token_client.headers == ["auth-token-bin" => b"secret:test"]
+    @test Arrow.Flight._header_lines(token_client.headers) ==
+          ["auth-token-bin: c2VjcmV0OnRlc3Q="]
 
-                handshake_req, handshake_request, handshake_response =
-                    Arrow.Flight.handshake(client)
-                put!(handshake_request, protocol.HandshakeRequest(UInt64(0), b"test"))
-                put!(handshake_request, protocol.HandshakeRequest(UInt64(0), b"p4ssw0rd"))
-                close(handshake_request)
+    replaced_token_client = Arrow.Flight.withtoken(token_client, b"secret:override")
+    @test replaced_token_client.headers == ["auth-token-bin" => b"secret:override"]
 
-                handshake_messages = collect(handshake_response)
-                gRPCClient.grpc_async_await(handshake_req)
+    auth_context = Arrow.Flight.ServerCallContext(headers=token_client.headers)
+    @test Arrow.Flight.callheader(auth_context, "auth-token-bin") == b"secret:test"
+    @test Arrow.Flight.callheader(auth_context, "Auth-Token-Bin") == b"secret:test"
+    @test isnothing(Arrow.Flight.callheader(auth_context, "authorization"))
 
-                @test length(handshake_messages) == 1
-                @test handshake_messages[1].protocol_version == 0
-                @test handshake_messages[1].payload == b"secret:test"
-
-                token_client = Arrow.Flight.withtoken(client, handshake_messages[1].payload)
-                actions_req, actions_channel = Arrow.Flight.listactions(token_client)
-                actions = collect(actions_channel)
-                gRPCClient.grpc_async_await(actions_req)
-                @test actions ==
-                      [protocol.ActionType("authenticated", "Requires a valid auth token")]
-
-                auth_client, auth_messages =
-                    Arrow.Flight.authenticate(client, "test", "p4ssw0rd")
-                @test length(auth_messages) == 1
-                @test auth_messages[1].protocol_version ==
-                      handshake_messages[1].protocol_version
-                @test auth_messages[1].payload == handshake_messages[1].payload
-                @test auth_client.headers == ["auth-token-bin" => b"secret:test"]
-
-                bad_req, bad_request, bad_response = Arrow.Flight.handshake(client)
-                put!(bad_request, protocol.HandshakeRequest(UInt64(0), b"test"))
-                put!(bad_request, protocol.HandshakeRequest(UInt64(0), b"wrong"))
-                close(bad_request)
-
-                @test isempty(collect(bad_response))
-                @test_throws gRPCClient.gRPCServiceCallException gRPCClient.grpc_async_await(
-                    bad_req,
+    service = Arrow.Flight.Service(
+        handshake=(ctx, request, response) -> begin
+            @test isnothing(Arrow.Flight.callheader(ctx, "auth-token-bin"))
+            incoming = collect(request)
+            payloads = getproperty.(incoming, :payload)
+            if payloads == [b"test", b"p4ssw0rd"]
+                put!(response, protocol.HandshakeResponse(UInt64(0), b"secret:test"))
+                close(response)
+                return :handshake_ok
+            end
+            close(response)
+            throw(
+                gRPCClient.gRPCServiceCallException(
+                    gRPCClient.GRPC_UNAUTHENTICATED,
+                    "invalid username/password",
+                ),
+            )
+        end,
+        listactions=(ctx, response) -> begin
+            token = Arrow.Flight.callheader(ctx, "auth-token-bin")
+            if token != b"secret:test"
+                close(response)
+                throw(
+                    gRPCClient.gRPCServiceCallException(
+                        gRPCClient.GRPC_UNAUTHENTICATED,
+                        "invalid token",
+                    ),
                 )
             end
-        finally
-            FlightTestSupport.stop_pyarrow_flight_server(server)
-        end
-    end
+            put!(
+                response,
+                protocol.ActionType("authenticated", "Requires a valid auth token"),
+            )
+            close(response)
+            return :listactions_ok
+        end,
+    )
+
+    handshake_request = Channel{protocol.HandshakeRequest}(2)
+    put!(handshake_request, protocol.HandshakeRequest(UInt64(0), b"test"))
+    put!(handshake_request, protocol.HandshakeRequest(UInt64(0), b"p4ssw0rd"))
+    close(handshake_request)
+    handshake_response = Channel{protocol.HandshakeResponse}(1)
+    @test Arrow.Flight.handshake(
+        service,
+        Arrow.Flight.ServerCallContext(headers=Arrow.Flight.HeaderPair[]),
+        handshake_request,
+        handshake_response,
+    ) == :handshake_ok
+
+    handshake_messages = collect(handshake_response)
+    @test length(handshake_messages) == 1
+    @test handshake_messages[1].protocol_version == 0
+    @test handshake_messages[1].payload == b"secret:test"
+
+    action_response = Channel{protocol.ActionType}(1)
+    @test Arrow.Flight.listactions(service, auth_context, action_response) ==
+          :listactions_ok
+    @test collect(action_response) ==
+          [protocol.ActionType("authenticated", "Requires a valid auth token")]
+
+    bad_handshake_request = Channel{protocol.HandshakeRequest}(2)
+    put!(bad_handshake_request, protocol.HandshakeRequest(UInt64(0), b"test"))
+    put!(bad_handshake_request, protocol.HandshakeRequest(UInt64(0), b"wrong"))
+    close(bad_handshake_request)
+    bad_handshake_response = Channel{protocol.HandshakeResponse}(1)
+    @test_throws gRPCClient.gRPCServiceCallException Arrow.Flight.handshake(
+        service,
+        Arrow.Flight.ServerCallContext(headers=Arrow.Flight.HeaderPair[]),
+        bad_handshake_request,
+        bad_handshake_response,
+    )
+    @test isempty(collect(bad_handshake_response))
+
+    bad_action_response = Channel{protocol.ActionType}(1)
+    @test_throws gRPCClient.gRPCServiceCallException Arrow.Flight.listactions(
+        service,
+        Arrow.Flight.ServerCallContext(headers=Arrow.Flight.HeaderPair[]),
+        bad_action_response,
+    )
+    @test isempty(collect(bad_action_response))
 end

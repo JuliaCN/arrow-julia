@@ -15,35 +15,6 @@
 # specific language governing permissions and limitations
 # under the License.
 
-const FLIGHT_TEST_TRANSIENT_GRPC_STATUSES = Set((
-    gRPCClient.GRPC_DEADLINE_EXCEEDED,
-    gRPCClient.GRPC_UNAVAILABLE,
-))
-
-is_transient_flight_startup_error(err) =
-    err isa gRPCClient.gRPCServiceCallException &&
-    err.grpc_status in FLIGHT_TEST_TRANSIENT_GRPC_STATUSES
-
-function with_transient_flight_startup_retry(
-    f::F;
-    attempts::Integer=3,
-    base_delay_secs::Real=0.5,
-) where {F}
-    last_error = nothing
-    for attempt in 1:attempts
-        try
-            return f()
-        catch err
-            if !is_transient_flight_startup_error(err) || attempt == attempts
-                rethrow()
-            end
-            last_error = err
-            sleep(Float64(base_delay_secs) * attempt)
-        end
-    end
-    throw(last_error)
-end
-
 function with_test_grpc_handle(f::F) where {F}
     grpc = gRPCClient.gRPCCURL()
     gRPCClient.grpc_init(grpc)
