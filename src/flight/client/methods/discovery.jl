@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-listflights(
+Flight.listflights(
     client::Client,
     criteria::Protocol.Criteria,
     response::Channel{Protocol.FlightInfo};
@@ -23,13 +23,13 @@ listflights(
     kwargs...,
 ) = _grpc_async_request(
     client,
-    _listflights_client(client; kwargs...),
+    Flight._listflights_client(client; kwargs...),
     criteria,
     response,
-    headers=_merge_headers(client, headers),
+    headers=Flight._merge_headers(client, headers),
 )
 
-function listflights(
+function Flight.listflights(
     client::Client,
     criteria::Protocol.Criteria=Protocol.Criteria(UInt8[]);
     response_capacity::Integer=DEFAULT_STREAM_BUFFER,
@@ -37,11 +37,11 @@ function listflights(
     kwargs...,
 )
     response = Channel{Protocol.FlightInfo}(response_capacity)
-    req = listflights(client, criteria, response; headers=headers, kwargs...)
+    req = Flight.listflights(client, criteria, response; headers=headers, kwargs...)
     return req, response
 end
 
-function getflightinfo(
+function Flight.getflightinfo(
     client::Client,
     descriptor::Protocol.FlightDescriptor;
     headers::AbstractVector{<:Pair}=HeaderPair[],
@@ -49,13 +49,13 @@ function getflightinfo(
 )
     return _grpc_sync_request(
         client,
-        _getflightinfo_client(client; kwargs...),
+        Flight._getflightinfo_client(client; kwargs...),
         descriptor;
-        headers=_merge_headers(client, headers),
+        headers=Flight._merge_headers(client, headers),
     )
 end
 
-function pollflightinfo(
+function Flight.pollflightinfo(
     client::Client,
     descriptor::Protocol.FlightDescriptor;
     headers::AbstractVector{<:Pair}=HeaderPair[],
@@ -63,13 +63,13 @@ function pollflightinfo(
 )
     return _grpc_sync_request(
         client,
-        _pollflightinfo_client(client; kwargs...),
+        Flight._pollflightinfo_client(client; kwargs...),
         descriptor;
-        headers=_merge_headers(client, headers),
+        headers=Flight._merge_headers(client, headers),
     )
 end
 
-function getschema(
+function Flight.getschema(
     client::Client,
     descriptor::Protocol.FlightDescriptor;
     headers::AbstractVector{<:Pair}=HeaderPair[],
@@ -77,8 +77,8 @@ function getschema(
 )
     return _grpc_sync_request(
         client,
-        _getschema_client(client; kwargs...),
+        Flight._getschema_client(client; kwargs...),
         descriptor;
-        headers=_merge_headers(client, headers),
+        headers=Flight._merge_headers(client, headers),
     )
 end

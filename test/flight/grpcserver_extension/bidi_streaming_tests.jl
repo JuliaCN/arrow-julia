@@ -35,7 +35,7 @@ function grpcserver_extension_test_bidi_streaming(grpcserver, service, fixture, 
     )
     @test handshake_closed[]
     @test length(handshake_messages) == 1
-    @test handshake_messages[1].payload == b"native-token"
+    @test handshake_messages[1].payload == fixture.handshake_token
 
     doput_messages, doput_closed, doput_stream = grpcserver_capture_bidi_stream(
         grpcserver,

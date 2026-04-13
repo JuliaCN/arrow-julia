@@ -19,6 +19,7 @@ include("grpcserver_extension/support.jl")
 include("grpcserver_extension/descriptor_tests.jl")
 include("grpcserver_extension/unary_tests.jl")
 include("grpcserver_extension/streaming_tests.jl")
+include("grpcserver_extension/live_server_tests.jl")
 
 @testset "Flight gRPCServer extension" begin
     grpcserver = FlightTestSupport.load_grpcserver()
@@ -33,5 +34,6 @@ include("grpcserver_extension/streaming_tests.jl")
         grpcserver_extension_test_descriptor(grpcserver, service)
         grpcserver_extension_test_unary(grpcserver, service, fixture, metadata)
         grpcserver_extension_test_streaming(grpcserver, service, fixture, metadata)
+        grpcserver_extension_test_live_server(grpcserver, service, fixture)
     end
 end

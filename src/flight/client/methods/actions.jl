@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-doaction(
+Flight.doaction(
     client::Client,
     action::Protocol.Action,
     response::Channel{Protocol.Result};
@@ -23,13 +23,13 @@ doaction(
     kwargs...,
 ) = _grpc_async_request(
     client,
-    _doaction_client(client; kwargs...),
+    Flight._doaction_client(client; kwargs...),
     action,
     response;
-    headers=_merge_headers(client, headers),
+    headers=Flight._merge_headers(client, headers),
 )
 
-function doaction(
+function Flight.doaction(
     client::Client,
     action::Protocol.Action;
     response_capacity::Integer=DEFAULT_STREAM_BUFFER,
@@ -37,11 +37,11 @@ function doaction(
     kwargs...,
 )
     response = Channel{Protocol.Result}(response_capacity)
-    req = doaction(client, action, response; headers=headers, kwargs...)
+    req = Flight.doaction(client, action, response; headers=headers, kwargs...)
     return req, response
 end
 
-function listactions(
+function Flight.listactions(
     client::Client,
     response::Channel{Protocol.ActionType};
     headers::AbstractVector{<:Pair}=HeaderPair[],
@@ -49,20 +49,20 @@ function listactions(
 )
     return _grpc_async_request(
         client,
-        _listactions_client(client; kwargs...),
+        Flight._listactions_client(client; kwargs...),
         Protocol.Empty(),
         response,
-        headers=_merge_headers(client, headers),
+        headers=Flight._merge_headers(client, headers),
     )
 end
 
-function listactions(
+function Flight.listactions(
     client::Client;
     response_capacity::Integer=DEFAULT_STREAM_BUFFER,
     headers::AbstractVector{<:Pair}=HeaderPair[],
     kwargs...,
 )
     response = Channel{Protocol.ActionType}(response_capacity)
-    req = listactions(client, response; headers=headers, kwargs...)
+    req = Flight.listactions(client, response; headers=headers, kwargs...)
     return req, response
 end

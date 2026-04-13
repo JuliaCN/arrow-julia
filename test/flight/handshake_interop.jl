@@ -44,8 +44,8 @@
             end
             close(response)
             throw(
-                gRPCClient.gRPCServiceCallException(
-                    gRPCClient.GRPC_UNAUTHENTICATED,
+                Arrow.Flight.FlightStatusError(
+                    Arrow.Flight.FLIGHT_STATUS_UNAUTHENTICATED,
                     "invalid username/password",
                 ),
             )
@@ -55,8 +55,8 @@
             if token != b"secret:test"
                 close(response)
                 throw(
-                    gRPCClient.gRPCServiceCallException(
-                        gRPCClient.GRPC_UNAUTHENTICATED,
+                    Arrow.Flight.FlightStatusError(
+                        Arrow.Flight.FLIGHT_STATUS_UNAUTHENTICATED,
                         "invalid token",
                     ),
                 )
@@ -98,7 +98,7 @@
     put!(bad_handshake_request, protocol.HandshakeRequest(UInt64(0), b"wrong"))
     close(bad_handshake_request)
     bad_handshake_response = Channel{protocol.HandshakeResponse}(1)
-    @test_throws gRPCClient.gRPCServiceCallException Arrow.Flight.handshake(
+    @test_throws Arrow.Flight.FlightStatusError Arrow.Flight.handshake(
         service,
         Arrow.Flight.ServerCallContext(headers=Arrow.Flight.HeaderPair[]),
         bad_handshake_request,
@@ -107,7 +107,7 @@
     @test isempty(collect(bad_handshake_response))
 
     bad_action_response = Channel{protocol.ActionType}(1)
-    @test_throws gRPCClient.gRPCServiceCallException Arrow.Flight.listactions(
+    @test_throws Arrow.Flight.FlightStatusError Arrow.Flight.listactions(
         service,
         Arrow.Flight.ServerCallContext(headers=Arrow.Flight.HeaderPair[]),
         bad_action_response,

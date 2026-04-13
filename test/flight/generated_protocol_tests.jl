@@ -30,4 +30,6 @@ function flight_test_generated_protocol_formatter_surface()
     @test !occursin("::Type{<:var\"", source)
     @test occursin("where {T<:var\"SessionOptionValue.StringListValue\"}", source)
     @test occursin("where {T<:var\"SetSessionOptionsResult.Error\"}", source)
+    @test !occursin("import gRPCClient", source)
+    @test !occursin("# gRPCClient.jl BEGIN", source)
 end

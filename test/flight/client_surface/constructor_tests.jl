@@ -25,6 +25,7 @@ function flight_client_surface_test_constructors(fixture)
     @test client.keepalive == 15.0
     @test client.max_send_message_length == 1024
     @test client.max_recieve_message_length == 2048
+    @test isnothing(client.grpc)
     @test isempty(client.headers)
     @test isnothing(client.tls_root_certs)
     @test isnothing(client.cert_chain)

@@ -34,12 +34,12 @@ It currently doesn't include support for:
 Flight RPC status:
   * Experimental `Arrow.Flight` support is available in-tree
   * Requires Julia `1.12+`
-  * Includes generated protocol bindings and client constructors for the `FlightService` RPC surface
+  * Includes generated protocol bindings in the base package while loading the gRPC-backed `FlightService` client constructors and RPC transport through an optional `gRPCClient.jl` extension
   * Keeps the top-level Flight module shell thin, with exports and generated-protocol setup split out of `src/flight/Flight.jl`
   * Includes high-level `FlightData <-> Arrow IPC` helpers for `Arrow.Table`, `Arrow.Stream`, and DoPut payload generation
   * Keeps the Flight IPC conversion layer modular under `src/flight/convert/`, with `src/flight/convert.jl` retained as a thin entrypoint
-  * Includes client helpers for request headers, binary metadata, handshake token reuse, and TLS configuration via `withheaders`, `withtoken`, and `authenticate`
-  * Keeps the Flight client implementation modular under `src/flight/client/`, with thin entrypoints at `src/flight/client.jl` and `src/flight/client/rpc_methods.jl`
+  * Includes transport-neutral client helpers for request headers, binary metadata, and URI parsing in the base package, with gRPC-backed handshake token reuse, TLS configuration, and remote RPC methods loaded only when the optional `gRPCClient.jl` extension is present
+  * Keeps the Flight client implementation modular under `src/flight/client/`, with the base shell retained in `src/flight/client.jl` and the gRPC-backed runtime loaded through `src/flight/client_extension.jl`
   * Includes a transport-agnostic server core (`Service`, `ServerCallContext`, `ServiceDescriptor`, `MethodDescriptor`) for local Flight method dispatch, path lookup, and handler testing
   * Keeps the transport-agnostic server core modular under `src/flight/server/`, with `src/flight/server.jl` retained as a thin entrypoint
   * Includes an optional `gRPCServer.jl` package extension that maps `Arrow.Flight.Service` into `gRPCServer.ServiceDescriptor` and registers Flight proto types with the external server package when it is present

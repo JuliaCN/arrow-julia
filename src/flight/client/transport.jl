@@ -164,8 +164,6 @@ struct FlightAsyncRequest{R}
     producer::Union{Nothing,Task}
 end
 
-_start_flight_producer(f::Function) = errormonitor(@async f())
-
 function Base.wait(req::FlightAsyncRequest)
     producer = getfield(req, :producer)
     isnothing(producer) || wait(producer)
@@ -189,7 +187,7 @@ end
 
 _default_rpc_options(client::Client) = (
     secure=client.secure,
-    grpc=client.grpc,
+    grpc=_resolve_grpc_handle(client.grpc),
     deadline=client.deadline,
     keepalive=client.keepalive,
     max_send_message_length=client.max_send_message_length,

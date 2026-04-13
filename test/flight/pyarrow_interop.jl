@@ -15,6 +15,8 @@
 # specific language governing permissions and limitations
 # under the License.
 
+using DataAPI
+
 include("pyarrow_interop/support.jl")
 include("pyarrow_interop/discovery_tests.jl")
 include("pyarrow_interop/download_tests.jl")

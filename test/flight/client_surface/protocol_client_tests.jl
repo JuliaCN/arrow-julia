@@ -17,36 +17,47 @@
 
 function flight_client_surface_test_protocol_clients(fixture)
     client = fixture.client
+    flight = Arrow.Flight
 
-    @test isdefined(fixture.protocol, :FlightService_Handshake_Client)
-    @test isdefined(fixture.protocol, :FlightService_ListFlights_Client)
-    @test isdefined(fixture.protocol, :FlightService_GetFlightInfo_Client)
-    @test isdefined(fixture.protocol, :FlightService_PollFlightInfo_Client)
-    @test isdefined(fixture.protocol, :FlightService_GetSchema_Client)
-    @test isdefined(fixture.protocol, :FlightService_DoGet_Client)
-    @test isdefined(fixture.protocol, :FlightService_DoPut_Client)
-    @test isdefined(fixture.protocol, :FlightService_DoExchange_Client)
-    @test isdefined(fixture.protocol, :FlightService_DoAction_Client)
-    @test isdefined(fixture.protocol, :FlightService_ListActions_Client)
+    @test Base.get_extension(Arrow, :ArrowFlightgRPCClientExt) !== nothing
+    @test !isdefined(fixture.protocol, :FlightService_Handshake_Client)
+    @test !isdefined(fixture.protocol, :FlightService_ListFlights_Client)
+    @test !isdefined(fixture.protocol, :FlightService_GetFlightInfo_Client)
+    @test !isdefined(fixture.protocol, :FlightService_PollFlightInfo_Client)
+    @test !isdefined(fixture.protocol, :FlightService_GetSchema_Client)
+    @test !isdefined(fixture.protocol, :FlightService_DoGet_Client)
+    @test !isdefined(fixture.protocol, :FlightService_DoPut_Client)
+    @test !isdefined(fixture.protocol, :FlightService_DoExchange_Client)
+    @test !isdefined(fixture.protocol, :FlightService_DoAction_Client)
+    @test !isdefined(fixture.protocol, :FlightService_ListActions_Client)
 
-    @test Arrow.Flight._handshake_client(client).path ==
+    @test isdefined(flight, :FlightService_Handshake_Client)
+    @test isdefined(flight, :FlightService_ListFlights_Client)
+    @test isdefined(flight, :FlightService_GetFlightInfo_Client)
+    @test isdefined(flight, :FlightService_PollFlightInfo_Client)
+    @test isdefined(flight, :FlightService_GetSchema_Client)
+    @test isdefined(flight, :FlightService_DoGet_Client)
+    @test isdefined(flight, :FlightService_DoPut_Client)
+    @test isdefined(flight, :FlightService_DoExchange_Client)
+    @test isdefined(flight, :FlightService_DoAction_Client)
+    @test isdefined(flight, :FlightService_ListActions_Client)
+
+    @test flight._handshake_client(client).path ==
           "/arrow.flight.protocol.FlightService/Handshake"
-    @test Arrow.Flight._listflights_client(client).path ==
+    @test flight._listflights_client(client).path ==
           "/arrow.flight.protocol.FlightService/ListFlights"
-    @test Arrow.Flight._getflightinfo_client(client).path ==
+    @test flight._getflightinfo_client(client).path ==
           "/arrow.flight.protocol.FlightService/GetFlightInfo"
-    @test Arrow.Flight._pollflightinfo_client(client).path ==
+    @test flight._pollflightinfo_client(client).path ==
           "/arrow.flight.protocol.FlightService/PollFlightInfo"
-    @test Arrow.Flight._getschema_client(client).path ==
+    @test flight._getschema_client(client).path ==
           "/arrow.flight.protocol.FlightService/GetSchema"
-    @test Arrow.Flight._doget_client(client).path ==
-          "/arrow.flight.protocol.FlightService/DoGet"
-    @test Arrow.Flight._doput_client(client).path ==
-          "/arrow.flight.protocol.FlightService/DoPut"
-    @test Arrow.Flight._doexchange_client(client).path ==
+    @test flight._doget_client(client).path == "/arrow.flight.protocol.FlightService/DoGet"
+    @test flight._doput_client(client).path == "/arrow.flight.protocol.FlightService/DoPut"
+    @test flight._doexchange_client(client).path ==
           "/arrow.flight.protocol.FlightService/DoExchange"
-    @test Arrow.Flight._doaction_client(client).path ==
+    @test flight._doaction_client(client).path ==
           "/arrow.flight.protocol.FlightService/DoAction"
-    @test Arrow.Flight._listactions_client(client).path ==
+    @test flight._listactions_client(client).path ==
           "/arrow.flight.protocol.FlightService/ListActions"
 end

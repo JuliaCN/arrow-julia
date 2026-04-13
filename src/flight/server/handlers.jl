@@ -15,10 +15,22 @@
 # specific language governing permissions and limitations
 # under the License.
 
+struct FlightStatusError <: Exception
+    code::Int32
+    message::String
+end
+
+function Base.showerror(io::IO, e::FlightStatusError)
+    print(io, "FlightStatusError(code=", e.code, ", message=\"", e.message, "\")")
+end
+
+const FLIGHT_STATUS_UNIMPLEMENTED = Int32(12)
+const FLIGHT_STATUS_UNAUTHENTICATED = Int32(16)
+
 function _unimplemented(service_method::String)
     throw(
-        gRPCClient.gRPCServiceCallException(
-            gRPCClient.GRPC_UNIMPLEMENTED,
+        FlightStatusError(
+            FLIGHT_STATUS_UNIMPLEMENTED,
             "Arrow Flight server method $(service_method) is not implemented",
         ),
     )
