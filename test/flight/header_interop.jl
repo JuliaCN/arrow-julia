@@ -16,57 +16,79 @@
 # under the License.
 
 @testset "Flight header interop" begin
-    server = FlightTestSupport.start_headers_flight_server()
-    if isnothing(server)
-        @test true
-    else
-        protocol = Arrow.Flight.Protocol
+    protocol = Arrow.Flight.Protocol
+    base_client = Arrow.Flight.Client("grpc://127.0.0.1:47470"; deadline=30)
+    client = Arrow.Flight.withheaders(
+        base_client,
+        "authorization" => "Bearer token1234",
+        "x-trace-id" => "trace-1",
+    )
 
-        try
-            FlightTestSupport.with_transient_flight_startup_retry() do
-                FlightTestSupport.with_test_grpc_handle() do grpc
-                    base_client = Arrow.Flight.Client(
-                        "grpc://127.0.0.1:$(server.port)";
-                        grpc=grpc,
-                        deadline=30,
-                    )
-                    client = Arrow.Flight.withheaders(
-                        base_client,
-                        "authorization" => "Bearer token1234",
-                    )
+    @test Arrow.Flight._header_lines(client.headers) ==
+          ["authorization: Bearer token1234", "x-trace-id: trace-1"]
 
-                    actions_req, actions_channel = Arrow.Flight.listactions(client)
-                    actions = collect(actions_channel)
-                    gRPCClient.grpc_async_await(actions_req)
-                    @test actions == [
-                        protocol.ActionType(
-                            "echo-authorization",
-                            "Return the Authorization header",
-                        ),
-                    ]
+    call_headers =
+        Arrow.Flight._merge_headers(base_client, ["authorization" => "Bearer call-level"])
+    @test call_headers == ["authorization" => "Bearer call-level"]
+    @test Arrow.Flight._header_lines(call_headers) == ["authorization: Bearer call-level"]
 
-                    action_req, action_channel = Arrow.Flight.doaction(
-                        client,
-                        protocol.Action("echo-authorization", UInt8[]),
-                    )
-                    action_results = collect(action_channel)
-                    gRPCClient.grpc_async_await(action_req)
-                    @test length(action_results) == 1
-                    @test String(action_results[1].body) == "Bearer token1234"
+    merged_headers = Arrow.Flight._merge_headers(client, ["x-call-id" => "call-1"])
+    @test merged_headers == [
+        "authorization" => "Bearer token1234",
+        "x-trace-id" => "trace-1",
+        "x-call-id" => "call-1",
+    ]
 
-                    call_req, call_channel = Arrow.Flight.doaction(
-                        base_client,
-                        protocol.Action("echo-authorization", UInt8[]);
-                        headers=["authorization" => "Bearer call-level"],
-                    )
-                    call_results = collect(call_channel)
-                    gRPCClient.grpc_async_await(call_req)
-                    @test length(call_results) == 1
-                    @test String(call_results[1].body) == "Bearer call-level"
-                end
-            end
-        finally
-            FlightTestSupport.stop_pyarrow_flight_server(server)
-        end
-    end
+    context = Arrow.Flight.ServerCallContext(headers=merged_headers)
+    @test Arrow.Flight.callheader(context, "authorization") == "Bearer token1234"
+    @test Arrow.Flight.callheader(context, "Authorization") == "Bearer token1234"
+    @test Arrow.Flight.callheader(context, "x-trace-id") == "trace-1"
+    @test Arrow.Flight.callheader(context, "x-call-id") == "call-1"
+    @test isnothing(Arrow.Flight.callheader(context, "missing"))
+
+    service = Arrow.Flight.Service(
+        listactions=(ctx, response) -> begin
+            @test Arrow.Flight.callheader(ctx, "authorization") == "Bearer token1234"
+            put!(
+                response,
+                protocol.ActionType(
+                    "echo-authorization",
+                    "Return the Authorization header",
+                ),
+            )
+            close(response)
+        end,
+        doaction=(ctx, action, response) -> begin
+            @test action.var"#type" == "echo-authorization"
+            authorization = Arrow.Flight.callheader(ctx, "authorization")
+            put!(response, protocol.Result(Vector{UInt8}(codeunits(authorization))))
+            close(response)
+        end,
+    )
+
+    action_types = Channel{protocol.ActionType}(1)
+    service.listactions(context, action_types)
+    @test collect(action_types) ==
+          [protocol.ActionType("echo-authorization", "Return the Authorization header")]
+
+    action_results = Channel{protocol.Result}(1)
+    service.doaction(
+        context,
+        protocol.Action("echo-authorization", UInt8[]),
+        action_results,
+    )
+    collected_results = collect(action_results)
+    @test length(collected_results) == 1
+    @test String(collected_results[1].body) == "Bearer token1234"
+
+    call_context = Arrow.Flight.ServerCallContext(headers=call_headers)
+    call_results = Channel{protocol.Result}(1)
+    service.doaction(
+        call_context,
+        protocol.Action("echo-authorization", UInt8[]),
+        call_results,
+    )
+    collected_call_results = collect(call_results)
+    @test length(collected_call_results) == 1
+    @test String(collected_call_results[1].body) == "Bearer call-level"
 end

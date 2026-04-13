@@ -55,3 +55,6 @@ Tables = "1"
 TestSetExtensions = "3"
 TimeZones = "1"
 gRPCClient = "1"
+
+[sources]
+gRPCClient = { url = "https://github.com/tao3k/gRPCClient.jl.git", rev = "faa9107a19f65e56c5c566c71d0844aaca651612" }
