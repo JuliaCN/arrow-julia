@@ -83,6 +83,13 @@ getschema(client::Client, args...; kwargs...) =
     _flight_client_extension_required("getschema")
 doget(client::Client, args...; kwargs...) = _flight_client_extension_required("doget")
 doput(client::Client, args...; kwargs...) = _flight_client_extension_required("doput")
+"""
+    Arrow.Flight.doexchange(client, args...; kwargs...)
+
+Open a Flight `DoExchange` call. The gRPC-backed Flight client runtime is
+loaded through the optional `ArrowFlightgRPCClientExt` extension, so callers
+must load `gRPCClient.jl` before invoking this method.
+"""
 doexchange(client::Client, args...; kwargs...) =
     _flight_client_extension_required("doexchange")
 doaction(client::Client, args...; kwargs...) = _flight_client_extension_required("doaction")
