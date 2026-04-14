@@ -15,16 +15,17 @@
 # specific language governing permissions and limitations
 # under the License.
 
-include("client_surface/support.jl")
-include("client_surface/constructor_tests.jl")
-include("client_surface/header_tls_tests.jl")
-include("client_surface/producer_tests.jl")
-include("client_surface/protocol_client_tests.jl")
+function flight_client_surface_test_producer_shutdown(_fixture)
+    descriptor = Arrow.Flight.pathdescriptor(("client", "producer", "shutdown"))
+    sink = Channel{Arrow.Flight.Protocol.FlightData}(1)
+    close(sink)
+    flight_ext = Base.get_extension(Arrow, :ArrowFlightgRPCClientExt)
+    @test !isnothing(flight_ext)
 
-@testset "Flight RPC client surface" begin
-    fixture = flight_client_surface_fixture()
-    flight_client_surface_test_constructors(fixture)
-    flight_client_surface_test_header_tls_helpers(fixture)
-    flight_client_surface_test_producer_shutdown(fixture)
-    flight_client_surface_test_protocol_clients(fixture)
+    @test flight_ext._putflightdata_or_stop!(
+        sink,
+        (id=[1], value=["one"]);
+        close=true,
+        descriptor=descriptor,
+    ) === sink
 end
