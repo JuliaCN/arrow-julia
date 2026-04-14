@@ -210,6 +210,21 @@ Flight.doexchange(
     headers=Flight._merge_headers(client, headers),
 )
 
+function _putflightdata_or_stop!(
+    sink::Channel{Protocol.FlightData},
+    source;
+    kwargs...,
+)
+    try
+        return putflightdata!(sink, source; kwargs...)
+    catch err
+        if err isa InvalidStateException && !isopen(sink)
+            return sink
+        end
+        rethrow()
+    end
+end
+
 function Flight.doexchange(
     client::Client;
     request_capacity::Integer=DEFAULT_STREAM_BUFFER,
@@ -244,7 +259,7 @@ function Flight.doexchange(
 )
     request = Channel{Protocol.FlightData}(request_capacity)
     producer = _start_flight_producer() do
-        putflightdata!(
+        _putflightdata_or_stop!(
             request,
             source;
             close=true,
