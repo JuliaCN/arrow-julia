@@ -210,11 +210,7 @@ Flight.doexchange(
     headers=Flight._merge_headers(client, headers),
 )
 
-function _putflightdata_or_stop!(
-    sink::Channel{Protocol.FlightData},
-    source;
-    kwargs...,
-)
+function _putflightdata_or_stop!(sink::Channel{Protocol.FlightData}, source; kwargs...)
     try
         return putflightdata!(sink, source; kwargs...)
     catch err
