@@ -272,6 +272,23 @@ service invocation through [`Arrow.Flight.doexchange`](@ref),
 [`Arrow.Flight.table`](@ref), and [`Arrow.Flight.stream`](@ref) when the first
 argument is an in-process `Arrow.Flight.Service`.
 
+The gRPC-backed remote Flight client surface is optional. The base package
+keeps `Arrow.Flight.Client`, URI parsing, header helpers, protocol types, and
+transport-agnostic server composition available without a hard
+`gRPCClient.jl` dependency, while the remote Flight RPC methods load through
+the optional `ArrowFlightgRPCClientExt` extension when `gRPCClient.jl` is
+present in the active environment.
+
+When `gRPCServer.jl` is available, the optional `ArrowgRPCServerExt` package
+extension can expose that same `Arrow.Flight.Service` over a real gRPC Flight
+transport. Package-local live proofs currently cover `Handshake`,
+`ListFlights`, `GetFlightInfo`, `PollFlightInfo`, `GetSchema`, `DoGet`,
+`DoPut`, `DoExchange`, `ListActions`, and `DoAction` through
+`test/flight_grpcserver.jl`. The matching `pyarrow.flight` smoke coverage
+against that live Julia server currently spans all of those except
+`PollFlightInfo`, because the Python client surface used in the test
+environment does not expose a poll API.
+
 ## Writing arrow data
 
 Ok, so that's a pretty good rundown of *reading* arrow data, but how do you *produce* arrow data? Enter `Arrow.write`.

@@ -19,7 +19,7 @@ struct Client
     host::String
     port::Int64
     secure::Bool
-    grpc::gRPCClient.gRPCCURL
+    grpc::Any
     deadline::Float64
     keepalive::Float64
     max_send_message_length::Int64
@@ -36,7 +36,7 @@ function Client(
     host,
     port;
     secure::Bool=false,
-    grpc::gRPCClient.gRPCCURL=gRPCClient.grpc_global_handle(),
+    grpc=nothing,
     deadline::Real=10,
     keepalive::Real=60,
     max_send_message_length::Integer=DEFAULT_MAX_MESSAGE_LENGTH,

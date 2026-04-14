@@ -15,13 +15,53 @@
 # specific language governing permissions and limitations
 # under the License.
 
+function grpcserver_extension_assert_authenticated(ctx, fixture)
+    auth_header = Arrow.Flight.callheader(ctx, "authorization")
+    token_header = Arrow.Flight.callheader(ctx, "auth-token-bin")
+    expected_token = String(copy(fixture.handshake_token))
+
+    if auth_header == "Bearer $(expected_token)" ||
+       (auth_header isa String && startswith(auth_header, "Basic "))
+        @test isnothing(token_header)
+        return
+    end
+
+    if token_header isa AbstractVector{UInt8}
+        @test collect(token_header) == collect(fixture.handshake_token)
+        return
+    end
+
+    if token_header isa String
+        @test token_header == expected_token
+        return
+    end
+
+    @test false
+end
+
 function grpcserver_extension_service(protocol, fixture)
     return Arrow.Flight.Service(
         handshake=(ctx, request, response) -> begin
-            @test Arrow.Flight.callheader(ctx, "authorization") == "Bearer native"
+            auth_header = Arrow.Flight.callheader(ctx, "authorization")
+            @test isnothing(auth_header) ||
+                  auth_header == "Bearer native" ||
+                  startswith(auth_header, "Basic ")
+            @test isnothing(Arrow.Flight.callheader(ctx, "auth-token-bin"))
             incoming = collect(request)
-            @test length(incoming) == 1
-            put!(response, protocol.HandshakeResponse(UInt64(0), incoming[1].payload))
+            token = if isempty(incoming)
+                @test !isnothing(auth_header)
+                @test startswith(auth_header, "Basic ")
+                fixture.handshake_token
+            elseif length(incoming) == 1
+                @test incoming[1].payload == fixture.handshake_token
+                incoming[1].payload
+            else
+                @test length(incoming) == 2
+                @test String(copy(incoming[1].payload)) == fixture.handshake_username
+                @test String(copy(incoming[2].payload)) == fixture.handshake_password
+                fixture.handshake_token
+            end
+            put!(response, protocol.HandshakeResponse(UInt64(0), token))
             close(response)
             return :handshake_ok
         end,
@@ -29,13 +69,28 @@ function grpcserver_extension_service(protocol, fixture)
             @test req.path == fixture.descriptor.path
             return fixture.info
         end,
+        pollflightinfo=(ctx, req) -> begin
+            grpcserver_extension_assert_authenticated(ctx, fixture)
+            if req.path == fixture.poll_descriptor.path
+                return fixture.initial_poll
+            end
+            @test req.path == fixture.poll_retry_descriptor.path
+            return fixture.final_poll
+        end,
+        listflights=(ctx, criteria, response) -> begin
+            grpcserver_extension_assert_authenticated(ctx, fixture)
+            @test criteria.expression == UInt8[]
+            put!(response, fixture.info)
+            close(response)
+            return :listflights_ok
+        end,
         getschema=(ctx, req) -> begin
-            @test Arrow.Flight.callheader(ctx, "authorization") == "Bearer native"
+            grpcserver_extension_assert_authenticated(ctx, fixture)
             @test req.path == fixture.descriptor.path
             return protocol.SchemaResult(fixture.schema_bytes[5:end])
         end,
         doget=(ctx, req, response) -> begin
-            @test Arrow.Flight.callheader(ctx, "authorization") == "Bearer native"
+            grpcserver_extension_assert_authenticated(ctx, fixture)
             @test req.ticket == fixture.ticket.ticket
             Arrow.Flight.putflightdata!(
                 response,
@@ -51,20 +106,20 @@ function grpcserver_extension_service(protocol, fixture)
             return :doget_ok
         end,
         listactions=(ctx, response) -> begin
-            @test Arrow.Flight.callheader(ctx, "authorization") == "Bearer native"
+            grpcserver_extension_assert_authenticated(ctx, fixture)
             put!(response, protocol.ActionType("ping", "Ping action"))
             close(response)
             return :listactions_ok
         end,
         doaction=(ctx, action, response) -> begin
-            @test Arrow.Flight.callheader(ctx, "authorization") == "Bearer native"
+            grpcserver_extension_assert_authenticated(ctx, fixture)
             @test action.var"#type" == "ping"
             put!(response, protocol.Result(b"pong"))
             close(response)
             return :doaction_ok
         end,
         doput=(ctx, request, response) -> begin
-            @test Arrow.Flight.callheader(ctx, "authorization") == "Bearer native"
+            grpcserver_extension_assert_authenticated(ctx, fixture)
             incoming = collect(Arrow.Flight.stream(request; include_app_metadata=true))
             @test length(incoming) == 2
             @test incoming[1].table.id == [1, 2]
@@ -81,7 +136,7 @@ function grpcserver_extension_service(protocol, fixture)
             return :doput_ok
         end,
         doexchange=(ctx, request, response) -> begin
-            @test Arrow.Flight.callheader(ctx, "authorization") == "Bearer native"
+            grpcserver_extension_assert_authenticated(ctx, fixture)
             incoming = collect(Arrow.Flight.stream(request; include_app_metadata=true))
             @test length(incoming) == 1
             @test FlightTestSupport.app_metadata_strings(

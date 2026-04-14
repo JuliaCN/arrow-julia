@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-handshake(
+Flight.handshake(
     client::Client,
     request::Channel{Protocol.HandshakeRequest},
     response::Channel{Protocol.HandshakeResponse};
@@ -23,13 +23,13 @@ handshake(
     kwargs...,
 ) = _grpc_async_request(
     client,
-    _handshake_client(client; kwargs...),
+    Flight._handshake_client(client; kwargs...),
     request,
     response,
-    headers=_merge_headers(client, headers),
+    headers=Flight._merge_headers(client, headers),
 )
 
-function handshake(
+function Flight.handshake(
     client::Client;
     request_capacity::Integer=DEFAULT_STREAM_BUFFER,
     response_capacity::Integer=DEFAULT_STREAM_BUFFER,
@@ -38,17 +38,18 @@ function handshake(
 )
     request = Channel{Protocol.HandshakeRequest}(request_capacity)
     response = Channel{Protocol.HandshakeResponse}(response_capacity)
-    req = handshake(client, request, response; headers=headers, kwargs...)
+    req = Flight.handshake(client, request, response; headers=headers, kwargs...)
     return req, request, response
 end
 
-function authenticate(
+function Flight.authenticate(
     client::Client,
     requests::AbstractVector{<:Protocol.HandshakeRequest};
     headers::AbstractVector{<:Pair}=HeaderPair[],
     kwargs...,
 )
-    req, request_channel, response_channel = handshake(client; headers=headers, kwargs...)
+    req, request_channel, response_channel =
+        Flight.handshake(client; headers=headers, kwargs...)
     for request in requests
         put!(request_channel, request)
     end
@@ -60,10 +61,10 @@ function authenticate(
     isempty(responses) &&
         throw(ArgumentError("Arrow Flight handshake returned no response messages"))
 
-    return withtoken(client, responses[end].payload), responses
+    return Flight.withtoken(client, responses[end].payload), responses
 end
 
-function authenticate(
+function Flight.authenticate(
     client::Client,
     payloads::AbstractVector{<:AbstractVector{UInt8}};
     headers::AbstractVector{<:Pair}=HeaderPair[],
@@ -72,17 +73,17 @@ function authenticate(
     requests = [
         Protocol.HandshakeRequest(UInt64(0), Vector{UInt8}(payload)) for payload in payloads
     ]
-    return authenticate(client, requests; headers=headers, kwargs...)
+    return Flight.authenticate(client, requests; headers=headers, kwargs...)
 end
 
-function authenticate(
+function Flight.authenticate(
     client::Client,
     username::AbstractString,
     password::AbstractString;
     headers::AbstractVector{<:Pair}=HeaderPair[],
     kwargs...,
 )
-    return authenticate(
+    return Flight.authenticate(
         client,
         [Vector{UInt8}(codeunits(username)), Vector{UInt8}(codeunits(password))];
         headers=headers,

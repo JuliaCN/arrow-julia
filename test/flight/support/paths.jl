@@ -17,6 +17,14 @@
 
 const TEST_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 
+const FLIGHT_PYTHON_IMPORT_PROBE = """
+import importlib
+import sys
+
+for name in sys.argv[1:]:
+    importlib.import_module(name)
+"""
+
 function git_toplevel(path::AbstractString)
     try
         cmd = pipeline(
@@ -44,12 +52,38 @@ function flight_test_roots()
     return roots
 end
 
-function pyarrow_flight_python()
-    haskey(ENV, "ARROW_FLIGHT_PYTHON") && return ENV["ARROW_FLIGHT_PYTHON"]
+function flight_test_python_candidates()
+    candidates = String[]
+    haskey(ENV, "ARROW_FLIGHT_PYTHON") && push!(candidates, ENV["ARROW_FLIGHT_PYTHON"])
     cache_home = get(ENV, "PRJ_CACHE_HOME", ".cache")
     for root in flight_test_roots()
-        python = joinpath(root, cache_home, "arrow-julia-flight-pyenv", "bin", "python")
-        isfile(python) && return python
+        push!(
+            candidates,
+            joinpath(root, cache_home, "arrow-julia-flight-pyenv", "bin", "python"),
+        )
+        push!(candidates, joinpath(root, ".venv", "bin", "python"))
+    end
+    python3 = Sys.which("python3")
+    !isnothing(python3) && push!(candidates, python3)
+    python = Sys.which("python")
+    !isnothing(python) && push!(candidates, python)
+    unique!(filter!(isfile, candidates))
+    return candidates
+end
+
+function python_supports_modules(
+    python::AbstractString,
+    modules::AbstractVector{<:AbstractString},
+)
+    cmd = ignorestatus(Cmd([python, "-c", FLIGHT_PYTHON_IMPORT_PROBE, modules...]))
+    return success(pipeline(cmd; stdout=devnull, stderr=devnull))
+end
+
+function pyarrow_flight_python(;
+    required_modules::AbstractVector{<:AbstractString}=String["pyarrow.flight"],
+)
+    for python in flight_test_python_candidates()
+        python_supports_modules(python, required_modules) && return python
     end
     return nothing
 end

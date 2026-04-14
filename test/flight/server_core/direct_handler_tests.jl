@@ -16,7 +16,7 @@
 # under the License.
 
 function flight_server_core_test_direct_handlers(fixture)
-    @test_throws gRPCClient.gRPCServiceCallException Arrow.Flight.getflightinfo(
+    @test_throws Arrow.Flight.FlightStatusError Arrow.Flight.getflightinfo(
         fixture.service,
         fixture.context,
         fixture.descriptor,

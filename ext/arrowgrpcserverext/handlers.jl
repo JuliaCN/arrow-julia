@@ -15,9 +15,19 @@
 # specific language governing permissions and limitations
 # under the License.
 
+function _rethrow_flight_status_error(error::Flight.FlightStatusError)
+    throw(gRPCServer.GRPCError(gRPCServer.StatusCode.T(error.code), error.message))
+end
+
 function _unary_handler(service::Flight.Service, method::Flight.MethodDescriptor)
-    return (context, request) ->
-        Flight.dispatch(service, _call_context(context), method, request)
+    return (context, request) -> begin
+        try
+            Flight.dispatch(service, _call_context(context), method, request)
+        catch error
+            error isa Flight.FlightStatusError && _rethrow_flight_status_error(error)
+            rethrow()
+        end
+    end
 end
 
 function _server_streaming_handler(service::Flight.Service, method::Flight.MethodDescriptor)
@@ -30,6 +40,10 @@ function _server_streaming_handler(service::Flight.Service, method::Flight.Metho
                 else
                     Flight.dispatch(service, _call_context(context), method, request, response)
                 end
+            catch error
+                error isa Flight.FlightStatusError &&
+                    _rethrow_flight_status_error(error)
+                rethrow()
             finally
                 close(response)
             end
@@ -56,7 +70,15 @@ function _client_streaming_handler(service::Flight.Service, method::Flight.Metho
                 close(request)
             end
         end
-        task = @async Flight.dispatch(service, _call_context(context), method, request)
+        task = @async begin
+            try
+                Flight.dispatch(service, _call_context(context), method, request)
+            catch error
+                error isa Flight.FlightStatusError &&
+                    _rethrow_flight_status_error(error)
+                rethrow()
+            end
+        end
         try
             return fetch(task)
         finally
@@ -81,6 +103,10 @@ function _bidi_streaming_handler(service::Flight.Service, method::Flight.MethodD
         task = @async begin
             try
                 Flight.dispatch(service, _call_context(context), method, request, response)
+            catch error
+                error isa Flight.FlightStatusError &&
+                    _rethrow_flight_status_error(error)
+                rethrow()
             finally
                 close(response)
             end

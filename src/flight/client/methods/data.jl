@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-doget(
+Flight.doget(
     client::Client,
     ticket::Protocol.Ticket,
     response::Channel{Protocol.FlightData};
@@ -23,13 +23,13 @@ doget(
     kwargs...,
 ) = _grpc_async_request(
     client,
-    _doget_client(client; kwargs...),
+    Flight._doget_client(client; kwargs...),
     ticket,
     response;
-    headers=_merge_headers(client, headers),
+    headers=Flight._merge_headers(client, headers),
 )
 
-function doget(
+function Flight.doget(
     client::Client,
     ticket::Protocol.Ticket;
     response_capacity::Integer=DEFAULT_STREAM_BUFFER,
@@ -37,11 +37,11 @@ function doget(
     kwargs...,
 )
     response = Channel{Protocol.FlightData}(response_capacity)
-    req = doget(client, ticket, response; headers=headers, kwargs...)
+    req = Flight.doget(client, ticket, response; headers=headers, kwargs...)
     return req, response
 end
 
-doput(
+Flight.doput(
     client::Client,
     request::Channel{Protocol.FlightData},
     response::Channel{Protocol.PutResult};
@@ -49,10 +49,10 @@ doput(
     kwargs...,
 ) = _grpc_async_request(
     client,
-    _doput_client(client; kwargs...),
+    Flight._doput_client(client; kwargs...),
     request,
     response;
-    headers=_merge_headers(client, headers),
+    headers=Flight._merge_headers(client, headers),
 )
 
 function _buffer_flightdata_request(
@@ -96,7 +96,7 @@ function _buffer_flightdata_request(
     return request
 end
 
-function doput(
+function Flight.doput(
     client::Client;
     request_capacity::Integer=DEFAULT_STREAM_BUFFER,
     response_capacity::Integer=DEFAULT_STREAM_BUFFER,
@@ -105,11 +105,11 @@ function doput(
 )
     request = Channel{Protocol.FlightData}(request_capacity)
     response = Channel{Protocol.PutResult}(response_capacity)
-    req = doput(client, request, response; headers=headers, kwargs...)
+    req = Flight.doput(client, request, response; headers=headers, kwargs...)
     return req, request, response
 end
 
-function doput(
+function Flight.doput(
     client::Client,
     source,
     response::Channel{Protocol.PutResult};
@@ -128,7 +128,7 @@ function doput(
     app_metadata=nothing,
     kwargs...,
 )
-    rpc_client = _doput_client(client; kwargs...)
+    rpc_client = Flight._doput_client(client; kwargs...)
     request = _buffer_flightdata_request(
         source;
         max_send_message_length=rpc_client.max_send_message_length,
@@ -149,12 +149,12 @@ function doput(
         rpc_client,
         request,
         response;
-        headers=_merge_headers(client, headers),
+        headers=Flight._merge_headers(client, headers),
     )
     return FlightAsyncRequest(grpc_request, nothing)
 end
 
-function doput(
+function Flight.doput(
     client::Client,
     source;
     request_capacity::Integer=DEFAULT_STREAM_BUFFER,
@@ -174,7 +174,7 @@ function doput(
     kwargs...,
 )
     response = Channel{Protocol.PutResult}(response_capacity)
-    req = doput(
+    req = Flight.doput(
         client,
         source,
         response;
@@ -196,7 +196,7 @@ function doput(
     return req, response
 end
 
-doexchange(
+Flight.doexchange(
     client::Client,
     request::Channel{Protocol.FlightData},
     response::Channel{Protocol.FlightData};
@@ -204,13 +204,13 @@ doexchange(
     kwargs...,
 ) = _grpc_async_request(
     client,
-    _doexchange_client(client; kwargs...),
+    Flight._doexchange_client(client; kwargs...),
     request,
     response,
-    headers=_merge_headers(client, headers),
+    headers=Flight._merge_headers(client, headers),
 )
 
-function doexchange(
+function Flight.doexchange(
     client::Client;
     request_capacity::Integer=DEFAULT_STREAM_BUFFER,
     response_capacity::Integer=DEFAULT_STREAM_BUFFER,
@@ -219,11 +219,11 @@ function doexchange(
 )
     request = Channel{Protocol.FlightData}(request_capacity)
     response = Channel{Protocol.FlightData}(response_capacity)
-    req = doexchange(client, request, response; headers=headers, kwargs...)
+    req = Flight.doexchange(client, request, response; headers=headers, kwargs...)
     return req, request, response
 end
 
-function doexchange(
+function Flight.doexchange(
     client::Client,
     source,
     response::Channel{Protocol.FlightData};
@@ -262,7 +262,8 @@ function doexchange(
         )
     end
     try
-        grpc_request = doexchange(client, request, response; headers=headers, kwargs...)
+        grpc_request =
+            Flight.doexchange(client, request, response; headers=headers, kwargs...)
         return FlightAsyncRequest(grpc_request, producer)
     catch
         isopen(request) && close(request)
@@ -280,7 +281,7 @@ is encoded with [`Arrow.Flight.putflightdata!`](@ref), so callers can pass a
 Tables.jl-compatible source directly instead of manually constructing
 `FlightData` messages.
 """
-function doexchange(
+function Flight.doexchange(
     client::Client,
     source;
     request_capacity::Integer=DEFAULT_STREAM_BUFFER,
@@ -300,7 +301,7 @@ function doexchange(
     kwargs...,
 )
     response = Channel{Protocol.FlightData}(response_capacity)
-    req = doexchange(
+    req = Flight.doexchange(
         client,
         source,
         response;

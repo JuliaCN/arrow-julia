@@ -19,7 +19,6 @@ module Flight
 
 using Base64
 using ProtoBuf
-using gRPCClient
 using Tables
 
 const ArrowParent = parentmodule(@__MODULE__)
