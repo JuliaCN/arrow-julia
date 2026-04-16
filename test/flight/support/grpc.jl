@@ -24,10 +24,3 @@ function with_test_grpc_handle(f::F) where {F}
         gRPCClient.grpc_shutdown(grpc)
     end
 end
-
-function load_grpcserver()
-    isnothing(Base.find_package("gRPCServer")) && return nothing
-    return Base.require(
-        Base.PkgId(Base.UUID("608c6337-0d7d-447f-bb69-0f5674ee3959"), "gRPCServer"),
-    )
-end

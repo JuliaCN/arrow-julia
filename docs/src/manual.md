@@ -279,15 +279,35 @@ transport-agnostic server composition available without a hard
 the optional `ArrowFlightgRPCClientExt` extension when `gRPCClient.jl` is
 present in the active environment.
 
-When `gRPCServer.jl` is available, the optional `ArrowgRPCServerExt` package
-extension can expose that same `Arrow.Flight.Service` over a real gRPC Flight
-transport. Package-local live proofs currently cover `Handshake`,
-`ListFlights`, `GetFlightInfo`, `PollFlightInfo`, `GetSchema`, `DoGet`,
-`DoPut`, `DoExchange`, `ListActions`, and `DoAction` through
-`test/flight_grpcserver.jl`. The matching `pyarrow.flight` smoke coverage
+Arrow.jl now ships built-in `PureHTTP2.jl` transport helpers in the Flight
+server core for package-owned h2c listeners,
+discovery, schema, unary, client-streaming, server-streaming, actions, poll,
+and live bidirectional `DoExchange` gRPC-over-HTTP/2 handling, with focused
+coverage through `test/flight_purehttp2.jl`, which also serves as the stable
+and nightly Flight interop CI runner. The packaged backend contract is exposed through
+[`Arrow.Flight.flight_server_backend_capabilities`](@ref),
+[`Arrow.Flight.flight_server_backend_supported`](@ref), and
+[`Arrow.Flight.require_flight_server_backend`](@ref); the current default live
+listener profile is `:purehttp2`; `:grpcserver` has been retired, and
+`:nghttp2` now activates only when `Nghttp2Wrapper.jl` is loaded so the
+optional extension can provide `Arrow.Flight.nghttp2_flight_server(...)`.
+That backend currently proves unary plus buffered server-streaming methods with
+trailer-borne `grpc-status`, while request-streaming `Handshake`, `DoPut`, and
+`DoExchange` remain unsupported. The matching `pyarrow.flight` smoke coverage
 against that live Julia server currently spans all of those except
 `PollFlightInfo`, because the Python client surface used in the test
-environment does not expose a poll API.
+environment does not expose a poll API. A separate focused runner,
+`test/flight_purehttp2_perf.jl`, now measures large-response end-to-end
+`DoGet` performance on that same package-owned listener through a reusable
+backend-factory seam. A second focused runner, `test/flight_nghttp2_probe.jl`,
+verifies the currently exported `Nghttp2Wrapper.jl` low-level session /
+callback / submit hooks and raw h2c substrate behavior. A third focused
+runner, `test/flight_nghttp2.jl`, proves the weakdep-backed Flight listener
+itself and prints same-harness large `DoGet` comparison numbers against the
+default `PureHTTP2` backend. The current nghttp2 backend is intentionally
+bounded, so the package-owned `test/flight_purehttp2_perf.jl` runner remains
+the canonical large-transport proof for the default backend while
+request-streaming C-wrapper work stays deferred.
 
 ## Writing arrow data
 

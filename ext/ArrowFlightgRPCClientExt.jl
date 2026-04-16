@@ -28,6 +28,7 @@ const DEFAULT_STREAM_BUFFER = Flight.DEFAULT_STREAM_BUFFER
 const DEFAULT_MAX_MESSAGE_LENGTH = Flight.DEFAULT_MAX_MESSAGE_LENGTH
 const DEFAULT_IPC_ALIGNMENT = Flight.DEFAULT_IPC_ALIGNMENT
 const ArrowParent = Flight.ArrowParent
+const _header_lines = Flight._header_lines
 const _merge_headers = Flight._merge_headers
 const _start_flight_producer = Flight._start_flight_producer
 const _emitflightdata! = Flight._emitflightdata!

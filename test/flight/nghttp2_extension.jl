@@ -15,6 +15,12 @@
 # specific language governing permissions and limitations
 # under the License.
 
-const Flight = Arrow.Flight
-const STREAM_BUFFER_SIZE = 16
-const GENERATED_TYPE_PREFIX = "Arrow.Flight.Generated."
+include("nghttp2_extension/backend_tests.jl")
+include("nghttp2_extension/live_listener_tests.jl")
+include("nghttp2_extension/performance_tests.jl")
+
+@testset "Flight Nghttp2Wrapper extension" begin
+    nghttp2_extension_test_backend_profiles()
+    nghttp2_extension_test_live_listener()
+    nghttp2_extension_test_large_transport_compare()
+end

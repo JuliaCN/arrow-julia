@@ -19,6 +19,8 @@ module Flight
 
 using Base64
 using ProtoBuf
+using PureHTTP2
+using Sockets
 using Tables
 
 const ArrowParent = parentmodule(@__MODULE__)

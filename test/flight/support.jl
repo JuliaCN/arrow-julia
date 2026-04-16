@@ -31,7 +31,6 @@ export PyArrowFlightServer,
     start_tls_flight_server,
     stop_pyarrow_flight_server,
     with_test_grpc_handle,
-    load_grpcserver,
     generate_test_tls_certificate,
     next_message_factory
 

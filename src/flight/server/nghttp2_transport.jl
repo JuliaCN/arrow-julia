@@ -15,13 +15,18 @@
 # specific language governing permissions and limitations
 # under the License.
 
-grpcserver_extension_metadata() =
-    Dict{String,Union{String,Vector{UInt8}}}("authorization" => "Bearer native")
+"""
+    nghttp2_flight_server(service::Service; kwargs...)
 
-function grpcserver_extension_context(
-    grpcserver,
-    method::AbstractString;
-    metadata=grpcserver_extension_metadata(),
-)
-    return grpcserver.ServerContext(method=String(method), metadata=metadata)
+Start an Arrow Flight server on the optional `Nghttp2Wrapper.jl` backend.
+Load `Nghttp2Wrapper` in the active Julia session to activate the extension.
+"""
+function nghttp2_flight_server(args...; kwargs...)
+    throw(
+        ArgumentError(
+            "Arrow Flight nghttp2 backend requires loading Nghttp2Wrapper.jl so the ArrowFlightNghttp2Ext extension can activate",
+        ),
+    )
 end
+
+nghttp2_extension_loaded() = !isnothing(Base.get_extension(ArrowParent, :ArrowFlightNghttp2Ext))

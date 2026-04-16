@@ -15,25 +15,15 @@
 # specific language governing permissions and limitations
 # under the License.
 
-function _drain_response!(stream::gRPCServer.ServerStream, response::Channel)
-    # gRPCServer falls back to `ServerStream{Any}` when a descriptor only carries
-    # protobuf type names. Drain generically and let `send!` enforce compatibility.
-    for message in response
-        gRPCServer.send!(stream, message)
-    end
-    return nothing
-end
+module ArrowFlightNghttp2Ext
 
-function _streaming_handler_result(task::Task, producer::Union{Nothing,Task}=nothing)
-    if !isnothing(producer)
-        if istaskfailed(producer)
-            throw(producer.exception)
-        end
-        wait(producer)
-    end
-    if istaskfailed(task)
-        throw(task.exception)
-    end
-    wait(task)
-    return nothing
-end
+using Arrow
+using Base64
+using Nghttp2Wrapper
+using Sockets
+
+const Flight = Arrow.Flight
+
+include("arrowflightnghttp2ext/transport.jl")
+
+end # module ArrowFlightNghttp2Ext

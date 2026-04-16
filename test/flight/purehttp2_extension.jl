@@ -15,15 +15,14 @@
 # specific language governing permissions and limitations
 # under the License.
 
-module ArrowgRPCServerExt
+include("purehttp2_extension/support.jl")
+include("purehttp2_extension/bridge_tests.jl")
+include("purehttp2_extension/live_connection_tests.jl")
+include("purehttp2_extension/live_listener_tests.jl")
 
-using Arrow
-using gRPCServer
-
-include("arrowgrpcserverext/constants.jl")
-include("arrowgrpcserverext/context.jl")
-include("arrowgrpcserverext/streams.jl")
-include("arrowgrpcserverext/handlers.jl")
-include("arrowgrpcserverext/descriptor.jl")
-
-end # module ArrowgRPCServerExt
+@testset "Flight PureHTTP2 transport" begin
+    fixture = purehttp2_extension_fixture()
+    purehttp2_extension_test_bridge(fixture)
+    purehttp2_extension_test_live_connection(fixture)
+    purehttp2_extension_test_live_listener(fixture)
+end
