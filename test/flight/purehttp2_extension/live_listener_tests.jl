@@ -31,7 +31,8 @@ function purehttp2_extension_test_live_listener(fixture)
         purehttp2_extension_wait_for_live_server(server.host, server.port)
         @test isopen(server)
         @test server.port > 0
-        pyarrow_smoke_ran = flight_live_pyarrow_smoke(server.host, server.port, live_fixture)
+        pyarrow_smoke_ran =
+            flight_live_pyarrow_smoke(server.host, server.port, live_fixture)
         @test pyarrow_smoke_ran || isnothing(FlightTestSupport.pyarrow_flight_python())
     finally
         Arrow.Flight.stop!(server; force=true)

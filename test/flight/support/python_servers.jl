@@ -143,14 +143,7 @@ end
 function probe_pyarrow_flight_server(port::Integer)
     python = pyarrow_flight_python()
     isnothing(python) && error("pyarrow.flight is unavailable for readiness probe")
-    run(
-        Cmd([
-            python,
-            "-c",
-            PYARROW_FLIGHT_READINESS_PROBE,
-            string(port),
-        ]),
-    )
+    run(Cmd([python, "-c", PYARROW_FLIGHT_READINESS_PROBE, string(port)]))
     return
 end
 
