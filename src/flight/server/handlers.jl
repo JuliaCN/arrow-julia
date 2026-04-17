@@ -25,6 +25,7 @@ function Base.showerror(io::IO, e::FlightStatusError)
 end
 
 const FLIGHT_STATUS_UNIMPLEMENTED = Int32(12)
+const FLIGHT_STATUS_RESOURCE_EXHAUSTED = Int32(8)
 const FLIGHT_STATUS_UNAUTHENTICATED = Int32(16)
 
 function _unimplemented(service_method::String)

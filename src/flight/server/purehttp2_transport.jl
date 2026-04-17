@@ -16,6 +16,13 @@
 # under the License.
 
 const EXCLUDED_PUREHTTP2_REQUEST_HEADERS = Set(["content-type", "te"])
+const DEFAULT_MAX_ACTIVE_REQUESTS = max(Threads.nthreads() * 8, 32)
+
+mutable struct PureHTTP2RequestGate
+    lock::ReentrantLock
+    max_active_requests::Int
+    active_requests::Int
+end
 
 mutable struct PureHTTP2FlightServer
     service::Service
@@ -24,6 +31,7 @@ mutable struct PureHTTP2FlightServer
     port::Int
     request_capacity::Int
     response_capacity::Int
+    request_gate::PureHTTP2RequestGate
     state_lock::ReentrantLock
     accept_task::Union{Nothing,Task}
     connections::Dict{Task,Sockets.TCPSocket}
@@ -55,6 +63,34 @@ function _purehttp2_request_stream(conn::PureHTTP2.HTTP2Connection, stream_id::U
         ArgumentError("PureHTTP2 Flight transport could not find stream $(stream_id)"),
     )
     return stream
+end
+
+function _purehttp2_request_gate(max_active_requests::Integer)
+    max_active_requests > 0 || throw(ArgumentError("max_active_requests must be positive"))
+    return PureHTTP2RequestGate(ReentrantLock(), Int(max_active_requests), 0)
+end
+
+function _purehttp2_try_acquire_request!(gate::PureHTTP2RequestGate)
+    return lock(gate.lock) do
+        gate.active_requests < gate.max_active_requests || return false
+        gate.active_requests += 1
+        return true
+    end
+end
+
+function _purehttp2_release_request!(gate::PureHTTP2RequestGate)
+    lock(gate.lock) do
+        gate.active_requests > 0 || return nothing
+        gate.active_requests -= 1
+    end
+    return nothing
+end
+
+function _purehttp2_overload_error(gate::PureHTTP2RequestGate)
+    return FlightStatusError(
+        FLIGHT_STATUS_RESOURCE_EXHAUSTED,
+        "Arrow Flight PureHTTP2 server is overloaded: active request limit $(gate.max_active_requests) reached",
+    )
 end
 
 function purehttp2_call_context(
@@ -290,12 +326,13 @@ function _purehttp2_start_live_session(
     method::TransportMethodDescriptor,
     context::ServerCallContext,
     transport_lock::ReentrantLock;
+    request_gate::Union{Nothing,PureHTTP2RequestGate}=nothing,
     request_capacity::Integer=DEFAULT_STREAM_BUFFER,
     response_capacity::Integer=DEFAULT_STREAM_BUFFER,
 )
     request_messages = Channel{method.method.request_type}(request_capacity)
     writer = PureHTTP2LiveResponseWriter(conn, io, stream_id, transport_lock, false, false)
-    task = @async begin
+    task = _transport_spawn() do
         try
             if method.method.response_streaming
                 emit =
@@ -323,6 +360,7 @@ function _purehttp2_start_live_session(
             _purehttp2_fail_live_response!(writer, error)
         finally
             isopen(request_messages) && close(request_messages)
+            isnothing(request_gate) || _purehttp2_release_request!(request_gate)
         end
     end
     return PureHTTP2LiveStreamSession(
@@ -427,6 +465,7 @@ function _purehttp2_connection_task!(
             server.service,
             socket;
             peer=_purehttp2_peer(socket),
+            request_gate=server.request_gate,
             request_capacity=server.request_capacity,
             response_capacity=server.response_capacity,
         )
@@ -453,7 +492,9 @@ function _purehttp2_accept_loop!(server::PureHTTP2FlightServer)
             end
             rethrow()
         end
-        task = @async _purehttp2_connection_task!(server, socket)
+        task = _transport_spawn() do
+            _purehttp2_connection_task!(server, socket)
+        end
         _purehttp2_track_connection!(server, task, socket)
     end
     return nothing
@@ -466,6 +507,7 @@ function purehttp2_serve_grpc_connection!(
     max_frame_size::Int=PureHTTP2.DEFAULT_MAX_FRAME_SIZE,
     peer::Union{Nothing,String}=nothing,
     secure::Bool=false,
+    request_gate::Union{Nothing,PureHTTP2RequestGate}=nothing,
     request_capacity::Integer=DEFAULT_STREAM_BUFFER,
     response_capacity::Integer=DEFAULT_STREAM_BUFFER,
 )
@@ -528,12 +570,25 @@ function purehttp2_serve_grpc_connection!(
         stream = PureHTTP2.get_stream(conn, stream_id)
         isnothing(stream) && continue
         stream.headers_complete || continue
+        stream_id in handled_streams && continue
 
         method = purehttp2_route_method(service, stream)
 
         if method.method.request_streaming
             if !haskey(live_sessions, stream_id)
                 context = purehttp2_call_context(stream; peer=peer, secure=secure)
+                if !isnothing(request_gate) &&
+                   !_purehttp2_try_acquire_request!(request_gate)
+                    overload_frames = _purehttp2_status_frames(
+                        conn,
+                        stream_id,
+                        _purehttp2_overload_error(request_gate);
+                        include_headers=true,
+                    )
+                    _purehttp2_write_frames!(transport_lock, io, overload_frames)
+                    push!(handled_streams, stream_id)
+                    continue
+                end
                 live_sessions[stream_id] = _purehttp2_start_live_session(
                     conn,
                     io,
@@ -542,6 +597,7 @@ function purehttp2_serve_grpc_connection!(
                     method,
                     context,
                     transport_lock;
+                    request_gate=request_gate,
                     request_capacity=request_capacity,
                     response_capacity=response_capacity,
                 )
@@ -549,15 +605,30 @@ function purehttp2_serve_grpc_connection!(
             _purehttp2_pump_live_request!(live_sessions[stream_id], stream)
             yield()
         elseif stream.end_stream_received && stream_id ∉ handled_streams
-            frames = purehttp2_handle_grpc_stream!(
-                conn,
-                service,
-                stream_id;
-                peer=peer,
-                secure=secure,
-                request_capacity=request_capacity,
-                response_capacity=response_capacity,
-            )
+            frames =
+                if !isnothing(request_gate) &&
+                   !_purehttp2_try_acquire_request!(request_gate)
+                    _purehttp2_status_frames(
+                        conn,
+                        stream_id,
+                        _purehttp2_overload_error(request_gate);
+                        include_headers=true,
+                    )
+                else
+                    try
+                        purehttp2_handle_grpc_stream!(
+                            conn,
+                            service,
+                            stream_id;
+                            peer=peer,
+                            secure=secure,
+                            request_capacity=request_capacity,
+                            response_capacity=response_capacity,
+                        )
+                    finally
+                        isnothing(request_gate) || _purehttp2_release_request!(request_gate)
+                    end
+                end
             _purehttp2_write_frames!(transport_lock, io, frames)
             push!(handled_streams, stream_id)
         end
@@ -581,6 +652,7 @@ function purehttp2_flight_server(
     service::Service;
     host::Union{Sockets.IPAddr,AbstractString}=Sockets.IPv4("127.0.0.1"),
     port::Integer=0,
+    max_active_requests::Integer=DEFAULT_MAX_ACTIVE_REQUESTS,
     request_capacity::Integer=DEFAULT_STREAM_BUFFER,
     response_capacity::Integer=DEFAULT_STREAM_BUFFER,
 )
@@ -593,11 +665,14 @@ function purehttp2_flight_server(
         bound_port,
         Int(request_capacity),
         Int(response_capacity),
+        _purehttp2_request_gate(max_active_requests),
         ReentrantLock(),
         nothing,
         Dict{Task,Sockets.TCPSocket}(),
     )
-    server.accept_task = @async _purehttp2_accept_loop!(server)
+    server.accept_task = _transport_spawn() do
+        _purehttp2_accept_loop!(server)
+    end
     return server
 end
 

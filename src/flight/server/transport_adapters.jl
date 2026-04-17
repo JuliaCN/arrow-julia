@@ -105,6 +105,10 @@ function _pump_transport_messages!(request::Channel, messages)
     return nothing
 end
 
+# Use non-sticky worker tasks so CPU-heavy Flight handlers can overlap on
+# Julia's thread pool instead of pinning one event-loop thread.
+_transport_spawn(f::Function) = Threads.@spawn f()
+
 function transport_unary_call(
     service::Service,
     context::ServerCallContext,
@@ -129,7 +133,7 @@ function transport_server_streaming_call(
     on_status_error::Function=_default_transport_status_error,
 )
     response = Channel{method.method.response_type}(response_capacity)
-    task = @async begin
+    task = _transport_spawn() do
         try
             if method.method.handler_field === :listactions
                 listactions(service, context, response)
@@ -162,8 +166,10 @@ function transport_client_streaming_call(
     on_status_error::Function=_default_transport_status_error,
 )
     request = Channel{method.method.request_type}(request_capacity)
-    producer = @async _pump_transport_messages!(request, messages)
-    task = @async begin
+    producer = _transport_spawn() do
+        _pump_transport_messages!(request, messages)
+    end
+    task = _transport_spawn() do
         try
             dispatch(service, context, method.method, request)
         catch error
@@ -184,7 +190,7 @@ function transport_client_streaming_live_call(
     request::Channel{T};
     on_status_error::Function=_default_transport_status_error,
 ) where {T}
-    task = @async begin
+    task = _transport_spawn() do
         try
             dispatch(service, context, method.method, request)
         catch error
@@ -210,8 +216,10 @@ function transport_bidi_streaming_call(
 )
     request = Channel{method.method.request_type}(request_capacity)
     response = Channel{method.method.response_type}(response_capacity)
-    producer = @async _pump_transport_messages!(request, messages)
-    task = @async begin
+    producer = _transport_spawn() do
+        _pump_transport_messages!(request, messages)
+    end
+    task = _transport_spawn() do
         try
             dispatch(service, context, method.method, request, response)
         catch error
@@ -242,7 +250,7 @@ function transport_bidi_streaming_live_call(
     on_status_error::Function=_default_transport_status_error,
 ) where {T}
     response = Channel{method.method.response_type}(response_capacity)
-    task = @async begin
+    task = _transport_spawn() do
         try
             dispatch(service, context, method.method, request, response)
         catch error

@@ -25,4 +25,6 @@ include("purehttp2_extension/live_listener_tests.jl")
     purehttp2_extension_test_bridge(fixture)
     purehttp2_extension_test_live_connection(fixture)
     purehttp2_extension_test_live_listener(fixture)
+    purehttp2_extension_test_concurrent_listener(fixture)
+    purehttp2_extension_test_overload_listener(fixture)
 end

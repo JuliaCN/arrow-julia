@@ -281,7 +281,13 @@ server core for package-owned h2c listeners,
 discovery, schema, unary, client-streaming, server-streaming, actions, poll,
 and live bidirectional `DoExchange` gRPC-over-HTTP/2 handling, with focused
 Python-client coverage through `test/flight_purehttp2.jl`, which also serves
-as the stable and nightly Flight interop CI runner. The packaged backend contract is exposed through
+as the stable and nightly Flight interop CI runner. Long-lived connection and
+handler workers on that listener now run on Julia's thread pool instead of
+sticky `@async` tasks, so CPU-heavy Flight callbacks can overlap on
+multi-threaded runtimes. The listener also exposes a bounded
+`max_active_requests` admission gate so overloaded runtimes fail fast with a
+gRPC status instead of silently accumulating unbounded active handlers. The
+packaged backend contract is exposed through
 [`Arrow.Flight.flight_server_backend_capabilities`](@ref),
 [`Arrow.Flight.flight_server_backend_supported`](@ref), and
 [`Arrow.Flight.require_flight_server_backend`](@ref); the current default live
