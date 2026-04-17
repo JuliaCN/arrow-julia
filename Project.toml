@@ -43,19 +43,13 @@ TranscodingStreams = "3bb67fe8-82b1-5028-8e26-92a6c54297fa"
 UUIDs = "cf7118a7-6976-5b1a-9a39-7adc72f591a4"
 
 [weakdeps]
-gRPCClient = "aaca4a50-36af-4a1d-b878-4c443f2061ad"
 Nghttp2Wrapper = "aac3f40a-7475-434e-9d89-bbdc1574c652"
 
 [extensions]
-ArrowFlightgRPCClientExt = "gRPCClient"
 ArrowFlightNghttp2Ext = "Nghttp2Wrapper"
-
-[extras]
-gRPCClient = "aaca4a50-36af-4a1d-b878-4c443f2061ad"
 
 [sources]
 ArrowTypes = { path = "src/ArrowTypes" }
-gRPCClient = { url = "https://github.com/tao3k/gRPCClient.jl.git", rev = "faa9107a19f65e56c5c566c71d0844aaca651612" }
 PureHTTP2 = { url = "https://github.com/s-celles/PureHTTP2.jl", rev = "03d8853e9556a4355d7b650853cda62b1906d88e" }
 
 [compat]
@@ -69,7 +63,6 @@ EnumX = "1"
 JSON3 = "1"
 Nghttp2Wrapper = "0.2"
 ProtoBuf = "~1.2.1"
-gRPCClient = "1"
 PureHTTP2 = "0.5"
 PooledArrays = "0.5, 1.0"
 SentinelArrays = "1"

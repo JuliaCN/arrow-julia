@@ -272,13 +272,9 @@ service invocation through [`Arrow.Flight.doexchange`](@ref),
 [`Arrow.Flight.table`](@ref), and [`Arrow.Flight.stream`](@ref) when the first
 argument is an in-process `Arrow.Flight.Service`.
 
-The gRPC-backed remote Flight client surface remains optional and legacy. The
-base package keeps `Arrow.Flight.Client`, URI parsing, header helpers,
-protocol types, and transport-agnostic server composition available without a
-hard `gRPCClient.jl` dependency, while the remote Flight RPC methods load
-through the optional `ArrowFlightgRPCClientExt` extension only for downstream
-compatibility. Package-owned interop and performance proofs now use external
-Python clients instead of a Julia Flight client dependency.
+Arrow.jl now treats `Arrow.Flight` as a protocol-plus-server package surface.
+Package-owned interop and performance proofs run through external Python
+clients instead of an in-package Julia Flight gRPC client runtime.
 
 Arrow.jl now ships built-in `PureHTTP2.jl` transport helpers in the Flight
 server core for package-owned h2c listeners,

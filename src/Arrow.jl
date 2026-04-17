@@ -34,12 +34,11 @@ It currently doesn't include support for:
 Flight RPC status:
   * Experimental `Arrow.Flight` support is available in-tree
   * Requires Julia `1.12+`
-  * Includes generated protocol bindings in the base package while leaving the legacy gRPC-backed `FlightService` client constructors and RPC transport behind an optional `gRPCClient.jl` extension
+  * Includes generated protocol bindings in the base package for Flight protocol and server/runtime ownership
   * Keeps the top-level Flight module shell thin, with exports and generated-protocol setup split out of `src/flight/Flight.jl`
   * Includes high-level `FlightData <-> Arrow IPC` helpers for `Arrow.Table`, `Arrow.Stream`, and DoPut payload generation
   * Keeps the Flight IPC conversion layer modular under `src/flight/convert/`, with `src/flight/convert.jl` retained as a thin entrypoint
-  * Includes transport-neutral client helpers for request headers, binary metadata, and URI parsing in the base package, while the legacy gRPC-backed handshake token reuse, TLS configuration, and remote RPC methods load only when the optional `gRPCClient.jl` extension is present for downstream compatibility
-  * Keeps the Flight client compatibility layer modular under `src/flight/client/`, with the base shell retained in `src/flight/client.jl` and the gRPC-backed runtime loaded through `ext/ArrowFlightgRPCClientExt.jl`
+  * Owns Flight protocol, descriptor, IPC, and server/runtime surfaces only; package-owned interop and performance proofs run through external Python clients instead of a Julia Flight client runtime
   * Includes a transport-agnostic server core (`Service`, `ServerCallContext`, `ServiceDescriptor`, `MethodDescriptor`) for local Flight method dispatch, path lookup, handler testing, packaged backend capability checks through `flight_server_backend_capabilities(...)`, and shared gRPC-over-HTTP/2 framing helpers for lower-level backends
   * Keeps the transport-agnostic server core modular under `src/flight/server/`, with `src/flight/server.jl` retained as a thin entrypoint
   * Includes built-in `PureHTTP2.jl` transport helpers in the Flight server core for package-owned h2c listeners, unary RPCs, client-streaming, server-streaming, and live bidirectional `DoExchange` gRPC-over-HTTP/2 handling through `Flight.purehttp2_flight_server(...)`

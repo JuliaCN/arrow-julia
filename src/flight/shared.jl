@@ -15,6 +15,8 @@
 # specific language governing permissions and limitations
 # under the License.
 
-include("methods/discovery.jl")
-include("methods/data.jl")
-include("methods/actions.jl")
+const DEFAULT_STREAM_BUFFER = 16
+const HeaderValue = Union{String,Vector{UInt8}}
+const HeaderPair = Pair{String,HeaderValue}
+
+_start_flight_producer(f::Function) = errormonitor(@async f())
