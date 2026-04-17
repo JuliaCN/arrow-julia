@@ -231,6 +231,7 @@ jobs:
         env:
           ARROW_FLIGHT_PYTHON: ${{ env.pythonLocation }}/bin/python
           ARROW_FLIGHT_DISABLE_AUTO_LOCAL_DEPS: '1'
+          JULIA_NUM_THREADS: '2'
         run: julia --color=yes --project=test test/flight_purehttp2.jl
   docs:
     name: Documentation
