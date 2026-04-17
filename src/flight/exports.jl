@@ -15,18 +15,14 @@
 # specific language governing permissions and limitations
 # under the License.
 
-export Client,
-    Service,
+export Service,
     ServerCallContext,
     MethodDescriptor,
     ServiceDescriptor,
     PureHTTP2FlightServer,
     FlightServerBackendCapabilities,
-    withheaders,
-    withtoken,
     Protocol,
     Generated,
-    authenticate,
     callheader,
     servicedescriptor,
     lookupmethod,

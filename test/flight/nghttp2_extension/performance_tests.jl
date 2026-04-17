@@ -78,6 +78,7 @@ function nghttp2_extension_test_large_transport_compare(;
     )
 
     metrics = vcat(pure_metrics, nghttp2_metrics)
+    isempty(metrics) && return metrics
     @test length(metrics) == 2
 
     purehttp2_metric = flight_live_transport_metric(metrics, :purehttp2, :doget)

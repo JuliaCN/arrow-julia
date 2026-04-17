@@ -37,7 +37,6 @@ Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 TestSetExtensions = "98d24dd4-01ad-11ea-1b02-c9a08f80db04"
 TimeZones = "f269a46b-ccf7-5d73-abea-4c690281aa53"
 UUIDs = "cf7118a7-6976-5b1a-9a39-7adc72f591a4"
-gRPCClient = "aaca4a50-36af-4a1d-b878-4c443f2061ad"
 PureHTTP2 = "7d1e1b98-28e7-4969-8df9-5a308937986a"
 
 [compat]
@@ -55,9 +54,7 @@ StructTypes = "1"
 Tables = "1"
 TestSetExtensions = "3"
 TimeZones = "1"
-gRPCClient = "1"
 PureHTTP2 = "0.5"
 
 [sources]
-gRPCClient = { url = "https://github.com/tao3k/gRPCClient.jl.git", rev = "faa9107a19f65e56c5c566c71d0844aaca651612" }
 PureHTTP2 = { url = "https://github.com/s-celles/PureHTTP2.jl", rev = "03d8853e9556a4355d7b650853cda62b1906d88e" }

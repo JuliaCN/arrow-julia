@@ -15,16 +15,8 @@
 # specific language governing permissions and limitations
 # under the License.
 
-include("client_surface/support.jl")
-include("client_surface/constructor_tests.jl")
-include("client_surface/header_tls_tests.jl")
-include("client_surface/producer_tests.jl")
-include("client_surface/protocol_client_tests.jl")
+const DEFAULT_STREAM_BUFFER = 16
+const HeaderValue = Union{String,Vector{UInt8}}
+const HeaderPair = Pair{String,HeaderValue}
 
-@testset "Flight RPC client surface" begin
-    fixture = flight_client_surface_fixture()
-    flight_client_surface_test_constructors(fixture)
-    flight_client_surface_test_header_tls_helpers(fixture)
-    flight_client_surface_test_producer_shutdown(fixture)
-    flight_client_surface_test_protocol_clients(fixture)
-end
+_start_flight_producer(f::Function) = errormonitor(@async f())

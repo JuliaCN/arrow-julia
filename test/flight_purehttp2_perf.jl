@@ -107,7 +107,6 @@ Pkg.instantiate()
 
 using Test
 using Arrow
-using gRPCClient
 using PureHTTP2
 using Tables
 

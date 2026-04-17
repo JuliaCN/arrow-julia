@@ -28,7 +28,7 @@ const ArrowParent = parentmodule(@__MODULE__)
 include("exports.jl")
 include("protocol.jl")
 include("descriptors.jl")
-include("client.jl")
+include("shared.jl")
 include("server.jl")
 include("convert.jl")
 

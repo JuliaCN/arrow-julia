@@ -118,6 +118,86 @@ assert exchange_chunk.data.schema.field("name").metadata[b"lang"] == b"exchange"
 assert exchange_chunk.app_metadata.to_pybytes() == b"exchange:0"
 """
 
+const FLIGHT_LIVE_PYARROW_READONLY_SMOKE = raw"""
+import base64
+import pyarrow.flight as fl
+import sys
+
+host = sys.argv[1]
+port = int(sys.argv[2])
+username = sys.argv[3]
+password = sys.argv[4]
+path = sys.argv[5:]
+
+client = fl.FlightClient(f"grpc://{host}:{port}")
+basic_auth = base64.b64encode(f"{username}:{password}".encode("utf-8"))
+options = fl.FlightCallOptions(
+    timeout=30,
+    headers=[(b"authorization", b"Basic " + basic_auth)],
+)
+descriptor = fl.FlightDescriptor.for_path(*path)
+
+flights = list(client.list_flights(options=options))
+assert len(flights) == 1
+assert flights[0].total_records == 3
+assert [part.decode("utf-8") for part in flights[0].descriptor.path] == path
+
+actions = list(client.list_actions(options=options))
+assert len(actions) == 1
+assert actions[0].type == "ping"
+
+results = list(client.do_action(fl.Action("ping", b""), options=options))
+assert len(results) == 1
+assert results[0].body.to_pybytes() == b"pong"
+
+info = client.get_flight_info(descriptor, options=options)
+assert info.total_records == 3
+assert [part.decode("utf-8") for part in info.descriptor.path] == path
+assert len(info.endpoints) == 1
+
+schema = client.get_schema(descriptor, options=options).schema
+assert schema.names == ["id", "name"]
+assert str(schema.field("id").type) == "int64"
+assert str(schema.field("name").type) == "string"
+
+reader = client.do_get(info.endpoints[0].ticket, options=options)
+table = reader.read_all()
+assert table.column("id").to_pylist() == [1, 2, 3]
+assert table.column("name").to_pylist() == ["one", "two", "three"]
+assert table.schema.metadata[b"dataset"] == b"native"
+assert table.schema.field("name").metadata[b"lang"] == b"en"
+"""
+
+const FLIGHT_LIVE_PYARROW_DOGET_BENCHMARK = raw"""
+import pyarrow.flight as fl
+import sys
+import time
+
+host = sys.argv[1]
+port = int(sys.argv[2])
+iterations = int(sys.argv[3])
+expected_rows = int(sys.argv[4])
+expected_payload = sys.argv[5]
+path = sys.argv[6:]
+
+client = fl.FlightClient(f"grpc://{host}:{port}")
+descriptor = fl.FlightDescriptor.for_path(*path)
+info = client.get_flight_info(descriptor)
+
+samples = []
+for _ in range(iterations):
+    started = time.perf_counter_ns()
+    reader = client.do_get(info.endpoints[0].ticket)
+    table = reader.read_all()
+    finished = time.perf_counter_ns()
+    assert table.num_rows == expected_rows
+    assert table.column("payload").to_pylist()[0] == expected_payload
+    samples.append(finished - started)
+
+samples.sort()
+print(samples[(len(samples) - 1) // 2])
+"""
+
 function flight_live_fixture(protocol)
     descriptor_type = protocol.var"FlightDescriptor.DescriptorType"
     handshake_token = b"native"
@@ -366,6 +446,24 @@ function flight_live_pyarrow_smoke(host::AbstractString, port::Integer, fixture)
     return true
 end
 
+function flight_live_pyarrow_readonly_smoke(host::AbstractString, port::Integer, fixture)
+    python = FlightTestSupport.pyarrow_flight_python()
+    isnothing(python) && return false
+    run(
+        Cmd([
+            python,
+            "-c",
+            FLIGHT_LIVE_PYARROW_READONLY_SMOKE,
+            host,
+            string(port),
+            fixture.handshake_username,
+            fixture.handshake_password,
+            fixture.descriptor.path...,
+        ]),
+    )
+    return true
+end
+
 function _flight_live_transport_message_bytes(messages)
     total = 0
     for message in messages
@@ -502,37 +600,44 @@ flight_live_transport_backend(;
     endpoint=endpoint,
 )
 
-function _flight_live_transport_doget(client, ticket)
-    request, response = Arrow.Flight.doget(client, ticket)
-    messages = collect(response)
-    gRPCClient.grpc_async_await(request)
-    return messages
-end
-
-function _flight_live_transport_doput(client, fixture)
-    request, response = Arrow.Flight.doput(
-        client,
-        _flight_live_transport_source(fixture);
-        descriptor=fixture.descriptor,
-        metadata=fixture.dataset_metadata,
-        colmetadata=fixture.dataset_colmetadata,
+function flight_live_pyarrow_doget_metric(
+    host::AbstractString,
+    port::Integer,
+    fixture;
+    backend::Symbol,
+    iterations::Integer,
+)
+    python = FlightTestSupport.pyarrow_flight_python()
+    isnothing(python) && return nothing
+    median_ns = parse(
+        Int,
+        readchomp(
+            Cmd([
+                python,
+                "-c",
+                FLIGHT_LIVE_PYARROW_DOGET_BENCHMARK,
+                host,
+                string(port),
+                string(iterations),
+                string(fixture.total_records),
+                fixture.payload_value,
+                fixture.descriptor.path...,
+            ]),
+        ),
     )
-    results = collect(response)
-    gRPCClient.grpc_async_await(request)
-    return results
-end
-
-function _flight_live_transport_doexchange(client, fixture)
-    request, response = Arrow.Flight.doexchange(
-        client,
-        _flight_live_transport_source(fixture);
-        descriptor=fixture.descriptor,
-        metadata=fixture.dataset_metadata,
-        colmetadata=fixture.dataset_colmetadata,
+    total_bytes = fixture.message_bytes
+    return (
+        backend=backend,
+        operation=:doget,
+        iterations=iterations,
+        request_bytes=0,
+        response_bytes=total_bytes,
+        total_bytes=total_bytes,
+        samples_ns=[median_ns],
+        median_ns=median_ns,
+        median_ms=median_ns / 1.0e6,
+        throughput_mib_per_sec=(total_bytes / max(median_ns, 1) * 1.0e9) / 1024.0^2,
     )
-    messages = collect(response)
-    gRPCClient.grpc_async_await(request)
-    return messages
 end
 
 function _flight_live_transport_measure(
@@ -588,75 +693,28 @@ function flight_live_transport_benchmark(
     try
         transport.wait_for_server(server)
         host, port = transport.endpoint(server)
-        return FlightTestSupport.with_test_grpc_handle() do grpc
-            client = Arrow.Flight.Client("grpc://$(host):$(port)"; grpc=grpc, deadline=60)
-            info = Arrow.Flight.getflightinfo(client, fixture.descriptor)
-            @test info.total_records == fixture.total_records
-
-            metrics = NamedTuple[]
-
-            if :doget in operations
-                doget_messages =
-                    _flight_live_transport_doget(client, info.endpoint[1].ticket)
-                @test length(doget_messages) == length(fixture.messages)
-                doget_table = Arrow.Flight.table(doget_messages; schema=info)
-                @test length(doget_table.id) == fixture.total_records
-                @test first(doget_table.payload) == fixture.payload_value
-                push!(
-                    metrics,
-                    _flight_live_transport_measure(
-                        transport.backend,
-                        :doget;
-                        request_bytes=0,
-                        response_bytes=fixture.message_bytes,
-                        iterations=iterations,
-                        run_once=() ->
-                            _flight_live_transport_doget(client, info.endpoint[1].ticket),
-                    ),
-                )
+        metrics = NamedTuple[]
+        if :doget in operations
+            doget_metric = flight_live_pyarrow_doget_metric(
+                host,
+                port,
+                fixture;
+                backend=transport.backend,
+                iterations=iterations,
+            )
+            if isnothing(doget_metric)
+                @test true
+            else
+                push!(metrics, doget_metric)
             end
-
-            if :doput in operations
-                doput_results = _flight_live_transport_doput(client, fixture)
-                @test length(doput_results) == 1
-                @test String(copy(doput_results[1].app_metadata)) == "stored"
-                push!(
-                    metrics,
-                    _flight_live_transport_measure(
-                        transport.backend,
-                        :doput;
-                        request_bytes=fixture.message_bytes,
-                        response_bytes=fixture.put_result_bytes,
-                        iterations=iterations,
-                        run_once=() -> _flight_live_transport_doput(client, fixture),
-                    ),
-                )
-            end
-
-            if :doexchange in operations
-                doexchange_messages = _flight_live_transport_doexchange(client, fixture)
-                @test length(doexchange_messages) == length(fixture.messages)
-                doexchange_table =
-                    Arrow.Flight.table(doexchange_messages; include_app_metadata=true)
-                @test length(doexchange_table.table.id) == fixture.total_records
-                @test FlightTestSupport.app_metadata_strings(
-                    doexchange_table.app_metadata,
-                ) == fixture.dataset_app_metadata
-                push!(
-                    metrics,
-                    _flight_live_transport_measure(
-                        transport.backend,
-                        :doexchange;
-                        request_bytes=fixture.message_bytes,
-                        response_bytes=fixture.message_bytes,
-                        iterations=iterations,
-                        run_once=() -> _flight_live_transport_doexchange(client, fixture),
-                    ),
-                )
-            end
-
-            return metrics
         end
+        if :doput in operations || :doexchange in operations
+            println(
+                stdout,
+                "deferred_large_upload_ops=[:doput,:doexchange] reason=\"Python-client transport benchmark only measures large DoGet on this seam\"",
+            )
+        end
+        return metrics
     finally
         transport.stop_server(server)
     end
