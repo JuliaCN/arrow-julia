@@ -135,13 +135,14 @@ function _purehttp2_send_data(
     data::AbstractVector{UInt8};
     end_stream::Bool=false,
 )
+    payload = data isa Vector{UInt8} ? data : Vector{UInt8}(data)
     sender = PureHTTP2.DataSender(conn.flow_controller, conn.remote_settings.max_frame_size)
     frames =
-        PureHTTP2.send_data_frames(sender, stream_id, collect(data); end_stream=end_stream)
+        PureHTTP2.send_data_frames(sender, stream_id, payload; end_stream=end_stream)
     sent_bytes = sum(Int(frame.header.length) for frame in frames)
-    sent_bytes == length(data) || throw(
+    sent_bytes == length(payload) || throw(
         ArgumentError(
-            "PureHTTP2 Flight transport could emit only $(sent_bytes) of $(length(data)) bytes before flow control blocked the stream",
+            "PureHTTP2 Flight transport could emit only $(sent_bytes) of $(length(payload)) bytes before flow control blocked the stream",
         ),
     )
 
@@ -163,15 +164,21 @@ function _purehttp2_send_data(
     return frames
 end
 
+function _purehttp2_write_frames_unlocked!(io::IO, frames::Vector{PureHTTP2.Frame})
+    isempty(frames) && return nothing
+    for frame in frames
+        write(io, PureHTTP2.encode_frame(frame))
+    end
+    return nothing
+end
+
 function _purehttp2_write_frames!(
     transport_lock::ReentrantLock,
     io::IO,
     frames::Vector{PureHTTP2.Frame},
 )
     lock(transport_lock) do
-        for frame in frames
-            write(io, PureHTTP2.encode_frame(frame))
-        end
+        _purehttp2_write_frames_unlocked!(io, frames)
     end
     return nothing
 end
@@ -179,9 +186,7 @@ end
 function _purehttp2_with_transport_lock(f::Function, transport_lock::ReentrantLock, io::IO)
     lock(transport_lock) do
         frames = f()
-        for frame in frames
-            write(io, PureHTTP2.encode_frame(frame))
-        end
+        _purehttp2_write_frames_unlocked!(io, frames)
     end
     return nothing
 end
@@ -272,7 +277,7 @@ function _purehttp2_fail_live_response!(writer::PureHTTP2LiveResponseWriter, err
                 writer.stream_id,
                 UInt32(PureHTTP2.ErrorCode.INTERNAL_ERROR),
             )
-            write(writer.io, PureHTTP2.encode_frame(rst))
+            _purehttp2_write_frames_unlocked!(writer.io, PureHTTP2.Frame[rst])
         end
     end
     return nothing

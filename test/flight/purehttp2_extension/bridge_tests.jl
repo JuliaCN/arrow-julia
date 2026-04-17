@@ -184,4 +184,23 @@ function purehttp2_extension_test_bridge(fixture)
     context = Arrow.Flight.purehttp2_call_context(unary_stream)
     @test Arrow.Flight.callheader(context, "authorization") == "Bearer purehttp2"
     @test Arrow.Flight.callheader(context, "auth-token-bin") == UInt8[0x01, 0x02]
+
+    frame_io = IOBuffer()
+    frame_lock = ReentrantLock()
+    frame_payloads = (UInt8[0x01, 0x02, 0x03], UInt8[0x04, 0x05])
+    frame_headers = (
+        PureHTTP2.FrameHeader(length(frame_payloads[1]), PureHTTP2.FrameType.DATA, 0x00, 1),
+        PureHTTP2.FrameHeader(
+            length(frame_payloads[2]),
+            PureHTTP2.FrameType.DATA,
+            PureHTTP2.FrameFlags.END_STREAM,
+            1,
+        ),
+    )
+    frames = PureHTTP2.Frame[
+        PureHTTP2.Frame(frame_headers[1], frame_payloads[1]),
+        PureHTTP2.Frame(frame_headers[2], frame_payloads[2]),
+    ]
+    Arrow.Flight._purehttp2_write_frames!(frame_lock, frame_io, frames)
+    @test take!(frame_io) == reduce(vcat, PureHTTP2.encode_frame.(frames))
 end
