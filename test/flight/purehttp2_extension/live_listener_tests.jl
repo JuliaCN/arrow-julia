@@ -143,8 +143,11 @@ function purehttp2_extension_test_concurrent_listener(fixture)
         tasks = [
             Threads.@spawn begin
                 take!(start_gate)
-                request_info =
-                    flight_live_pyarrow_getflightinfo(server.host, server.port, descriptor)
+                request_info = flight_live_pyarrow_getflightinfo(
+                    server.host,
+                    server.port,
+                    descriptor,
+                )
                 @test !isnothing(request_info)
                 @test Bool(request_info["ok"])
                 @test Int(request_info["total_records"]) == info.total_records
@@ -212,12 +215,22 @@ function purehttp2_extension_test_overload_listener(fixture)
 
         take!(handler_started)
 
-        overloaded_result =
-            flight_live_pyarrow_getflightinfo(server.host, server.port, descriptor; deadline=5)
+        overloaded_result = flight_live_pyarrow_getflightinfo(
+            server.host,
+            server.port,
+            descriptor;
+            deadline=5,
+        )
         @test !isnothing(overloaded_result)
         @test !Bool(overloaded_result["ok"])
-        @test occursin("resource exhausted", lowercase(String(overloaded_result["message"])))
-        @test occursin("active request limit 1 reached", String(overloaded_result["message"]))
+        @test occursin(
+            "resource exhausted",
+            lowercase(String(overloaded_result["message"])),
+        )
+        @test occursin(
+            "active request limit 1 reached",
+            String(overloaded_result["message"]),
+        )
 
         put!(release_handler, nothing)
         fetch(first_task)
