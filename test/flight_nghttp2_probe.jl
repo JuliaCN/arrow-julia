@@ -120,10 +120,7 @@ local_purehttp2 = maybe_locate_purehttp2()
 !isnothing(local_purehttp2) && strip_temp_source_override!(TEMP_PROJECT, "PureHTTP2")
 
 Pkg.activate(TEMP_ENV)
-dev_packages = PackageSpec[
-    PackageSpec(path=ARROW_ROOT),
-    PackageSpec(path=ARROWTYPES_ROOT),
-]
+dev_packages = PackageSpec[PackageSpec(path=ARROW_ROOT), PackageSpec(path=ARROWTYPES_ROOT)]
 if !isnothing(local_purehttp2)
     push!(dev_packages, PackageSpec(path=local_purehttp2))
 end
@@ -132,11 +129,7 @@ Pkg.develop(dev_packages)
 local_nghttp2wrapper = maybe_locate_nghttp2wrapper()
 if isnothing(local_nghttp2wrapper)
     Pkg.add(
-        PackageSpec(
-            name="Nghttp2Wrapper",
-            url=NGHTTP2WRAPPER_URL,
-            rev=NGHTTP2WRAPPER_REV,
-        ),
+        PackageSpec(name="Nghttp2Wrapper", url=NGHTTP2WRAPPER_URL, rev=NGHTTP2WRAPPER_REV),
     )
 else
     Pkg.develop(PackageSpec(path=local_nghttp2wrapper))
@@ -381,11 +374,15 @@ function nghttp2_probe_request_raw_client(
         end
 
         GC.@preserve ctx begin
-            rv, session_ptr =
-                Nghttp2Wrapper.nghttp2_session_client_new(callbacks.ptr, pointer_from_objref(ctx))
+            rv, session_ptr = Nghttp2Wrapper.nghttp2_session_client_new(
+                callbacks.ptr,
+                pointer_from_objref(ctx),
+            )
             @test rv == 0
             try
-                Nghttp2Wrapper.check_error(Nghttp2Wrapper.nghttp2_submit_settings(session_ptr))
+                Nghttp2Wrapper.check_error(
+                    Nghttp2Wrapper.nghttp2_submit_settings(session_ptr),
+                )
                 headers = Nghttp2Wrapper.NVPair[
                     Nghttp2Wrapper.NVPair(":method", "GET"),
                     Nghttp2Wrapper.NVPair(":path", path),
@@ -417,10 +414,7 @@ function nghttp2_probe_request_raw_client(
                     while isready(chunks)
                         buffer = take!(chunks)
                         Nghttp2Wrapper.check_error(
-                            Nghttp2Wrapper.nghttp2_session_mem_recv2(
-                                session_ptr,
-                                buffer,
-                            ),
+                            Nghttp2Wrapper.nghttp2_session_mem_recv2(session_ptr, buffer),
                         )
                         pending = Nghttp2Wrapper._session_send_all(session_ptr)
                         isempty(pending) || write(socket, pending)
@@ -462,7 +456,11 @@ function nghttp2_probe_request_raw_client(
     end
 end
 
-function nghttp2_probe_metric(backend::Symbol, total_bytes::Integer, durations_ns::Vector{Int})
+function nghttp2_probe_metric(
+    backend::Symbol,
+    total_bytes::Integer,
+    durations_ns::Vector{Int},
+)
     median_ns = Int(round(median(durations_ns)))
     throughput_mib_per_sec = (Int(total_bytes) / max(median_ns, 1) * 1.0e9) / 1024.0^2
     return (
@@ -520,7 +518,8 @@ function nghttp2_probe_test_purehttp2_client_smoke()
             )
             elapsed_ns = time_ns() - started
             @test result.status == 200
-            @test nghttp2_probe_header(result.headers, "content-type") == "application/octet-stream"
+            @test nghttp2_probe_header(result.headers, "content-type") ==
+                  "application/octet-stream"
             @test result.body == payload
             throughput_mib_per_sec =
                 (length(result.body) / max(elapsed_ns, 1) * 1.0e9) / 1024.0^2
@@ -555,7 +554,7 @@ function nghttp2_probe_benchmark_raw_h2c_backend(
         error("unsupported backend: $(backend)")
     durations_ns = Int[]
     try
-        for _ in 1:iterations
+        for _ = 1:iterations
             started = time_ns()
             response = nghttp2_probe_request_raw_client(
                 server.host,
@@ -624,10 +623,8 @@ end
     @test nghttp2_attempt.metric.throughput_mib_per_sec > 0
 
     if purehttp2_attempt.supported
-        comparison = nghttp2_probe_compare_metrics(
-            nghttp2_attempt.metric,
-            purehttp2_attempt.metric,
-        )
+        comparison =
+            nghttp2_probe_compare_metrics(nghttp2_attempt.metric, purehttp2_attempt.metric)
         @test comparison.candidate_backend == :nghttp2
         @test comparison.baseline_backend == :purehttp2
         @test comparison.throughput_ratio > 0

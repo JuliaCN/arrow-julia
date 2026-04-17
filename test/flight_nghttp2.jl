@@ -120,10 +120,7 @@ local_purehttp2 = maybe_locate_purehttp2()
 !isnothing(local_purehttp2) && strip_temp_source_override!(TEMP_PROJECT, "PureHTTP2")
 
 Pkg.activate(TEMP_ENV)
-dev_packages = PackageSpec[
-    PackageSpec(path=ARROW_ROOT),
-    PackageSpec(path=ARROWTYPES_ROOT),
-]
+dev_packages = PackageSpec[PackageSpec(path=ARROW_ROOT), PackageSpec(path=ARROWTYPES_ROOT)]
 if !isnothing(local_purehttp2)
     push!(dev_packages, PackageSpec(path=local_purehttp2))
 end
@@ -132,11 +129,7 @@ Pkg.develop(dev_packages)
 local_nghttp2wrapper = maybe_locate_nghttp2wrapper()
 if isnothing(local_nghttp2wrapper)
     Pkg.add(
-        PackageSpec(
-            name="Nghttp2Wrapper",
-            url=NGHTTP2WRAPPER_URL,
-            rev=NGHTTP2WRAPPER_REV,
-        ),
+        PackageSpec(name="Nghttp2Wrapper", url=NGHTTP2WRAPPER_URL, rev=NGHTTP2WRAPPER_REV),
     )
 else
     Pkg.develop(PackageSpec(path=local_nghttp2wrapper))

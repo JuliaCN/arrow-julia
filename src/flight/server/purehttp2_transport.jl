@@ -137,8 +137,7 @@ function _purehttp2_send_data(
 )
     payload = data isa Vector{UInt8} ? data : Vector{UInt8}(data)
     sender = PureHTTP2.DataSender(conn.flow_controller, conn.remote_settings.max_frame_size)
-    frames =
-        PureHTTP2.send_data_frames(sender, stream_id, payload; end_stream=end_stream)
+    frames = PureHTTP2.send_data_frames(sender, stream_id, payload; end_stream=end_stream)
     sent_bytes = sum(Int(frame.header.length) for frame in frames)
     sent_bytes == length(payload) || throw(
         ArgumentError(

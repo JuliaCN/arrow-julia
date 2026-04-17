@@ -252,7 +252,8 @@ function transport_compare_backend_attempt(
                     metric=nothing,
                 )
             end
-            if isempty(doget_table.payload) || first(doget_table.payload) != fixture.payload_value
+            if isempty(doget_table.payload) ||
+               first(doget_table.payload) != fixture.payload_value
                 return (
                     backend=transport.backend,
                     supported=false,
@@ -336,10 +337,7 @@ function transport_compare_test_large_doget(;
     end
 
     flight_live_transport_print_metrics(stdout, metrics)
-    println(
-        stdout,
-        "grpcserver doget unsupported reason=\"$(grpcserver_result.detail)\"",
-    )
+    println(stdout, "grpcserver doget unsupported reason=\"$(grpcserver_result.detail)\"")
     return (
         metrics=metrics,
         comparison=nothing,

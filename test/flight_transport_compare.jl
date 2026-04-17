@@ -107,10 +107,7 @@ local_purehttp2 = maybe_locate_purehttp2()
 !isnothing(local_purehttp2) && strip_temp_source_override!(TEMP_PROJECT, "PureHTTP2")
 
 Pkg.activate(TEMP_ENV)
-dev_packages = PackageSpec[
-    PackageSpec(path=ARROW_ROOT),
-    PackageSpec(path=ARROWTYPES_ROOT),
-]
+dev_packages = PackageSpec[PackageSpec(path=ARROW_ROOT), PackageSpec(path=ARROWTYPES_ROOT)]
 if !isnothing(local_purehttp2)
     push!(
         dev_packages,
@@ -120,7 +117,13 @@ end
 Pkg.develop(dev_packages)
 local_grpcserver = maybe_locate_grpcserver()
 if isnothing(local_grpcserver)
-    Pkg.add(PackageSpec(name="gRPCServer", url=GRPCSERVER_COMPARE_URL, rev=GRPCSERVER_COMPARE_REV))
+    Pkg.add(
+        PackageSpec(
+            name="gRPCServer",
+            url=GRPCSERVER_COMPARE_URL,
+            rev=GRPCSERVER_COMPARE_REV,
+        ),
+    )
 else
     Pkg.develop(PackageSpec(name="gRPCServer", uuid=GRPCSERVER_UUID, path=local_grpcserver))
 end

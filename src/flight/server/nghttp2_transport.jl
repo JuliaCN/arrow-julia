@@ -29,4 +29,5 @@ function nghttp2_flight_server(args...; kwargs...)
     )
 end
 
-nghttp2_extension_loaded() = !isnothing(Base.get_extension(ArrowParent, :ArrowFlightNghttp2Ext))
+nghttp2_extension_loaded() =
+    !isnothing(Base.get_extension(ArrowParent, :ArrowFlightNghttp2Ext))

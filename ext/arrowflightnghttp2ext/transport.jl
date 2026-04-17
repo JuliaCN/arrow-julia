@@ -101,8 +101,9 @@ function _nghttp2_untrack_connection!(server::Nghttp2FlightServer, task::Task)
 end
 
 function _nghttp2_swallow_connection_error(server::Nghttp2FlightServer, error)
-    !isopen(server.listener) &&
-        return error isa EOFError || error isa Base.IOError || error isa Nghttp2Wrapper.Nghttp2Error
+    !isopen(server.listener) && return error isa EOFError ||
+           error isa Base.IOError ||
+           error isa Nghttp2Wrapper.Nghttp2Error
 
     if error isa EOFError
         return true
@@ -146,29 +147,21 @@ function _nghttp2_call_context(
     return Flight.ServerCallContext(headers=context_headers, peer=peer, secure=secure)
 end
 
-function _nghttp2_route_method(
-    service::Flight.Service,
-    state::Nghttp2FlightStreamState,
-)
-    state.method == "POST" || throw(
-        ArgumentError("Nghttp2 Flight transport expects HTTP/2 POST requests"),
-    )
+function _nghttp2_route_method(service::Flight.Service, state::Nghttp2FlightStreamState)
+    state.method == "POST" ||
+        throw(ArgumentError("Nghttp2 Flight transport expects HTTP/2 POST requests"))
 
     content_type = _nghttp2_header(state.headers, "content-type")
     Flight.grpccontenttype(content_type) || throw(
-        ArgumentError(
-            "Nghttp2 Flight transport expects an application/grpc content-type",
-        ),
+        ArgumentError("Nghttp2 Flight transport expects an application/grpc content-type"),
     )
 
     te_header = _nghttp2_header(state.headers, "te")
-    !isnothing(te_header) && lowercase(te_header) == "trailers" || throw(
-        ArgumentError("Nghttp2 Flight transport expects te: trailers"),
-    )
+    !isnothing(te_header) && lowercase(te_header) == "trailers" ||
+        throw(ArgumentError("Nghttp2 Flight transport expects te: trailers"))
 
-    isempty(state.path) && throw(
-        ArgumentError("Nghttp2 Flight transport requires a :path header"),
-    )
+    isempty(state.path) &&
+        throw(ArgumentError("Nghttp2 Flight transport requires a :path header"))
 
     method = Flight.lookuptransportmethod(service, state.path)
     isnothing(method) && throw(
@@ -201,10 +194,7 @@ function _nghttp2_decode_unary_request(
     return only(messages)
 end
 
-function _nghttp2_buffer_response_messages!(
-    body::Vector{UInt8},
-    response_message,
-)
+function _nghttp2_buffer_response_messages!(body::Vector{UInt8}, response_message)
     append!(body, Flight.grpcmessage(response_message))
     return nothing
 end
@@ -303,7 +293,9 @@ function _nghttp2_submit_headers!(
     stream_id::Integer,
     headers::Vector{Tuple{String,String}},
 )
-    nva = Nghttp2Wrapper.NVPair[Nghttp2Wrapper.NVPair(name, value) for (name, value) in headers]
+    nva = Nghttp2Wrapper.NVPair[
+        Nghttp2Wrapper.NVPair(name, value) for (name, value) in headers
+    ]
     rv = Nghttp2Wrapper.with_nva(nva) do nva_ptr, nvlen
         Nghttp2Wrapper.nghttp2_submit_headers(
             session_ptr,
@@ -324,10 +316,15 @@ function _nghttp2_submit_response!(
     stream_id::Int32,
     response,
 )
-    _nghttp2_submit_headers!(ctx.session_ptr, Nghttp2Wrapper.NGHTTP2_FLAG_NONE, stream_id, response.headers)
+    _nghttp2_submit_headers!(
+        ctx.session_ptr,
+        Nghttp2Wrapper.NGHTTP2_FLAG_NONE,
+        stream_id,
+        response.headers,
+    )
 
     body_source =
-        Nghttp2ResponseBodySource(response.body; keep_open=!isempty(response.trailers))
+        Nghttp2ResponseBodySource(response.body; keep_open=(!isempty(response.trailers)))
     lock(ctx.lock) do
         ctx.response_bodies[stream_id] = body_source
         isempty(response.trailers) || (ctx.pending_trailers[stream_id] = response.trailers)
@@ -454,7 +451,10 @@ function _nghttp2_on_frame_recv_cb(
             _nghttp2_submit_response!(ctx, stream_id, response)
         end
     catch error
-        @warn "Nghttp2 Flight frame receive callback failed" exception=(error, catch_backtrace())
+        @warn "Nghttp2 Flight frame receive callback failed" exception=(
+            error,
+            catch_backtrace(),
+        )
     end
     return Cint(0)
 end
@@ -521,16 +521,10 @@ _nghttp2_on_data_chunk_cb_ptr() = @cfunction(
     Cint,
     (Ptr{Cvoid}, UInt8, Int32, Ptr{UInt8}, Csize_t, Ptr{Cvoid}),
 )
-_nghttp2_on_stream_close_cb_ptr() = @cfunction(
-    _nghttp2_on_stream_close_cb,
-    Cint,
-    (Ptr{Cvoid}, Int32, UInt32, Ptr{Cvoid}),
-)
-_nghttp2_on_frame_recv_cb_ptr() = @cfunction(
-    _nghttp2_on_frame_recv_cb,
-    Cint,
-    (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}),
-)
+_nghttp2_on_stream_close_cb_ptr() =
+    @cfunction(_nghttp2_on_stream_close_cb, Cint, (Ptr{Cvoid}, Int32, UInt32, Ptr{Cvoid}),)
+_nghttp2_on_frame_recv_cb_ptr() =
+    @cfunction(_nghttp2_on_frame_recv_cb, Cint, (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}),)
 _nghttp2_data_source_read_cb_ptr() = @cfunction(
     _nghttp2_data_source_read_cb,
     Cssize_t,
@@ -552,10 +546,7 @@ function _nghttp2_read_tcp_chunk!(io, buf::Vector{UInt8})
     end
 end
 
-function _nghttp2_connection_loop!(
-    server::Nghttp2FlightServer,
-    socket::Sockets.TCPSocket,
-)
+function _nghttp2_connection_loop!(server::Nghttp2FlightServer, socket::Sockets.TCPSocket)
     ctx = Nghttp2FlightConnectionContext(
         server,
         _nghttp2_peer(socket),
@@ -585,10 +576,8 @@ function _nghttp2_connection_loop!(
         _nghttp2_on_stream_close_cb_ptr(),
     )
 
-    rv, session_ptr = Nghttp2Wrapper.nghttp2_session_server_new(
-        callbacks.ptr,
-        pointer_from_objref(ctx),
-    )
+    rv, session_ptr =
+        Nghttp2Wrapper.nghttp2_session_server_new(callbacks.ptr, pointer_from_objref(ctx))
     _nghttp2_submit_checked(rv)
     ctx.session_ptr = session_ptr
 
@@ -623,10 +612,7 @@ function _nghttp2_connection_loop!(
     return nothing
 end
 
-function _nghttp2_connection_task!(
-    server::Nghttp2FlightServer,
-    socket::Sockets.TCPSocket,
-)
+function _nghttp2_connection_task!(server::Nghttp2FlightServer, socket::Sockets.TCPSocket)
     try
         _nghttp2_connection_loop!(server, socket)
     catch error

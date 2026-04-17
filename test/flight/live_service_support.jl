@@ -676,15 +676,13 @@ function flight_live_transport_print_metrics(io::IO, metrics)
     return nothing
 end
 
-function flight_live_transport_metric(
-    metrics,
-    backend::Symbol,
-    operation::Symbol,
-)
+function flight_live_transport_metric(metrics, backend::Symbol, operation::Symbol)
     for metric in metrics
         metric.backend == backend && metric.operation == operation && return metric
     end
-    error("Missing Flight live transport metric for backend $(backend) operation $(operation)")
+    error(
+        "Missing Flight live transport metric for backend $(backend) operation $(operation)",
+    )
 end
 
 function flight_live_transport_print_comparison(

@@ -91,11 +91,8 @@ function nghttp2_extension_test_large_transport_compare(;
     @test nghttp2_metric.throughput_mib_per_sec > 0
 
     flight_live_transport_print_metrics(stdout, metrics)
-    comparison = flight_live_transport_print_comparison(
-        stdout,
-        nghttp2_metric,
-        purehttp2_metric,
-    )
+    comparison =
+        flight_live_transport_print_comparison(stdout, nghttp2_metric, purehttp2_metric)
     @test comparison.candidate_backend == :nghttp2
     @test comparison.baseline_backend == :purehttp2
     return metrics
