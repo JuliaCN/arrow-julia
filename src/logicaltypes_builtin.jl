@@ -17,12 +17,17 @@
 _builtinarrowtype(::Type{ArrowTypes.UUID}) = NTuple{16,UInt8}
 _builtintoarrow(x::ArrowTypes.UUID) = ArrowTypes._cast(NTuple{16,UInt8}, x.value)
 _builtinarrowname(::Type{ArrowTypes.UUID}) = ArrowTypes.UUIDSYMBOL
+const LEGACY_UUID_EXTENSION_SYMBOL =
+    isdefined(ArrowTypes, :LEGACY_UUIDSYMBOL) ?
+    getproperty(ArrowTypes, :LEGACY_UUIDSYMBOL) : Symbol("JuliaLang.UUID")
 _builtinextensionspec(::Type{ArrowTypes.UUID}) =
     ExtensionTypeSpec(_builtinarrowname(ArrowTypes.UUID), "")
 _builtinextensionjuliatype(::Val{ArrowTypes.UUIDSYMBOL}, S, metadata::String) =
     ArrowTypes.UUID
-_builtinextensionjuliatype(::Val{ArrowTypes.LEGACY_UUIDSYMBOL}, S, metadata::String) =
-    ArrowTypes.UUID
+if ArrowTypes.UUIDSYMBOL != LEGACY_UUID_EXTENSION_SYMBOL
+    _builtinextensionjuliatype(::Val{LEGACY_UUID_EXTENSION_SYMBOL}, S, metadata::String) =
+        ArrowTypes.UUID
+end
 
 _builtinextensionspec(::Type{Bool8}) = ExtensionTypeSpec(BOOL8_SYMBOL, "")
 _builtinarrowtype(::Type{Bool8}) = Int8

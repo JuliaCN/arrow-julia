@@ -19,6 +19,7 @@ using gRPCClient
 using Tables
 
 include("flight/support.jl")
+include("flight/live_service_support.jl")
 include("flight/header_interop.jl")
 include("flight/handshake_interop.jl")
 include("flight/tls_interop.jl")
@@ -26,7 +27,6 @@ include("flight/poll_interop.jl")
 include("flight/generated_protocol_tests.jl")
 include("flight/client_surface.jl")
 include("flight/server_core.jl")
-include("flight/grpcserver_extension.jl")
 include("flight/ipc_conversion.jl")
 include("flight/ipc_schema_separation.jl")
 include("flight/pyarrow_interop.jl")

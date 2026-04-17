@@ -112,6 +112,29 @@ jobs:
             ${{ runner.os }}-test-${{ env.cache-name }}-
             ${{ runner.os }}-test-
             ${{ runner.os }}-
+      - name: Bootstrap Arrow.jl lts unregistered deps
+        if: matrix.pkg.name == 'Arrow.jl' && matrix.version == 'lts'
+        shell: julia --project=. {0}
+        run: |
+          using Pkg
+          ENV["JULIA_PKG_PRECOMPILE_AUTO"] = "0"
+          for manifest_path in ("Manifest.toml", joinpath("test", "Manifest.toml"))
+              isfile(manifest_path) && rm(manifest_path; force=true)
+          end
+          Pkg.Registry.add("General")
+          Pkg.add([
+              PackageSpec(
+                  name="PureHTTP2",
+                  url="https://github.com/s-celles/PureHTTP2.jl",
+                  rev="03d8853e9556a4355d7b650853cda62b1906d88e",
+              ),
+              PackageSpec(
+                  name="gRPCClient",
+                  url="https://github.com/tao3k/gRPCClient.jl.git",
+                  rev="faa9107a19f65e56c5c566c71d0844aaca651612",
+              ),
+          ])
+          Pkg.develop(PackageSpec(path="src/ArrowTypes"))
       - uses: julia-actions/julia-buildpkg@v1.6
         with:
           project: ${{ matrix.pkg.dir }}
@@ -170,8 +193,8 @@ jobs:
         continue-on-error: false
         run: >
           julia --color=yes --project=monorepo -e 'using Pkg; Pkg.test("Arrow")'
-  flight_interop:
-    name: Arrow Flight interop - Julia 1 - ubuntu-latest
+  flight_purehttp2:
+    name: Arrow Flight PureHTTP2 interop - Julia 1 - ubuntu-latest
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -204,16 +227,11 @@ jobs:
         run: |
           using Pkg
           Pkg.develop(PackageSpec(path="src/ArrowTypes"))
-      - name: Run Arrow Flight interop tests
+      - name: Run Arrow Flight PureHTTP2 interop tests
         env:
           ARROW_FLIGHT_PYTHON: ${{ env.pythonLocation }}/bin/python
-        run: >
-          julia --color=yes --project=test -e 'using Pkg;
-          Pkg.develop(PackageSpec(path="."));
-          Pkg.develop(PackageSpec(path="src/ArrowTypes"));
-          Pkg.instantiate();
-          using Test, Arrow;
-          include("test/flight.jl")'
+          ARROW_FLIGHT_DISABLE_AUTO_LOCAL_DEPS: '1'
+        run: julia --color=yes --project=test test/flight_purehttp2.jl
   docs:
     name: Documentation
     runs-on: ubuntu-latest

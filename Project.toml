@@ -33,7 +33,9 @@ JSON3 = "0f8b85d8-7281-11e9-16c2-39a750bddbf1"
 ProtoBuf = "3349acd9-ac6a-5e09-bcdb-63829b23a429"
 Mmap = "a63ad114-7e13-5084-954f-fe012c677804"
 PooledArrays = "2dfb63ee-cc39-5dd5-95bd-886bf059d720"
+PureHTTP2 = "7d1e1b98-28e7-4969-8df9-5a308937986a"
 SentinelArrays = "91c51154-3ec4-41a3-a24f-3f23e20d615c"
+Sockets = "6462fe0b-24de-5631-8697-dd941f90decc"
 StringViews = "354b36f9-a18e-4713-926e-db85100087ba"
 Tables = "bd369af6-aec1-5ad0-b16a-f7cc5008161c"
 TimeZones = "f269a46b-ccf7-5d73-abea-4c690281aa53"
@@ -42,23 +44,23 @@ UUIDs = "cf7118a7-6976-5b1a-9a39-7adc72f591a4"
 
 [weakdeps]
 gRPCClient = "aaca4a50-36af-4a1d-b878-4c443f2061ad"
-gRPCServer = "608c6337-0d7d-447f-bb69-0f5674ee3959"
+Nghttp2Wrapper = "aac3f40a-7475-434e-9d89-bbdc1574c652"
 
 [extensions]
 ArrowFlightgRPCClientExt = "gRPCClient"
-ArrowgRPCServerExt = "gRPCServer"
+ArrowFlightNghttp2Ext = "Nghttp2Wrapper"
 
 [extras]
 gRPCClient = "aaca4a50-36af-4a1d-b878-4c443f2061ad"
-gRPCServer = "608c6337-0d7d-447f-bb69-0f5674ee3959"
+PureHTTP2 = "7d1e1b98-28e7-4969-8df9-5a308937986a"
 
 [targets]
-test = ["gRPCClient", "gRPCServer"]
+test = ["gRPCClient"]
 
 [sources]
 ArrowTypes = { path = "src/ArrowTypes" }
 gRPCClient = { url = "https://github.com/tao3k/gRPCClient.jl.git", rev = "faa9107a19f65e56c5c566c71d0844aaca651612" }
-gRPCServer = { url = "https://github.com/tao3k/gRPCServer.jl.git", rev = "92c75a6d75236977b8fb1b15dc2b94b0f2b202a0" }
+PureHTTP2 = { url = "https://github.com/s-celles/PureHTTP2.jl", rev = "03d8853e9556a4355d7b650853cda62b1906d88e" }
 
 [compat]
 ArrowTypes = "1.1,2"
@@ -69,9 +71,10 @@ ConcurrentUtilities = "2"
 DataAPI = "1"
 EnumX = "1"
 JSON3 = "1"
+Nghttp2Wrapper = "0.2"
 ProtoBuf = "~1.2.1"
 gRPCClient = "1"
-gRPCServer = "0.1"
+PureHTTP2 = "0.5"
 PooledArrays = "0.5, 1.0"
 SentinelArrays = "1"
 StringViews = "1"

@@ -15,6 +15,19 @@
 # specific language governing permissions and limitations
 # under the License.
 
-const Flight = Arrow.Flight
-const STREAM_BUFFER_SIZE = 16
-const GENERATED_TYPE_PREFIX = "Arrow.Flight.Generated."
+"""
+    nghttp2_flight_server(service::Service; kwargs...)
+
+Start an Arrow Flight server on the optional `Nghttp2Wrapper.jl` backend.
+Load `Nghttp2Wrapper` in the active Julia session to activate the extension.
+"""
+function nghttp2_flight_server(args...; kwargs...)
+    throw(
+        ArgumentError(
+            "Arrow Flight nghttp2 backend requires loading Nghttp2Wrapper.jl so the ArrowFlightNghttp2Ext extension can activate",
+        ),
+    )
+end
+
+nghttp2_extension_loaded() =
+    !isnothing(Base.get_extension(ArrowParent, :ArrowFlightNghttp2Ext))

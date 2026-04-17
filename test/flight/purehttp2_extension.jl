@@ -15,10 +15,14 @@
 # specific language governing permissions and limitations
 # under the License.
 
-include("server_streaming_tests.jl")
-include("bidi_streaming_tests.jl")
+include("purehttp2_extension/support.jl")
+include("purehttp2_extension/bridge_tests.jl")
+include("purehttp2_extension/live_connection_tests.jl")
+include("purehttp2_extension/live_listener_tests.jl")
 
-function grpcserver_extension_test_streaming(grpcserver, service, fixture, metadata)
-    grpcserver_extension_test_server_streaming(grpcserver, service, fixture, metadata)
-    grpcserver_extension_test_bidi_streaming(grpcserver, service, fixture, metadata)
+@testset "Flight PureHTTP2 transport" begin
+    fixture = purehttp2_extension_fixture()
+    purehttp2_extension_test_bridge(fixture)
+    purehttp2_extension_test_live_connection(fixture)
+    purehttp2_extension_test_live_listener(fixture)
 end

@@ -1275,12 +1275,13 @@ end
             @test ArrowTypes.arrowname(UUID) == Arrow._builtinarrowname(UUID)
             @test ArrowTypes.JuliaType(Val(Symbol("arrow.uuid"))) == UUID
             @test ArrowTypes.JuliaType(Val(Symbol("JuliaLang.UUID"))) == UUID
+            @test Arrow.LEGACY_UUID_EXTENSION_SYMBOL == Symbol("JuliaLang.UUID")
             uuid_spec = Arrow._extensionspec(UUID)
             @test uuid_spec isa Arrow.ExtensionTypeSpec
             @test uuid_spec.name == Arrow.ArrowTypes.UUIDSYMBOL
             @test uuid_spec.metadata == ""
             @test Arrow._resolveextensionjuliatype(
-                Arrow.ExtensionTypeSpec(Arrow.ArrowTypes.LEGACY_UUIDSYMBOL, ""),
+                Arrow.ExtensionTypeSpec(Arrow.LEGACY_UUID_EXTENSION_SYMBOL, ""),
                 NTuple{16,UInt8},
             ) == UUID
 
