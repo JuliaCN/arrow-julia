@@ -272,19 +272,20 @@ service invocation through [`Arrow.Flight.doexchange`](@ref),
 [`Arrow.Flight.table`](@ref), and [`Arrow.Flight.stream`](@ref) when the first
 argument is an in-process `Arrow.Flight.Service`.
 
-The gRPC-backed remote Flight client surface is optional. The base package
-keeps `Arrow.Flight.Client`, URI parsing, header helpers, protocol types, and
-transport-agnostic server composition available without a hard
-`gRPCClient.jl` dependency, while the remote Flight RPC methods load through
-the optional `ArrowFlightgRPCClientExt` extension when `gRPCClient.jl` is
-present in the active environment.
+The gRPC-backed remote Flight client surface remains optional and legacy. The
+base package keeps `Arrow.Flight.Client`, URI parsing, header helpers,
+protocol types, and transport-agnostic server composition available without a
+hard `gRPCClient.jl` dependency, while the remote Flight RPC methods load
+through the optional `ArrowFlightgRPCClientExt` extension only for downstream
+compatibility. Package-owned interop and performance proofs now use external
+Python clients instead of a Julia Flight client dependency.
 
 Arrow.jl now ships built-in `PureHTTP2.jl` transport helpers in the Flight
 server core for package-owned h2c listeners,
 discovery, schema, unary, client-streaming, server-streaming, actions, poll,
 and live bidirectional `DoExchange` gRPC-over-HTTP/2 handling, with focused
-coverage through `test/flight_purehttp2.jl`, which also serves as the stable
-and nightly Flight interop CI runner. The packaged backend contract is exposed through
+Python-client coverage through `test/flight_purehttp2.jl`, which also serves
+as the stable and nightly Flight interop CI runner. The packaged backend contract is exposed through
 [`Arrow.Flight.flight_server_backend_capabilities`](@ref),
 [`Arrow.Flight.flight_server_backend_supported`](@ref), and
 [`Arrow.Flight.require_flight_server_backend`](@ref); the current default live

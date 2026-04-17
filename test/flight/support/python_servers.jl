@@ -19,6 +19,16 @@ const PYARROW_FLIGHT_SERVER_READY_TIMEOUT_SECS = 60.0
 const PYARROW_FLIGHT_PROBE_DEADLINE_SECS = 5.0
 const TLS_FLIGHT_TEST_DEADLINE_SECS = 30.0
 const POLL_FLIGHT_REQUIRED_MODULES = ["pyarrow.flight", "grpc", "grpc_tools"]
+const PYARROW_FLIGHT_READINESS_PROBE = raw"""
+import pyarrow.flight as fl
+import sys
+
+port = int(sys.argv[1])
+client = fl.FlightClient(f"grpc://127.0.0.1:{port}")
+options = fl.FlightCallOptions(timeout=5)
+actions = list(client.list_actions(options=options))
+assert len(actions) >= 1
+"""
 
 function read_python_flight_server_port(process::Base.Process, stdout::Pipe, stderr::Pipe)
     line = ""
@@ -53,14 +63,6 @@ function read_python_flight_server_port(process::Base.Process, stdout::Pipe, std
             )
         end
     end
-end
-
-function flight_readiness_client(port::Integer, grpc)
-    return Arrow.Flight.Client(
-        "grpc://127.0.0.1:$(port)";
-        grpc=grpc,
-        deadline=PYARROW_FLIGHT_PROBE_DEADLINE_SECS,
-    )
 end
 
 function wait_for_readiness_probe(readiness_probe::Function, port::Integer)
@@ -139,12 +141,16 @@ function start_python_flight_server(
 end
 
 function probe_pyarrow_flight_server(port::Integer)
-    with_test_grpc_handle() do grpc
-        client = flight_readiness_client(port, grpc)
-        req, channel = Arrow.Flight.listactions(client)
-        collect(channel)
-        gRPCClient.grpc_async_await(req)
-    end
+    python = pyarrow_flight_python()
+    isnothing(python) && error("pyarrow.flight is unavailable for readiness probe")
+    run(
+        Cmd([
+            python,
+            "-c",
+            PYARROW_FLIGHT_READINESS_PROBE,
+            string(port),
+        ]),
+    )
     return
 end
 

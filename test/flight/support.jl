@@ -18,7 +18,6 @@
 module FlightTestSupport
 
 using Arrow
-using gRPCClient
 using Sockets
 
 export PyArrowFlightServer,
@@ -30,14 +29,12 @@ export PyArrowFlightServer,
     start_poll_flight_server,
     start_tls_flight_server,
     stop_pyarrow_flight_server,
-    with_test_grpc_handle,
     generate_test_tls_certificate,
     next_message_factory
 
 include("support/types.jl")
 include("support/app_metadata.jl")
 include("support/paths.jl")
-include("support/grpc.jl")
 include("support/python_servers.jl")
 include("support/tls.jl")
 include("support/streams.jl")

@@ -52,10 +52,6 @@ ArrowFlightNghttp2Ext = "Nghttp2Wrapper"
 
 [extras]
 gRPCClient = "aaca4a50-36af-4a1d-b878-4c443f2061ad"
-PureHTTP2 = "7d1e1b98-28e7-4969-8df9-5a308937986a"
-
-[targets]
-test = ["gRPCClient"]
 
 [sources]
 ArrowTypes = { path = "src/ArrowTypes" }

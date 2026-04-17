@@ -34,23 +34,23 @@ It currently doesn't include support for:
 Flight RPC status:
   * Experimental `Arrow.Flight` support is available in-tree
   * Requires Julia `1.12+`
-  * Includes generated protocol bindings in the base package while loading the gRPC-backed `FlightService` client constructors and RPC transport through an optional `gRPCClient.jl` extension
+  * Includes generated protocol bindings in the base package while leaving the legacy gRPC-backed `FlightService` client constructors and RPC transport behind an optional `gRPCClient.jl` extension
   * Keeps the top-level Flight module shell thin, with exports and generated-protocol setup split out of `src/flight/Flight.jl`
   * Includes high-level `FlightData <-> Arrow IPC` helpers for `Arrow.Table`, `Arrow.Stream`, and DoPut payload generation
   * Keeps the Flight IPC conversion layer modular under `src/flight/convert/`, with `src/flight/convert.jl` retained as a thin entrypoint
-  * Includes transport-neutral client helpers for request headers, binary metadata, and URI parsing in the base package, with gRPC-backed handshake token reuse, TLS configuration, and remote RPC methods loaded only when the optional `gRPCClient.jl` extension is present
-  * Keeps the Flight client implementation modular under `src/flight/client/`, with the base shell retained in `src/flight/client.jl` and the gRPC-backed runtime loaded through `src/flight/client_extension.jl`
+  * Includes transport-neutral client helpers for request headers, binary metadata, and URI parsing in the base package, while the legacy gRPC-backed handshake token reuse, TLS configuration, and remote RPC methods load only when the optional `gRPCClient.jl` extension is present for downstream compatibility
+  * Keeps the Flight client compatibility layer modular under `src/flight/client/`, with the base shell retained in `src/flight/client.jl` and the gRPC-backed runtime loaded through `ext/ArrowFlightgRPCClientExt.jl`
   * Includes a transport-agnostic server core (`Service`, `ServerCallContext`, `ServiceDescriptor`, `MethodDescriptor`) for local Flight method dispatch, path lookup, handler testing, packaged backend capability checks through `flight_server_backend_capabilities(...)`, and shared gRPC-over-HTTP/2 framing helpers for lower-level backends
   * Keeps the transport-agnostic server core modular under `src/flight/server/`, with `src/flight/server.jl` retained as a thin entrypoint
   * Includes built-in `PureHTTP2.jl` transport helpers in the Flight server core for package-owned h2c listeners, unary RPCs, client-streaming, server-streaming, and live bidirectional `DoExchange` gRPC-over-HTTP/2 handling through `Flight.purehttp2_flight_server(...)`
   * Treats the built-in `:purehttp2` transport as the only default packaged live Flight backend profile while also exposing an optional weakdep-backed `Nghttp2Wrapper.jl` listener through `Flight.nghttp2_flight_server(...)` for unary plus buffered server-streaming gRPC-over-HTTP/2 proofs
-  * Includes optional live interoperability coverage for `Handshake`, authenticated token propagation, `PollFlightInfo`, and TLS via dedicated Python reference servers
-  * Includes optional live `pyarrow.flight` interoperability coverage for `ListFlights`, `GetFlightInfo`, `GetSchema`, `DoGet`, `DoPut`, `DoExchange`, `ListActions`, and `DoAction`
-  * Keeps targeted Flight verification modular under `test/flight/`, with `test/flight.jl` retained as the shared default entrypoint, the client-constructor/protocol-wrapper checks decomposed under `test/flight/client_surface/`, the `pyarrow.flight` interop scenarios decomposed under `test/flight/pyarrow_interop/`, and the transport-agnostic server-core checks decomposed under `test/flight/server_core/`
+  * Includes package-owned live Python-client coverage for authenticated `ListFlights`, `GetFlightInfo`, `GetSchema`, `DoGet`, `DoPut`, `DoExchange`, `ListActions`, and `DoAction`
+  * Keeps targeted Flight verification modular under `test/flight/`, with `test/flight.jl` retained as the shared default entrypoint for generated protocol, server-core, and IPC coverage, and dedicated listener proofs isolated in the PureHTTP2/nghttp2 runner files
   * Includes `test/flight_purehttp2.jl` as the PureHTTP2-first temporary-environment runner for shared Flight interop coverage plus package-owned listener proofs
   * Includes `test/flight_purehttp2_perf.jl` as a focused large-transport runner for package-owned `PureHTTP2` `DoGet` measurement, `test/flight_nghttp2_probe.jl` as a substrate probe for the C-wrapper hook surface, and `test/flight_nghttp2.jl` as the focused weakdep-backed nghttp2 listener plus large-transport comparison runner
   * The current `Nghttp2Wrapper.jl` backend proves package-local unary plus buffered server-streaming Flight methods with trailer-borne `grpc-status`, while `Handshake`, `DoPut`, and `DoExchange` remain explicitly unsupported on that backend
-  * Dedicated CI jobs now exercise the Flight interop suite on stable and nightly Linux through the PureHTTP2-first runner; the built-in PureHTTP2 server substrate is the package-owned live backend direction, including package-owned discovery, schema, action, poll, and external-client smoke proofs
+  * `Handshake` token propagation and `PollFlightInfo` currently remain server-core/local proofs because the current external Python client surfaces used in tests do not cover those contracts directly
+  * Dedicated CI jobs now exercise the Flight interop suite on stable and nightly Linux through the PureHTTP2-first runner; the built-in PureHTTP2 server substrate is the package-owned live backend direction, including Python-client smoke proofs on the same listener surface
 
 Third-party data formats:
   * csv and parquet support via the existing [CSV.jl](https://github.com/JuliaData/CSV.jl) and [Parquet.jl](https://github.com/JuliaIO/Parquet.jl) packages
