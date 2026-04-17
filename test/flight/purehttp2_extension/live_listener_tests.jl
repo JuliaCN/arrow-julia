@@ -15,6 +15,56 @@
 # specific language governing permissions and limitations
 # under the License.
 
+using JSON3
+
+const FLIGHT_LIVE_PYARROW_GETFLIGHTINFO = raw"""
+import json
+import pyarrow.flight as fl
+import sys
+
+host = sys.argv[1]
+port = int(sys.argv[2])
+deadline = float(sys.argv[3])
+descriptor = fl.FlightDescriptor.for_path(*sys.argv[4:])
+client = fl.FlightClient(f"grpc://{host}:{port}")
+
+try:
+    info = client.get_flight_info(descriptor, options=fl.FlightCallOptions(timeout=deadline))
+    print(json.dumps({
+        "ok": True,
+        "total_records": info.total_records,
+        "total_bytes": info.total_bytes,
+    }))
+except Exception as exc:  # noqa: BLE001
+    print(json.dumps({
+        "ok": False,
+        "type": type(exc).__name__,
+        "message": str(exc),
+    }))
+"""
+
+function flight_live_pyarrow_getflightinfo(
+    host::AbstractString,
+    port::Integer,
+    descriptor;
+    deadline::Real=30.0,
+)
+    python = FlightTestSupport.pyarrow_flight_python()
+    isnothing(python) && return nothing
+    output = readchomp(
+        Cmd([
+            python,
+            "-c",
+            FLIGHT_LIVE_PYARROW_GETFLIGHTINFO,
+            host,
+            string(port),
+            string(Float64(deadline)),
+            descriptor.path...,
+        ]),
+    )
+    return JSON3.read(output)
+end
+
 function purehttp2_extension_test_live_listener(fixture)
     protocol = fixture.protocol
     live_fixture = flight_live_fixture(protocol)
@@ -42,6 +92,7 @@ end
 
 function purehttp2_extension_test_concurrent_listener(fixture)
     Threads.nthreads() > 1 || return nothing
+    !isnothing(FlightTestSupport.pyarrow_flight_python()) || return nothing
 
     protocol = fixture.protocol
     active_handlers = Threads.Atomic{Int}(0)
@@ -83,39 +134,21 @@ function purehttp2_extension_test_concurrent_listener(fixture)
 
     try
         purehttp2_extension_wait_for_live_server(server.host, server.port)
-
-        warm_grpc = gRPCClient.gRPCCURL()
-        gRPCClient.grpc_init(warm_grpc)
-        try
-            warm_client = Arrow.Flight.Client(
-                "grpc://$(server.host):$(server.port)";
-                grpc=warm_grpc,
-                deadline=30,
-            )
-            warm_info = Arrow.Flight.getflightinfo(warm_client, descriptor)
-            @test warm_info.total_records == info.total_records
-        finally
-            gRPCClient.grpc_shutdown(warm_grpc)
-        end
+        warm_info = flight_live_pyarrow_getflightinfo(server.host, server.port, descriptor)
+        @test !isnothing(warm_info)
+        @test Bool(warm_info["ok"])
+        @test Int(warm_info["total_records"]) == info.total_records
 
         start_gate = Channel{Nothing}(2)
         tasks = [
             Threads.@spawn begin
-                grpc = gRPCClient.gRPCCURL()
-                gRPCClient.grpc_init(grpc)
-                try
-                    client = Arrow.Flight.Client(
-                        "grpc://$(server.host):$(server.port)";
-                        grpc=grpc,
-                        deadline=30,
-                    )
-                    take!(start_gate)
-                    request_info = Arrow.Flight.getflightinfo(client, descriptor)
-                    @test request_info.total_records == info.total_records
-                    @test request_info.total_bytes == info.total_bytes
-                finally
-                    gRPCClient.grpc_shutdown(grpc)
-                end
+                take!(start_gate)
+                request_info =
+                    flight_live_pyarrow_getflightinfo(server.host, server.port, descriptor)
+                @test !isnothing(request_info)
+                @test Bool(request_info["ok"])
+                @test Int(request_info["total_records"]) == info.total_records
+                @test Int(request_info["total_bytes"]) == info.total_bytes
             end for _ = 1:2
         ]
 
@@ -130,6 +163,7 @@ end
 
 function purehttp2_extension_test_overload_listener(fixture)
     Threads.nthreads() > 1 || return nothing
+    !isnothing(FlightTestSupport.pyarrow_flight_python()) || return nothing
 
     protocol = fixture.protocol
     descriptor = fixture.descriptor
@@ -168,47 +202,22 @@ function purehttp2_extension_test_overload_listener(fixture)
         @test getfield(server, :request_gate).max_active_requests == 1
 
         first_task = Threads.@spawn begin
-            grpc = gRPCClient.gRPCCURL()
-            gRPCClient.grpc_init(grpc)
-            try
-                client = Arrow.Flight.Client(
-                    "grpc://$(server.host):$(server.port)";
-                    grpc=grpc,
-                    deadline=30,
-                )
-                request_info = Arrow.Flight.getflightinfo(client, descriptor)
-                @test request_info.total_records == info.total_records
-                @test request_info.total_bytes == info.total_bytes
-            finally
-                gRPCClient.grpc_shutdown(grpc)
-            end
+            request_info =
+                flight_live_pyarrow_getflightinfo(server.host, server.port, descriptor)
+            @test !isnothing(request_info)
+            @test Bool(request_info["ok"])
+            @test Int(request_info["total_records"]) == info.total_records
+            @test Int(request_info["total_bytes"]) == info.total_bytes
         end
 
         take!(handler_started)
 
-        overloaded_error = let
-            grpc = gRPCClient.gRPCCURL()
-            gRPCClient.grpc_init(grpc)
-            try
-                client = Arrow.Flight.Client(
-                    "grpc://$(server.host):$(server.port)";
-                    grpc=grpc,
-                    deadline=30,
-                )
-                try
-                    Arrow.Flight.getflightinfo(client, descriptor)
-                    nothing
-                catch error
-                    error
-                end
-            finally
-                gRPCClient.grpc_shutdown(grpc)
-            end
-        end
-
-        @test overloaded_error isa gRPCClient.gRPCServiceCallException
-        @test overloaded_error.grpc_status == gRPCClient.GRPC_RESOURCE_EXHAUSTED
-        @test occursin("active request limit 1 reached", overloaded_error.message)
+        overloaded_result =
+            flight_live_pyarrow_getflightinfo(server.host, server.port, descriptor; deadline=5)
+        @test !isnothing(overloaded_result)
+        @test !Bool(overloaded_result["ok"])
+        @test occursin("resource exhausted", lowercase(String(overloaded_result["message"])))
+        @test occursin("active request limit 1 reached", String(overloaded_result["message"]))
 
         put!(release_handler, nothing)
         fetch(first_task)
