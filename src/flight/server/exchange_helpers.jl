@@ -170,6 +170,22 @@ function streamservice(
     )
 end
 
+"""
+    Arrow.Flight.doexchange(service, context, source, response; kwargs...)
+    Arrow.Flight.doexchange(service, context, source; kwargs...)
+
+Invoke a native Julia Flight `Service` in-process through its `DoExchange`
+handler. The source is encoded into Flight `FlightData` request messages with
+[`Arrow.Flight.putflightdata!`](@ref), then dispatched through the same
+runtime contract used by the packaged Flight server transports.
+
+The four-argument form writes response messages into the provided `response`
+channel and returns `nothing`. The three-argument form allocates a response
+channel, returns it, and leaves consumption to the caller. Shared keyword
+arguments control request buffering plus the Arrow IPC emission settings used
+to encode `source`, including `descriptor`, `metadata`, `colmetadata`, and
+batch-wise `app_metadata`.
+"""
 function doexchange(
     service::Service,
     context::ServerCallContext,
