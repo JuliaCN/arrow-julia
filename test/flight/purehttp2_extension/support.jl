@@ -364,3 +364,40 @@ function purehttp2_extension_collect_stream_frames(
     end
     return fetch(task)
 end
+
+function purehttp2_extension_collect_frames_until(
+    io::IO,
+    predicate::Function;
+    timeout_secs::Real=2.0,
+)
+    seen = Ref(Tuple{UInt32,UInt8,UInt8}[])
+    task = @async begin
+        frames = PureHTTP2.Frame[]
+        while true
+            header_bytes = read(io, PureHTTP2.FRAME_HEADER_SIZE)
+            length(header_bytes) < PureHTTP2.FRAME_HEADER_SIZE &&
+                error("Unexpected EOF while reading HTTP/2 frame header")
+            header = PureHTTP2.decode_frame_header(header_bytes)
+            payload = header.length == 0 ? UInt8[] : read(io, Int(header.length))
+            length(payload) < header.length &&
+                error("Unexpected EOF while reading HTTP/2 frame payload")
+            frame = PureHTTP2.Frame(header, payload)
+            push!(
+                seen[],
+                (frame.header.stream_id, frame.header.frame_type, frame.header.flags),
+            )
+            push!(frames, frame)
+            predicate(frame, frames) && return frames
+        end
+    end
+
+    deadline = time() + timeout_secs
+    while !istaskdone(task) && time() < deadline
+        sleep(0.01)
+    end
+    if !istaskdone(task)
+        close(io)
+        error("Timed out waiting for predicate; seen=$(seen[])")
+    end
+    return fetch(task)
+end

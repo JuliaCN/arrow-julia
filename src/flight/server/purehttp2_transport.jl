@@ -65,6 +65,63 @@ function _purehttp2_request_stream(conn::PureHTTP2.HTTP2Connection, stream_id::U
     return stream
 end
 
+function _purehttp2_inbound_data_window_snapshot(
+    conn::PureHTTP2.HTTP2Connection,
+    frame::PureHTTP2.Frame,
+)
+    frame.header.frame_type == PureHTTP2.FrameType.DATA || return nothing
+    stream_id = frame.header.stream_id
+    stream_id == 0 && return nothing
+    controller = conn.flow_controller
+    stream_window = PureHTTP2.get_stream_window(controller, stream_id)
+    return (
+        connection_available=PureHTTP2.available(controller.connection_window),
+        stream_available=isnothing(stream_window) ? nothing :
+                         PureHTTP2.available(stream_window),
+    )
+end
+
+function _purehttp2_request_window_updates!(
+    conn::PureHTTP2.HTTP2Connection,
+    frame::PureHTTP2.Frame,
+    snapshot;
+    max_frame_size::Int=PureHTTP2.DEFAULT_MAX_FRAME_SIZE,
+)
+    isnothing(snapshot) && return PureHTTP2.Frame[]
+
+    stream_id = frame.header.stream_id
+    controller = conn.flow_controller
+    receiver = PureHTTP2.DataReceiver(controller, max_frame_size)
+    PureHTTP2.receive_data!(receiver, stream_id, frame)
+    frames = filter(
+        response_frame ->
+            response_frame.header.frame_type != PureHTTP2.FrameType.WINDOW_UPDATE ||
+            response_frame.header.stream_id == 0,
+        PureHTTP2.generate_window_updates(controller),
+    )
+    stream = PureHTTP2.get_stream(conn, stream_id)
+    if !isnothing(stream)
+        stream_threshold = floor(Int, conn.local_settings.initial_window_size * 0.5)
+        stream_increment = conn.local_settings.initial_window_size - stream.recv_window
+        if stream_increment >= stream_threshold
+            push!(frames, PureHTTP2.window_update_frame(stream_id, stream_increment))
+            PureHTTP2.update_recv_window!(stream, stream_increment)
+        end
+    end
+    for window_update in frames
+        window_update.header.frame_type == PureHTTP2.FrameType.WINDOW_UPDATE || continue
+        increment = Int(PureHTTP2.parse_window_update_frame(window_update))
+        if window_update.header.stream_id == 0
+            PureHTTP2.apply_window_update!(
+                controller,
+                window_update.header.stream_id,
+                increment,
+            )
+        end
+    end
+    return frames
+end
+
 function _purehttp2_request_gate(max_active_requests::Integer)
     max_active_requests > 0 || throw(ArgumentError("max_active_requests must be positive"))
     return PureHTTP2RequestGate(ReentrantLock(), Int(max_active_requests), 0)
@@ -204,6 +261,7 @@ function _purehttp2_write_frames_unlocked!(io::IO, frames::Vector{PureHTTP2.Fram
     for frame in frames
         write(io, PureHTTP2.encode_frame(frame))
     end
+    flush(io)
     return nothing
 end
 
@@ -561,7 +619,18 @@ function purehttp2_serve_grpc_connection!(
 
         frame = PureHTTP2.Frame(header, payload)
         response_frames = lock(transport_lock) do
-            PureHTTP2.process_frame(conn, frame)
+            window_snapshot = _purehttp2_inbound_data_window_snapshot(conn, frame)
+            response_frames = PureHTTP2.process_frame(conn, frame)
+            append!(
+                response_frames,
+                _purehttp2_request_window_updates!(
+                    conn,
+                    frame,
+                    window_snapshot;
+                    max_frame_size=max_frame_size,
+                ),
+            )
+            response_frames
         end
         _purehttp2_write_frames!(transport_lock, io, response_frames)
 

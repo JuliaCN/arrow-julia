@@ -152,3 +152,395 @@ function purehttp2_extension_test_live_connection(fixture)
     wait(server_task)
     close(server_to_client)
 end
+
+function purehttp2_extension_test_large_request_window_updates(fixture)
+    protocol = fixture.protocol
+    request_messages = [
+        protocol.FlightData(
+            nothing,
+            UInt8[index],
+            UInt8[index + 0x20],
+            fill(UInt8(index + 0x40), 12_000),
+        ) for index in UInt8.(1:6)
+    ]
+    seen_requests = Ref(Vector{protocol.FlightData}())
+
+    service = Arrow.Flight.Service(
+        doexchange=(ctx, request, response) -> begin
+            for message in request
+                push!(seen_requests[], message)
+            end
+            close(response)
+            return :doexchange_large_window_update_ok
+        end,
+    )
+
+    client_to_server = Base.BufferStream()
+    server_to_client = Base.BufferStream()
+    server_io = PureHTTP2ExtensionPairedIO(client_to_server, server_to_client)
+    server_conn = PureHTTP2.HTTP2Connection()
+
+    server_task = @async Arrow.Flight.purehttp2_serve_grpc_connection!(
+        service,
+        server_conn,
+        server_io;
+        request_capacity=2,
+        response_capacity=2,
+    )
+
+    purehttp2_extension_write_client_preface!(client_to_server)
+    header_block =
+        purehttp2_extension_header_block("DoExchange"; headers=fixture.unary_headers)
+    write(
+        client_to_server,
+        PureHTTP2.encode_frame(
+            PureHTTP2.headers_frame(
+                UInt32(1),
+                header_block;
+                end_stream=false,
+                end_headers=true,
+            ),
+        ),
+    )
+
+    for (index, request_message) in enumerate(request_messages)
+        write(
+            client_to_server,
+            PureHTTP2.encode_frame(
+                PureHTTP2.data_frame(
+                    UInt32(1),
+                    Arrow.Flight.grpcmessage(request_message);
+                    end_stream=index == length(request_messages),
+                ),
+            ),
+        )
+    end
+
+    try
+        frames = purehttp2_extension_collect_frames_until(
+            server_to_client,
+            (_, seen_frames) -> begin
+                any(
+                        frame ->
+                            frame.header.frame_type == PureHTTP2.FrameType.WINDOW_UPDATE &&
+                            frame.header.stream_id == 0,
+                        seen_frames,
+                    ) &&
+                    any(
+                        frame ->
+                            frame.header.frame_type == PureHTTP2.FrameType.WINDOW_UPDATE &&
+                            frame.header.stream_id == UInt32(1),
+                        seen_frames,
+                    ) &&
+                    any(
+                        frame ->
+                            frame.header.frame_type == PureHTTP2.FrameType.HEADERS &&
+                            frame.header.stream_id == UInt32(1) &&
+                            PureHTTP2.has_flag(
+                                frame.header,
+                                PureHTTP2.FrameFlags.END_STREAM,
+                            ),
+                        seen_frames,
+                    )
+            end;
+            timeout_secs=10.0,
+        )
+
+        window_updates = filter(
+            frame -> frame.header.frame_type == PureHTTP2.FrameType.WINDOW_UPDATE,
+            frames,
+        )
+        @test any(frame -> frame.header.stream_id == 0, window_updates)
+        @test any(frame -> frame.header.stream_id == UInt32(1), window_updates)
+        response_headers = filter(
+            frame ->
+                frame.header.frame_type == PureHTTP2.FrameType.HEADERS &&
+                frame.header.stream_id == UInt32(1),
+            frames,
+        )
+        @test !isempty(response_headers)
+        @test any(
+            frame -> PureHTTP2.has_flag(frame.header, PureHTTP2.FrameFlags.END_STREAM),
+            response_headers,
+        )
+    finally
+        if isopen(client_to_server)
+            try
+                write(
+                    client_to_server,
+                    PureHTTP2.encode_frame(
+                        PureHTTP2.goaway_frame(1, PureHTTP2.ErrorCode.NO_ERROR),
+                    ),
+                )
+            catch
+            end
+            close(client_to_server)
+        end
+        isopen(server_to_client) && close(server_to_client)
+        timedwait(() -> istaskdone(server_task), 5) === :ok ||
+            error("Timed out waiting for PureHTTP2 large-request server task shutdown")
+        wait(server_task)
+    end
+
+    @test length(seen_requests[]) == length(request_messages)
+    @test getfield.(seen_requests[], :data_header) ==
+          getfield.(request_messages, :data_header)
+    @test getfield.(seen_requests[], :data_body) == getfield.(request_messages, :data_body)
+end
+
+function purehttp2_extension_test_single_large_request_message(fixture)
+    protocol = fixture.protocol
+    request_message =
+        protocol.FlightData(nothing, UInt8[0x11], UInt8[0x22], fill(UInt8(0x33), 152_147))
+    response_message = protocol.FlightData(nothing, UInt8[0x44], UInt8[0x55], UInt8[0x66])
+    seen_requests = Ref(Vector{protocol.FlightData}())
+
+    service = Arrow.Flight.Service(
+        doexchange=(ctx, request, response) -> begin
+            for message in request
+                push!(seen_requests[], message)
+                put!(
+                    response,
+                    protocol.FlightData(
+                        response_message.flight_descriptor,
+                        copy(response_message.data_header),
+                        copy(response_message.app_metadata),
+                        copy(response_message.data_body),
+                    ),
+                )
+            end
+            close(response)
+            return :doexchange_single_large_request_ok
+        end,
+    )
+
+    client_to_server = Base.BufferStream()
+    server_to_client = Base.BufferStream()
+    server_io = PureHTTP2ExtensionPairedIO(client_to_server, server_to_client)
+    server_conn = PureHTTP2.HTTP2Connection()
+
+    server_task = @async Arrow.Flight.purehttp2_serve_grpc_connection!(
+        service,
+        server_conn,
+        server_io;
+        request_capacity=2,
+        response_capacity=2,
+    )
+
+    purehttp2_extension_write_client_preface!(client_to_server)
+    header_block =
+        purehttp2_extension_header_block("DoExchange"; headers=fixture.unary_headers)
+    write(
+        client_to_server,
+        PureHTTP2.encode_frame(
+            PureHTTP2.headers_frame(
+                UInt32(1),
+                header_block;
+                end_stream=false,
+                end_headers=true,
+            ),
+        ),
+    )
+
+    payload_chunks = _purehttp2_extension_chunk_payload(
+        Arrow.Flight.grpcmessage(request_message),
+        16_384,
+    )
+    for (index, payload_chunk) in enumerate(payload_chunks)
+        write(
+            client_to_server,
+            PureHTTP2.encode_frame(
+                PureHTTP2.data_frame(
+                    UInt32(1),
+                    payload_chunk;
+                    end_stream=index == length(payload_chunks),
+                ),
+            ),
+        )
+    end
+
+    frames = purehttp2_extension_collect_frames_until(
+        server_to_client,
+        (_, seen_frames) -> begin
+            any(
+                frame ->
+                    frame.header.frame_type == PureHTTP2.FrameType.DATA &&
+                    frame.header.stream_id == UInt32(1),
+                seen_frames,
+            ) && any(
+                frame ->
+                    frame.header.frame_type == PureHTTP2.FrameType.HEADERS &&
+                    frame.header.stream_id == UInt32(1) &&
+                    PureHTTP2.has_flag(frame.header, PureHTTP2.FrameFlags.END_STREAM),
+                seen_frames,
+            )
+        end;
+        timeout_secs=5.0,
+    )
+
+    window_updates = filter(
+        frame -> frame.header.frame_type == PureHTTP2.FrameType.WINDOW_UPDATE,
+        frames,
+    )
+    @test any(frame -> frame.header.stream_id == 0, window_updates)
+    @test any(frame -> frame.header.stream_id == UInt32(1), window_updates)
+
+    response_frames = filter(frame -> frame.header.stream_id == UInt32(1), frames)
+    response_messages =
+        purehttp2_extension_decode_data(protocol.FlightData, response_frames)
+    @test length(response_messages) == 1
+    @test response_messages[1].data_header == response_message.data_header
+    @test response_messages[1].data_body == response_message.data_body
+
+    trailers = purehttp2_extension_decode_headers(
+        filter(
+            frame ->
+                frame.header.frame_type == PureHTTP2.FrameType.HEADERS &&
+                frame.header.stream_id == UInt32(1),
+            response_frames,
+        ),
+    )
+    @test trailers[end] == [("grpc-status", "0")]
+
+    write(
+        client_to_server,
+        PureHTTP2.encode_frame(PureHTTP2.goaway_frame(1, PureHTTP2.ErrorCode.NO_ERROR)),
+    )
+    close(client_to_server)
+    wait(server_task)
+    close(server_to_client)
+
+    @test length(seen_requests[]) == 1
+    @test seen_requests[][1].data_header == request_message.data_header
+    @test seen_requests[][1].data_body == request_message.data_body
+end
+
+function purehttp2_extension_test_large_flightdata_request_stream(fixture)
+    protocol = fixture.protocol
+    request_messages = Arrow.Flight.flightdata(
+        Tables.partitioner(((doc_id=[repeat("x", 152_147)], vector_score=[1.0]),));
+        descriptor=fixture.descriptor,
+        metadata=Dict("wendao.schema_version" => "v1"),
+    )
+    response_message = protocol.FlightData(nothing, UInt8[0x66], UInt8[0x77], UInt8[0x88])
+    seen_requests = Ref(Vector{protocol.FlightData}())
+
+    service = Arrow.Flight.Service(
+        doexchange=(ctx, request, response) -> begin
+            for message in request
+                push!(seen_requests[], message)
+            end
+            put!(
+                response,
+                protocol.FlightData(
+                    response_message.flight_descriptor,
+                    copy(response_message.data_header),
+                    copy(response_message.app_metadata),
+                    copy(response_message.data_body),
+                ),
+            )
+            close(response)
+            return :doexchange_large_flightdata_request_stream_ok
+        end,
+    )
+
+    client_to_server = Base.BufferStream()
+    server_to_client = Base.BufferStream()
+    server_io = PureHTTP2ExtensionPairedIO(client_to_server, server_to_client)
+    server_conn = PureHTTP2.HTTP2Connection()
+
+    server_task = @async Arrow.Flight.purehttp2_serve_grpc_connection!(
+        service,
+        server_conn,
+        server_io;
+        request_capacity=2,
+        response_capacity=2,
+    )
+
+    purehttp2_extension_write_client_preface!(client_to_server)
+    header_block =
+        purehttp2_extension_header_block("DoExchange"; headers=fixture.unary_headers)
+    write(
+        client_to_server,
+        PureHTTP2.encode_frame(
+            PureHTTP2.headers_frame(
+                UInt32(1),
+                header_block;
+                end_stream=false,
+                end_headers=true,
+            ),
+        ),
+    )
+
+    payload_chunks = Vector{Vector{UInt8}}()
+    for request_message in request_messages
+        append!(
+            payload_chunks,
+            _purehttp2_extension_chunk_payload(
+                Arrow.Flight.grpcmessage(request_message),
+                16_384,
+            ),
+        )
+    end
+    for (index, payload_chunk) in enumerate(payload_chunks)
+        write(
+            client_to_server,
+            PureHTTP2.encode_frame(
+                PureHTTP2.data_frame(
+                    UInt32(1),
+                    payload_chunk;
+                    end_stream=index == length(payload_chunks),
+                ),
+            ),
+        )
+    end
+
+    frames = purehttp2_extension_collect_frames_until(
+        server_to_client,
+        (_, seen_frames) -> begin
+            any(
+                frame ->
+                    frame.header.frame_type == PureHTTP2.FrameType.DATA &&
+                    frame.header.stream_id == UInt32(1),
+                seen_frames,
+            ) && any(
+                frame ->
+                    frame.header.frame_type == PureHTTP2.FrameType.HEADERS &&
+                    frame.header.stream_id == UInt32(1) &&
+                    PureHTTP2.has_flag(frame.header, PureHTTP2.FrameFlags.END_STREAM),
+                seen_frames,
+            )
+        end;
+        timeout_secs=5.0,
+    )
+
+    response_frames = filter(frame -> frame.header.stream_id == UInt32(1), frames)
+    response_messages =
+        purehttp2_extension_decode_data(protocol.FlightData, response_frames)
+    @test length(response_messages) == 1
+    @test response_messages[1].data_header == response_message.data_header
+    @test response_messages[1].data_body == response_message.data_body
+
+    trailers = purehttp2_extension_decode_headers(
+        filter(
+            frame ->
+                frame.header.frame_type == PureHTTP2.FrameType.HEADERS &&
+                frame.header.stream_id == UInt32(1),
+            response_frames,
+        ),
+    )
+    @test trailers[end] == [("grpc-status", "0")]
+
+    write(
+        client_to_server,
+        PureHTTP2.encode_frame(PureHTTP2.goaway_frame(1, PureHTTP2.ErrorCode.NO_ERROR)),
+    )
+    close(client_to_server)
+    wait(server_task)
+    close(server_to_client)
+
+    @test length(seen_requests[]) == length(request_messages)
+    @test getfield.(seen_requests[], :data_header) ==
+          getfield.(request_messages, :data_header)
+    @test getfield.(seen_requests[], :data_body) == getfield.(request_messages, :data_body)
+end

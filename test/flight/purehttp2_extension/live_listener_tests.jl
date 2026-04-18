@@ -43,6 +43,48 @@ except Exception as exc:  # noqa: BLE001
     }))
 """
 
+const FLIGHT_LIVE_PYARROW_LARGE_DOEXCHANGE = raw"""
+import pyarrow as pa
+import pyarrow.flight as fl
+import sys
+
+host = sys.argv[1]
+port = int(sys.argv[2])
+warm_timeout = float(sys.argv[3])
+large_timeout = float(sys.argv[4])
+large_bytes = int(sys.argv[5])
+descriptor = fl.FlightDescriptor.for_path(*sys.argv[6:])
+client = fl.FlightClient(f"grpc://{host}:{port}")
+
+schema = pa.schema(
+    [
+        ("doc_id", pa.string()),
+        ("vector_score", pa.float64()),
+    ],
+    metadata={b"wendao.schema_version": b"v1"},
+)
+
+def exchange_once(size: int, timeout: float) -> list[str]:
+    payload = "x" * size
+    table = pa.Table.from_arrays(
+        [pa.array([payload]), pa.array([1.0])],
+        schema=schema,
+    )
+    writer, reader = client.do_exchange(
+        descriptor,
+        fl.FlightCallOptions(timeout=timeout),
+    )
+    writer.begin(table.schema)
+    writer.write_table(table)
+    writer.done_writing()
+    response = reader.read_all()
+    return response.column(0).to_pylist()
+
+warm_rows = exchange_once(16, warm_timeout)
+assert warm_rows == ["1"]
+large_rows = exchange_once(large_bytes, large_timeout)
+assert large_rows == ["1"]
+"""
 function flight_live_pyarrow_getflightinfo(
     host::AbstractString,
     port::Integer,
@@ -65,6 +107,31 @@ function flight_live_pyarrow_getflightinfo(
     return JSON3.read(output)
 end
 
+function flight_live_pyarrow_large_doexchange(
+    host::AbstractString,
+    port::Integer,
+    descriptor;
+    warm_timeout::Real=60.0,
+    large_timeout::Real=20.0,
+    large_bytes::Integer=65_536,
+)
+    python = FlightTestSupport.pyarrow_flight_python()
+    isnothing(python) && return false
+    run(
+        Cmd([
+            python,
+            "-c",
+            FLIGHT_LIVE_PYARROW_LARGE_DOEXCHANGE,
+            host,
+            string(port),
+            string(Float64(warm_timeout)),
+            string(Float64(large_timeout)),
+            string(Int(large_bytes)),
+            descriptor.path...,
+        ]),
+    )
+    return true
+end
 function purehttp2_extension_test_live_listener(fixture)
     protocol = fixture.protocol
     live_fixture = flight_live_fixture(protocol)
@@ -234,6 +301,37 @@ function purehttp2_extension_test_overload_listener(fixture)
 
         put!(release_handler, nothing)
         fetch(first_task)
+    finally
+        Arrow.Flight.stop!(server; force=true)
+    end
+end
+
+function purehttp2_extension_test_large_pyarrow_doexchange_listener(fixture)
+    !isnothing(FlightTestSupport.pyarrow_flight_python()) || return nothing
+
+    descriptor = Arrow.Flight.pathdescriptor(("rerank",))
+    service = Arrow.Flight.streamservice(
+        stream -> begin
+            rows = 0
+            for batch in stream
+                rows += length(Tables.columntable(batch).doc_id)
+            end
+            return (doc_id=[string(rows)], vector_score=[1.0])
+        end;
+        descriptor=descriptor,
+    )
+
+    server = Arrow.Flight.purehttp2_flight_server(
+        service;
+        host="127.0.0.1",
+        port=0,
+        request_capacity=8,
+        response_capacity=8,
+    )
+
+    try
+        purehttp2_extension_wait_for_live_server(server.host, server.port)
+        @test flight_live_pyarrow_large_doexchange(server.host, server.port, descriptor)
     finally
         Arrow.Flight.stop!(server; force=true)
     end
