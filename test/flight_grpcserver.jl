@@ -16,12 +16,11 @@
 # under the License.
 
 using Pkg
+using TOML
 
 const TEST_ROOT = @__DIR__
 const ARROW_ROOT = normpath(joinpath(TEST_ROOT, ".."))
 const ARROWTYPES_ROOT = joinpath(ARROW_ROOT, "src", "ArrowTypes")
-const GRPCSERVER_URL = "https://github.com/s-celles/gRPCServer.jl"
-const GRPCSERVER_REV = "1b9a85338068ccfe592b1be8159660804f0644ad"
 
 function maybe_git_root(path::AbstractString)
     try
@@ -56,6 +55,24 @@ function maybe_locate_grpcserver()
     return candidate
 end
 
+function grpcserver_source_spec()
+    project = TOML.parsefile(joinpath(ARROW_ROOT, "Project.toml"))
+    sources = get(project, "sources", Dict{String,Any}())
+    haskey(sources, "gRPCServer") || error("Arrow Project.toml is missing [sources].gRPCServer")
+
+    source = sources["gRPCServer"]
+    if haskey(source, "path")
+        path = source["path"]
+        grpcserver_path = isabspath(path) ? normpath(path) : normpath(joinpath(ARROW_ROOT, path))
+        return (; mode=:develop, spec=PackageSpec(path=grpcserver_path))
+    end
+
+    haskey(source, "url") || error("Arrow Project.toml [sources].gRPCServer is missing url")
+    kwargs = Dict{Symbol,Any}(:name => "gRPCServer", :url => source["url"])
+    haskey(source, "rev") && (kwargs[:rev] = source["rev"])
+    return (; mode=:add, spec=PackageSpec(; kwargs...))
+end
+
 const TEMP_ENV = mktempdir()
 cp(joinpath(TEST_ROOT, "Project.toml"), joinpath(TEMP_ENV, "Project.toml"))
 
@@ -64,7 +81,12 @@ Pkg.develop([PackageSpec(path=ARROW_ROOT), PackageSpec(path=ARROWTYPES_ROOT)])
 
 local_grpcserver = maybe_locate_grpcserver()
 if isnothing(local_grpcserver)
-    Pkg.add(PackageSpec(name="gRPCServer", url=GRPCSERVER_URL, rev=GRPCSERVER_REV))
+    grpcserver_source = grpcserver_source_spec()
+    if grpcserver_source.mode == :develop
+        Pkg.develop(grpcserver_source.spec)
+    else
+        Pkg.add(grpcserver_source.spec)
+    end
 else
     Pkg.develop(PackageSpec(path=local_grpcserver))
 end
