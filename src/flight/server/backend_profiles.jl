@@ -32,14 +32,34 @@ end
 
 Return the packaged capability contract for one Arrow Flight server backend.
 """
+grpcserver_extension_loaded() =
+    !isnothing(Base.get_extension(ArrowParent, :ArrowgRPCServerExt))
+
 function flight_server_backend_capabilities(backend::Symbol=:purehttp2)
     if backend == :purehttp2
         return FlightServerBackendCapabilities(:purehttp2, true, true, true, true, String[])
     elseif backend == :grpcserver
-        throw(
-            ArgumentError(
-                "Arrow Flight server backend :grpcserver has been retired; use :purehttp2",
-            ),
+        if !grpcserver_extension_loaded()
+            return FlightServerBackendCapabilities(
+                :grpcserver,
+                false,
+                false,
+                false,
+                false,
+                String[
+                    "Arrow.jl ships the grpcserver backend behind the optional gRPCServer.jl extension; load gRPCServer to activate it",
+                    "PureHTTP2 remains the only default packaged Flight listener backend",
+                ],
+            )
+        end
+
+        return FlightServerBackendCapabilities(
+            :grpcserver,
+            true,
+            true,
+            true,
+            true,
+            String[],
         )
     elseif backend == :nghttp2
         if !nghttp2_extension_loaded()
@@ -72,7 +92,7 @@ function flight_server_backend_capabilities(backend::Symbol=:purehttp2)
 
     throw(
         ArgumentError(
-            "Unsupported Arrow Flight server backend :$(backend); expected one of :purehttp2 or :nghttp2",
+            "Unsupported Arrow Flight server backend :$(backend); expected one of :purehttp2, :grpcserver, or :nghttp2",
         ),
     )
 end

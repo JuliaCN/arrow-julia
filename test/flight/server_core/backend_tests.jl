@@ -26,8 +26,22 @@ function flight_server_core_test_backend_profiles()
     @test Arrow.Flight.flight_server_backend_supported()
     @test isnothing(Arrow.Flight.require_flight_server_backend())
 
+    grpcserver = Arrow.Flight.flight_server_backend_capabilities(:grpcserver)
+    @test grpcserver.backend == :grpcserver
+    @test !grpcserver.request_streaming
+    @test !grpcserver.response_streaming
+    @test !grpcserver.response_trailers
+    @test !grpcserver.bidirectional_doexchange
+    @test length(grpcserver.blockers) == 2
+    @test occursin("gRPCServer.jl", grpcserver.blockers[1])
+    @test occursin("PureHTTP2", grpcserver.blockers[2])
+    @test !Arrow.Flight.flight_server_backend_supported(:grpcserver)
+
     legacy_failure = try
-        Arrow.Flight.flight_server_backend_capabilities(:grpcserver)
+        Arrow.Flight.require_flight_server_backend(
+            :grpcserver;
+            subject="test Flight server backend",
+        )
         nothing
     catch error
         error
@@ -35,8 +49,8 @@ function flight_server_core_test_backend_profiles()
     @test legacy_failure isa ArgumentError
     legacy_message = sprint(showerror, legacy_failure)
     @test occursin("backend :grpcserver", legacy_message)
-    @test occursin("retired", legacy_message)
-    @test occursin(":purehttp2", legacy_message)
+    @test occursin("gRPCServer.jl", legacy_message)
+    @test occursin("PureHTTP2", legacy_message)
 
     nghttp2 = Arrow.Flight.flight_server_backend_capabilities(:nghttp2)
     @test nghttp2.backend == :nghttp2

@@ -43,14 +43,20 @@ TranscodingStreams = "3bb67fe8-82b1-5028-8e26-92a6c54297fa"
 UUIDs = "cf7118a7-6976-5b1a-9a39-7adc72f591a4"
 
 [weakdeps]
+gRPCServer = "608c6337-0d7d-447f-bb69-0f5674ee3959"
 Nghttp2Wrapper = "aac3f40a-7475-434e-9d89-bbdc1574c652"
 
 [extensions]
+ArrowgRPCServerExt = "gRPCServer"
 ArrowFlightNghttp2Ext = "Nghttp2Wrapper"
 
 [sources]
 ArrowTypes = { path = "src/ArrowTypes" }
+gRPCServer = { url = "https://github.com/s-celles/gRPCServer.jl", rev = "1b9a85338068ccfe592b1be8159660804f0644ad" }
 PureHTTP2 = { url = "https://github.com/s-celles/PureHTTP2.jl", rev = "03d8853e9556a4355d7b650853cda62b1906d88e" }
+
+[extras]
+gRPCServer = "608c6337-0d7d-447f-bb69-0f5674ee3959"
 
 [compat]
 ArrowTypes = "1.1,2"
@@ -60,6 +66,7 @@ CodecZstd = "0.7, 0.8"
 ConcurrentUtilities = "2"
 DataAPI = "1"
 EnumX = "1"
+gRPCServer = "0.1"
 JSON3 = "1"
 Nghttp2Wrapper = "0.2"
 ProtoBuf = "~1.2.1"
