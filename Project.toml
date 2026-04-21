@@ -51,7 +51,7 @@ ArrowFlightNghttp2Ext = "Nghttp2Wrapper"
 
 [sources]
 ArrowTypes = { path = "src/ArrowTypes" }
-gRPCServer = { url = "https://github.com/tao3k/gRPCServer.jl", rev = "f0bc25e285b2233ee9679cc785343f63c647654f" }
+gRPCServer = { url = "https://github.com/tao3k/gRPCServer.jl", rev = "261cd70ac0b76c060cef0507245c400da0b5def9" }
 
 [extras]
 gRPCServer = "608c6337-0d7d-447f-bb69-0f5674ee3959"
