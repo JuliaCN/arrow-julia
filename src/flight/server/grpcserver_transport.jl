@@ -15,20 +15,28 @@
 # specific language governing permissions and limitations
 # under the License.
 
-module Flight
+"""
+    grpcserver_flight_server(service::Service; kwargs...)
 
-using Base64
-using ProtoBuf
-using Sockets
-using Tables
+Start an Arrow Flight server on the packaged `gRPCServer.jl` backend.
+Load `gRPCServer` in the active Julia session to activate the extension.
+"""
+function grpcserver_flight_server(args...; kwargs...)
+    throw(
+        ArgumentError(
+            "Arrow Flight packaged listener backend requires loading gRPCServer.jl so the ArrowgRPCServerExt extension can activate",
+        ),
+    )
+end
 
-const ArrowParent = parentmodule(@__MODULE__)
+"""
+    stop!(server; force = false)
 
-include("exports.jl")
-include("protocol.jl")
-include("descriptors.jl")
-include("shared.jl")
-include("server.jl")
-include("convert.jl")
+Stop one Arrow Flight listener backend instance.
+"""
+function stop!(server; force::Bool=false)
+    throw(MethodError(stop!, (server,)))
+end
 
-end # module Flight
+grpcserver_extension_loaded() =
+    !isnothing(Base.get_extension(ArrowParent, :ArrowgRPCServerExt))

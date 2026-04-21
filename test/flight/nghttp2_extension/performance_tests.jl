@@ -34,10 +34,10 @@ function nghttp2_extension_perf_transport()
     )
 end
 
-function nghttp2_extension_purehttp2_compare_transport()
+function nghttp2_extension_grpcserver_compare_transport()
     return flight_live_transport_backend(
-        backend=:purehttp2,
-        start_server=service -> Arrow.Flight.purehttp2_flight_server(
+        backend=:grpcserver,
+        start_server=service -> Arrow.Flight.grpcserver_flight_server(
             service;
             host="127.0.0.1",
             port=0,
@@ -60,7 +60,7 @@ function nghttp2_extension_test_large_transport_compare(;
     protocol = Arrow.Flight.Protocol
     pure_metrics = flight_live_transport_benchmark(
         protocol,
-        nghttp2_extension_purehttp2_compare_transport();
+        nghttp2_extension_grpcserver_compare_transport();
         iterations=iterations,
         batch_count=batch_count,
         rows_per_batch=rows_per_batch,
@@ -81,20 +81,20 @@ function nghttp2_extension_test_large_transport_compare(;
     isempty(metrics) && return metrics
     @test length(metrics) == 2
 
-    purehttp2_metric = flight_live_transport_metric(metrics, :purehttp2, :doget)
+    grpcserver_metric = flight_live_transport_metric(metrics, :grpcserver, :doget)
     nghttp2_metric = flight_live_transport_metric(metrics, :nghttp2, :doget)
 
-    @test purehttp2_metric.total_bytes >= NGHTTP2_EXTENSION_LARGE_TRANSPORT_BYTES
+    @test grpcserver_metric.total_bytes >= NGHTTP2_EXTENSION_LARGE_TRANSPORT_BYTES
     @test nghttp2_metric.total_bytes >= NGHTTP2_EXTENSION_LARGE_TRANSPORT_BYTES
-    @test purehttp2_metric.median_ns > 0
+    @test grpcserver_metric.median_ns > 0
     @test nghttp2_metric.median_ns > 0
-    @test purehttp2_metric.throughput_mib_per_sec > 0
+    @test grpcserver_metric.throughput_mib_per_sec > 0
     @test nghttp2_metric.throughput_mib_per_sec > 0
 
     flight_live_transport_print_metrics(stdout, metrics)
     comparison =
-        flight_live_transport_print_comparison(stdout, nghttp2_metric, purehttp2_metric)
+        flight_live_transport_print_comparison(stdout, nghttp2_metric, grpcserver_metric)
     @test comparison.candidate_backend == :nghttp2
-    @test comparison.baseline_backend == :purehttp2
+    @test comparison.baseline_backend == :grpcserver
     return metrics
 end

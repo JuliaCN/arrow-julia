@@ -225,6 +225,25 @@ using UUIDs
         sprint(showerror, duplicate_app_metadata_error),
     )
 
+    large_payload = repeat("x", 4096)
+    large_transport_messages = Arrow.Flight.flightdata((
+        id=collect(Int64(1):Int64(48)),
+        payload=fill(large_payload, 48),
+    ))
+    large_transport_batches = collect(Arrow.Flight.stream(large_transport_messages))
+    large_transport_table = Arrow.Flight.table(large_transport_messages)
+    large_transport_record_messages =
+        filter(message -> !isempty(message.data_body), large_transport_messages)
+    @test length(large_transport_batches) > 1
+    @test length(large_transport_record_messages) > 1
+    @test all(
+        length(Arrow.Flight.grpcmessage(message)) <=
+        Arrow.Flight.MAX_TRANSPORT_SAFE_GRPC_MESSAGE_BYTES for
+        message in large_transport_record_messages
+    )
+    @test large_transport_table.id == collect(Int64(1):Int64(48))
+    @test large_transport_table.payload == fill(large_payload, 48)
+
     extension_source = (
         uuid=[UUID(UInt128(1)), UUID(UInt128(2))],
         flag=[Arrow.Bool8(true), Arrow.Bool8(false)],

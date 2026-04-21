@@ -29,8 +29,20 @@
         UInt8[],
     )
     payload = messages[2:end]
+    message_headers = [
+        Arrow.FlatBuffers.getrootas(
+            Arrow.Meta.Message,
+            Arrow.Flight.streambytes(message),
+            8,
+        ).header for message in messages
+    ]
+    dictionary_headers =
+        filter(header -> header isa Arrow.Meta.DictionaryBatch, message_headers)
 
-    @test length(messages) >= 4
+    @test length(messages) >= 5
+    @test length(dictionary_headers) == 2
+    @test count(header -> !header.isDelta, dictionary_headers) == 1
+    @test count(header -> header.isDelta, dictionary_headers) == 1
     @test Arrow.Flight.schemaipc(info) == schema_bytes
 
     batches = collect(Arrow.Flight.stream(payload; schema=info))

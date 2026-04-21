@@ -27,7 +27,10 @@ username = sys.argv[3]
 password = sys.argv[4]
 path = sys.argv[5:]
 
-client = fl.FlightClient(f"grpc://{host}:{port}")
+client = fl.FlightClient(
+    f"grpc://{host}:{port}",
+    generic_options=[("grpc.http2.lookahead_bytes", 0)],
+)
 basic_auth = base64.b64encode(f"{username}:{password}".encode("utf-8"))
 options = fl.FlightCallOptions(
     timeout=30,
@@ -178,9 +181,16 @@ port = int(sys.argv[2])
 iterations = int(sys.argv[3])
 expected_rows = int(sys.argv[4])
 expected_payload = sys.argv[5]
-path = sys.argv[6:]
+lookahead_bytes = int(sys.argv[6])
+path = sys.argv[7:]
 
-client = fl.FlightClient(f"grpc://{host}:{port}")
+client = fl.FlightClient(
+    f"grpc://{host}:{port}",
+    generic_options=[
+        ("grpc.http2.lookahead_bytes", lookahead_bytes),
+        ("grpc.http2.bdp_probe", 1),
+    ],
+)
 descriptor = fl.FlightDescriptor.for_path(*path)
 info = client.get_flight_info(descriptor)
 
@@ -191,11 +201,86 @@ for _ in range(iterations):
     table = reader.read_all()
     finished = time.perf_counter_ns()
     assert table.num_rows == expected_rows
-    assert table.column("payload").to_pylist()[0] == expected_payload
+    payload_index = table.schema.get_field_index("payload")
+    first_payload_value = table.column(payload_index)[0].as_py()
+    assert first_payload_value == expected_payload
     samples.append(finished - started)
 
 samples.sort()
 print(samples[(len(samples) - 1) // 2])
+"""
+
+const FLIGHT_LIVE_PYARROW_CONCURRENT_DOGET_BENCHMARK = raw"""
+import json
+import pyarrow.flight as fl
+import sys
+import time
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier, Event
+
+host = sys.argv[1]
+port = int(sys.argv[2])
+concurrent_clients = int(sys.argv[3])
+requests_per_client = int(sys.argv[4])
+expected_rows = int(sys.argv[5])
+expected_payload = sys.argv[6]
+lookahead_bytes = int(sys.argv[7])
+path = sys.argv[8:]
+
+descriptor = fl.FlightDescriptor.for_path(*path)
+ready_barrier = Barrier(concurrent_clients + 1)
+start_event = Event()
+
+def run_client(_: int) -> list[int]:
+    client = fl.FlightClient(
+        f"grpc://{host}:{port}",
+        generic_options=[
+            ("grpc.http2.lookahead_bytes", lookahead_bytes),
+            ("grpc.http2.bdp_probe", 1),
+        ],
+    )
+    info = client.get_flight_info(descriptor)
+    assert len(info.endpoints) == 1
+    ready_barrier.wait()
+    start_event.wait()
+
+    samples = []
+    for _ in range(requests_per_client):
+        started = time.perf_counter_ns()
+        reader = client.do_get(info.endpoints[0].ticket)
+        table = reader.read_all()
+        finished = time.perf_counter_ns()
+        assert table.num_rows == expected_rows
+        payload_index = table.schema.get_field_index("payload")
+        first_payload_value = table.column(payload_index)[0].as_py()
+        assert first_payload_value == expected_payload
+        samples.append(finished - started)
+    return samples
+
+with ThreadPoolExecutor(max_workers=concurrent_clients) as executor:
+    futures = [executor.submit(run_client, worker) for worker in range(concurrent_clients)]
+    ready_barrier.wait()
+    started = time.perf_counter_ns()
+    start_event.set()
+    worker_samples = [future.result() for future in futures]
+    finished = time.perf_counter_ns()
+
+samples = sorted(sample for worker in worker_samples for sample in worker)
+def percentile_index(count: int, numerator: int, denominator: int) -> int:
+    if count <= 1:
+        return 0
+    return min(count - 1, max(0, (count * numerator + denominator - 1) // denominator - 1))
+
+print(json.dumps({
+    "concurrent_clients": concurrent_clients,
+    "requests_per_client": requests_per_client,
+    "total_requests": len(samples),
+    "wall_ns": finished - started,
+    "request_median_ns": samples[(len(samples) - 1) // 2],
+    "request_p95_ns": samples[percentile_index(len(samples), 95, 100)],
+    "request_p99_ns": samples[percentile_index(len(samples), 99, 100)],
+    "request_max_ns": max(samples),
+}))
 """
 
 function flight_live_fixture(protocol)
@@ -600,6 +685,155 @@ flight_live_transport_backend(;
     endpoint=endpoint,
 )
 
+function _flight_live_command_timeout_sec()
+    raw_timeout = get(ENV, "ARROW_FLIGHT_PYARROW_BENCHMARK_TIMEOUT_SEC", "30")
+    timeout_sec = tryparse(Float64, raw_timeout)
+    isnothing(timeout_sec) && throw(
+        ArgumentError(
+            "ARROW_FLIGHT_PYARROW_BENCHMARK_TIMEOUT_SEC must parse as a positive number; got $(repr(raw_timeout))",
+        ),
+    )
+    timeout_sec > 0 || throw(
+        ArgumentError(
+            "ARROW_FLIGHT_PYARROW_BENCHMARK_TIMEOUT_SEC must be positive; got $(repr(raw_timeout))",
+        ),
+    )
+    return timeout_sec
+end
+
+function _flight_live_pyarrow_lookahead_bytes()
+    raw_value = get(ENV, "ARROW_FLIGHT_PYARROW_LOOKAHEAD_BYTES", string(4 * 1024 * 1024))
+    lookahead_bytes = tryparse(Int, raw_value)
+    isnothing(lookahead_bytes) && throw(
+        ArgumentError(
+            "ARROW_FLIGHT_PYARROW_LOOKAHEAD_BYTES must parse as a non-negative integer; got $(repr(raw_value))",
+        ),
+    )
+    lookahead_bytes >= 0 || throw(
+        ArgumentError(
+            "ARROW_FLIGHT_PYARROW_LOOKAHEAD_BYTES must be non-negative; got $(repr(raw_value))",
+        ),
+    )
+    return lookahead_bytes
+end
+
+function _flight_live_pyarrow_concurrent_clients()
+    raw_value = get(ENV, "ARROW_FLIGHT_PYARROW_CONCURRENT_CLIENTS", "4")
+    concurrent_clients = tryparse(Int, raw_value)
+    isnothing(concurrent_clients) && throw(
+        ArgumentError(
+            "ARROW_FLIGHT_PYARROW_CONCURRENT_CLIENTS must parse as a positive integer; got $(repr(raw_value))",
+        ),
+    )
+    concurrent_clients > 0 || throw(
+        ArgumentError(
+            "ARROW_FLIGHT_PYARROW_CONCURRENT_CLIENTS must be positive; got $(repr(raw_value))",
+        ),
+    )
+    return concurrent_clients
+end
+
+function _flight_live_pyarrow_requests_per_client()
+    raw_value = get(ENV, "ARROW_FLIGHT_PYARROW_REQUESTS_PER_CLIENT", "2")
+    requests_per_client = tryparse(Int, raw_value)
+    isnothing(requests_per_client) && throw(
+        ArgumentError(
+            "ARROW_FLIGHT_PYARROW_REQUESTS_PER_CLIENT must parse as a positive integer; got $(repr(raw_value))",
+        ),
+    )
+    requests_per_client > 0 || throw(
+        ArgumentError(
+            "ARROW_FLIGHT_PYARROW_REQUESTS_PER_CLIENT must be positive; got $(repr(raw_value))",
+        ),
+    )
+    return requests_per_client
+end
+
+function _flight_live_pyarrow_soak_rounds()
+    raw_value = get(ENV, "ARROW_FLIGHT_PYARROW_SOAK_ROUNDS", "3")
+    soak_rounds = tryparse(Int, raw_value)
+    isnothing(soak_rounds) && throw(
+        ArgumentError(
+            "ARROW_FLIGHT_PYARROW_SOAK_ROUNDS must parse as a positive integer; got $(repr(raw_value))",
+        ),
+    )
+    soak_rounds > 0 || throw(
+        ArgumentError(
+            "ARROW_FLIGHT_PYARROW_SOAK_ROUNDS must be positive; got $(repr(raw_value))",
+        ),
+    )
+    return soak_rounds
+end
+
+function _flight_live_command_output_excerpt(output::AbstractString; limit::Integer=2_000)
+    stripped = strip(output)
+    isempty(stripped) && return "(empty)"
+    return length(stripped) <= limit ? stripped :
+           string(first(stripped, limit), "\n...[truncated]")
+end
+
+function _flight_live_readchomp_with_timeout(
+    cmd::Cmd;
+    timeout_sec::Real,
+    label::AbstractString,
+)
+    stdout_path, stdout_io = mktemp()
+    stderr_path, stderr_io = mktemp()
+    process = nothing
+    try
+        process =
+            run(pipeline(ignorestatus(cmd); stdout=stdout_io, stderr=stderr_io); wait=false)
+        close(stdout_io)
+        close(stderr_io)
+
+        wait_status = timedwait(() -> !process_running(process), timeout_sec; pollint=0.05)
+        if wait_status === :timed_out
+            try
+                kill(process)
+            catch
+            end
+            try
+                wait(process)
+            catch
+            end
+            stdout_output = read(stdout_path, String)
+            stderr_output = read(stderr_path, String)
+            error(
+                "$(label) timed out after $(timeout_sec) seconds\nstdout:\n$(_flight_live_command_output_excerpt(stdout_output))\nstderr:\n$(_flight_live_command_output_excerpt(stderr_output))",
+            )
+        end
+
+        wait(process)
+        stdout_output = read(stdout_path, String)
+        stderr_output = read(stderr_path, String)
+        process.exitcode == 0 || error(
+            "$(label) failed with exit code $(process.exitcode)\nstdout:\n$(_flight_live_command_output_excerpt(stdout_output))\nstderr:\n$(_flight_live_command_output_excerpt(stderr_output))",
+        )
+        return chomp(stdout_output)
+    finally
+        try
+            close(stdout_io)
+        catch
+        end
+        try
+            close(stderr_io)
+        catch
+        end
+        if !isnothing(process) && process_running(process)
+            try
+                kill(process)
+            catch
+            end
+            try
+                wait(process)
+            catch
+            end
+        end
+        rm(stdout_path; force=true)
+        rm(stderr_path; force=true)
+    end
+end
+
 function flight_live_pyarrow_doget_metric(
     host::AbstractString,
     port::Integer,
@@ -611,7 +845,7 @@ function flight_live_pyarrow_doget_metric(
     isnothing(python) && return nothing
     median_ns = parse(
         Int,
-        readchomp(
+        _flight_live_readchomp_with_timeout(
             Cmd([
                 python,
                 "-c",
@@ -621,8 +855,11 @@ function flight_live_pyarrow_doget_metric(
                 string(iterations),
                 string(fixture.total_records),
                 fixture.payload_value,
+                string(_flight_live_pyarrow_lookahead_bytes()),
                 fixture.descriptor.path...,
-            ]),
+            ]);
+            timeout_sec=_flight_live_command_timeout_sec(),
+            label="pyarrow Flight DoGet benchmark",
         ),
     )
     total_bytes = fixture.message_bytes
@@ -637,6 +874,83 @@ function flight_live_pyarrow_doget_metric(
         median_ns=median_ns,
         median_ms=median_ns / 1.0e6,
         throughput_mib_per_sec=(total_bytes / max(median_ns, 1) * 1.0e9) / 1024.0^2,
+    )
+end
+
+function flight_live_pyarrow_concurrent_doget(
+    host::AbstractString,
+    port::Integer,
+    fixture;
+    concurrent_clients::Integer,
+    requests_per_client::Integer,
+)
+    python = FlightTestSupport.pyarrow_flight_python()
+    isnothing(python) && return nothing
+    output = _flight_live_readchomp_with_timeout(
+        Cmd([
+            python,
+            "-c",
+            FLIGHT_LIVE_PYARROW_CONCURRENT_DOGET_BENCHMARK,
+            host,
+            string(port),
+            string(concurrent_clients),
+            string(requests_per_client),
+            string(fixture.total_records),
+            fixture.payload_value,
+            string(_flight_live_pyarrow_lookahead_bytes()),
+            fixture.descriptor.path...,
+        ]);
+        timeout_sec=_flight_live_command_timeout_sec(),
+        label="pyarrow Flight concurrent DoGet benchmark",
+    )
+    return JSON3.read(output)
+end
+
+function flight_live_pyarrow_concurrent_doget_metric(
+    host::AbstractString,
+    port::Integer,
+    fixture;
+    backend::Symbol,
+    concurrent_clients::Integer,
+    requests_per_client::Integer,
+)
+    result = flight_live_pyarrow_concurrent_doget(
+        host,
+        port,
+        fixture;
+        concurrent_clients=concurrent_clients,
+        requests_per_client=requests_per_client,
+    )
+    isnothing(result) && return nothing
+    total_requests = Int(result["total_requests"])
+    wall_ns = Int(result["wall_ns"])
+    total_bytes = fixture.message_bytes * total_requests
+    request_median_ns = Int(result["request_median_ns"])
+    request_p95_ns = Int(result["request_p95_ns"])
+    request_p99_ns = Int(result["request_p99_ns"])
+    request_max_ns = Int(result["request_max_ns"])
+    return (
+        backend=backend,
+        operation=:doget_concurrent,
+        iterations=total_requests,
+        request_bytes=0,
+        response_bytes=total_bytes,
+        total_bytes=total_bytes,
+        samples_ns=[wall_ns],
+        median_ns=wall_ns,
+        median_ms=wall_ns / 1.0e6,
+        throughput_mib_per_sec=(total_bytes / max(wall_ns, 1) * 1.0e9) / 1024.0^2,
+        concurrent_clients=Int(result["concurrent_clients"]),
+        requests_per_client=Int(result["requests_per_client"]),
+        total_requests=total_requests,
+        request_median_ns=request_median_ns,
+        request_median_ms=request_median_ns / 1.0e6,
+        request_p95_ns=request_p95_ns,
+        request_p95_ms=request_p95_ns / 1.0e6,
+        request_p99_ns=request_p99_ns,
+        request_p99_ms=request_p99_ns / 1.0e6,
+        request_max_ns=request_max_ns,
+        request_max_ms=request_max_ns / 1.0e6,
     )
 end
 
@@ -720,17 +1034,77 @@ function flight_live_transport_benchmark(
     end
 end
 
+function flight_live_transport_concurrent_benchmark(
+    protocol,
+    transport;
+    batch_count::Integer=2,
+    rows_per_batch::Integer=256,
+    payload_bytes::Integer=4_096,
+    concurrent_clients::Integer=_flight_live_pyarrow_concurrent_clients(),
+    requests_per_client::Integer=_flight_live_pyarrow_requests_per_client(),
+)
+    fixture = flight_live_transport_fixture(
+        protocol;
+        batch_count=batch_count,
+        rows_per_batch=rows_per_batch,
+        payload_bytes=payload_bytes,
+    )
+    service = flight_live_transport_service(protocol, fixture)
+    server = transport.start_server(service)
+    try
+        transport.wait_for_server(server)
+        host, port = transport.endpoint(server)
+        return flight_live_pyarrow_concurrent_doget_metric(
+            host,
+            port,
+            fixture;
+            backend=transport.backend,
+            concurrent_clients=concurrent_clients,
+            requests_per_client=requests_per_client,
+        )
+    finally
+        transport.stop_server(server)
+    end
+end
+
 function flight_live_transport_print_metrics(io::IO, metrics)
     for metric in metrics
         samples_ms = [round(sample / 1.0e6; digits=2) for sample in metric.samples_ns]
+        request_latency_summary =
+            hasproperty(metric, :request_median_ms) ?
+            " request_median_ms=$(round(metric.request_median_ms; digits=2))" *
+            " request_p95_ms=$(round(metric.request_p95_ms; digits=2))" *
+            " request_p99_ms=$(round(metric.request_p99_ms; digits=2))" *
+            " request_max_ms=$(round(metric.request_max_ms; digits=2))" : ""
         println(
             io,
             "$(metric.backend) $(metric.operation): total_bytes=$(metric.total_bytes) " *
             "median_ms=$(round(metric.median_ms; digits=2)) " *
             "throughput_mib_per_sec=$(round(metric.throughput_mib_per_sec; digits=2)) " *
-            "samples_ms=$(samples_ms)",
+            "$(request_latency_summary) samples_ms=$(samples_ms)",
         )
     end
+    return nothing
+end
+
+function flight_live_transport_print_concurrent_summary(io::IO, metrics)
+    isempty(metrics) && return nothing
+    throughputs = [metric.throughput_mib_per_sec for metric in metrics]
+    request_latencies = [metric.request_median_ms for metric in metrics]
+    request_p95_latencies = [metric.request_p95_ms for metric in metrics]
+    request_p99_latencies = [metric.request_p99_ms for metric in metrics]
+    wall_latencies = [metric.median_ms for metric in metrics]
+    println(
+        io,
+        "doget_concurrent soak: rounds=$(length(metrics)) " *
+        "concurrent_clients=$(metrics[1].concurrent_clients) " *
+        "requests_per_client=$(metrics[1].requests_per_client) " *
+        "wall_ms_range=$(round(minimum(wall_latencies); digits=2))-$(round(maximum(wall_latencies); digits=2)) " *
+        "request_median_ms_range=$(round(minimum(request_latencies); digits=2))-$(round(maximum(request_latencies); digits=2)) " *
+        "request_p95_ms_range=$(round(minimum(request_p95_latencies); digits=2))-$(round(maximum(request_p95_latencies); digits=2)) " *
+        "request_p99_ms_range=$(round(minimum(request_p99_latencies); digits=2))-$(round(maximum(request_p99_latencies); digits=2)) " *
+        "throughput_mib_per_sec_range=$(round(minimum(throughputs); digits=2))-$(round(maximum(throughputs); digits=2))",
+    )
     return nothing
 end
 

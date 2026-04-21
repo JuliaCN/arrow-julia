@@ -15,20 +15,19 @@
 # specific language governing permissions and limitations
 # under the License.
 
-module Flight
+using gRPCServer
 
-using Base64
-using ProtoBuf
-using Sockets
-using Tables
+include("grpcserver_extension/support.jl")
+include("grpcserver_extension/descriptor_tests.jl")
+include("grpcserver_extension/direct_handler_tests.jl")
+include("grpcserver_extension/live_listener_tests.jl")
 
-const ArrowParent = parentmodule(@__MODULE__)
-
-include("exports.jl")
-include("protocol.jl")
-include("descriptors.jl")
-include("shared.jl")
-include("server.jl")
-include("convert.jl")
-
-end # module Flight
+@testset "Flight gRPCServer extension" begin
+    protocol = Arrow.Flight.Protocol
+    fixture = flight_live_fixture(protocol)
+    service = flight_live_service(protocol, fixture)
+    grpcserver_extension_test_backend_profiles()
+    grpcserver_extension_test_descriptor(gRPCServer, service)
+    grpcserver_extension_test_direct_handlers(gRPCServer, service, fixture)
+    grpcserver_extension_test_live_listener(gRPCServer, service, fixture)
+end

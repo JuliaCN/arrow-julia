@@ -15,20 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-module Flight
-
-using Base64
-using ProtoBuf
-using Sockets
-using Tables
-
-const ArrowParent = parentmodule(@__MODULE__)
-
-include("exports.jl")
-include("protocol.jl")
-include("descriptors.jl")
-include("shared.jl")
-include("server.jl")
-include("convert.jl")
-
-end # module Flight
+const Flight = Arrow.Flight
+const STREAM_BUFFER_SIZE = 16
+const DEFAULT_MAX_ACTIVE_REQUESTS = max(Threads.nthreads() * 8, 32)
+const GENERATED_TYPE_PREFIX = "Arrow.Flight.Generated."

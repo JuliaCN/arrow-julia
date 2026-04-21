@@ -116,17 +116,20 @@ jobs:
         if: matrix.pkg.name == 'Arrow.jl' && matrix.version == 'lts'
         shell: julia --project=. {0}
         run: |
-          using Pkg
+          using Pkg, TOML
           ENV["JULIA_PKG_PRECOMPILE_AUTO"] = "0"
           for manifest_path in ("Manifest.toml", joinpath("test", "Manifest.toml"))
               isfile(manifest_path) && rm(manifest_path; force=true)
           end
+          project = TOML.parsefile("Project.toml")
+          grpcserver_source = get(get(project, "sources", Dict{String, Any}()), "gRPCServer", nothing)
+          grpcserver_source isa AbstractDict || error("Project.toml [sources].gRPCServer must be set for Arrow.jl lts CI bootstrap")
           Pkg.Registry.add("General")
           Pkg.add([
               PackageSpec(
-                  name="PureHTTP2",
-                  url="https://github.com/s-celles/PureHTTP2.jl",
-                  rev="03d8853e9556a4355d7b650853cda62b1906d88e",
+                  name="gRPCServer",
+                  url=grpcserver_source["url"],
+                  rev=grpcserver_source["rev"],
               ),
               PackageSpec(
                   name="gRPCClient",
@@ -239,18 +242,32 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v6
-      - uses: julia-actions/julia-buildpkg@latest
-      - name: Dev local packages for docs
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: '1'
+      - uses: actions/cache@v5
+        env:
+          cache-name: cache-docs-artifacts
+        with:
+          path: ~/.julia/artifacts
+          key: ${{ runner.os }}-docs-${{ env.cache-name }}-${{ hashFiles('Project.toml', 'Manifest.toml', 'docs/Project.toml', 'docs/Manifest.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-docs-${{ env.cache-name }}-
+            ${{ runner.os }}-docs-
+            ${{ runner.os }}-
+      - name: Configure doc environment
         shell: julia --project=docs {0}
         run: |
           using Pkg
           Pkg.develop(PackageSpec(path="."))
           Pkg.develop(PackageSpec(path="src/ArrowTypes"))
+          Pkg.resolve()
           Pkg.instantiate()
-      - uses: julia-actions/julia-docdeploy@latest
+      - name: Build and deploy docs
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DOCUMENTER_KEY: ${{ secrets.DOCUMENTER_KEY }}
+        run: julia --project=docs docs/make.jl
   Format:
     runs-on: ubuntu-latest
     timeout-minutes: 5

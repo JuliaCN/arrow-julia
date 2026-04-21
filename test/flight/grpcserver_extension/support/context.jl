@@ -15,20 +15,13 @@
 # specific language governing permissions and limitations
 # under the License.
 
-module Flight
+grpcserver_extension_metadata() =
+    Dict{String,Union{String,Vector{UInt8}}}("authorization" => "Bearer native")
 
-using Base64
-using ProtoBuf
-using Sockets
-using Tables
-
-const ArrowParent = parentmodule(@__MODULE__)
-
-include("exports.jl")
-include("protocol.jl")
-include("descriptors.jl")
-include("shared.jl")
-include("server.jl")
-include("convert.jl")
-
-end # module Flight
+function grpcserver_extension_context(
+    grpcserver,
+    method::AbstractString;
+    metadata=grpcserver_extension_metadata(),
+)
+    return grpcserver.ServerContext(method=String(method), metadata=metadata)
+end

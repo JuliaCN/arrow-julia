@@ -21,6 +21,7 @@ using TOML
 const TEST_ROOT = @__DIR__
 const ARROW_ROOT = normpath(joinpath(TEST_ROOT, ".."))
 const ARROWTYPES_ROOT = joinpath(ARROW_ROOT, "src", "ArrowTypes")
+const GRPCSERVER_UUID = Base.UUID("608c6337-0d7d-447f-bb69-0f5674ee3959")
 const PUREHTTP2_UUID = Base.UUID("7d1e1b98-28e7-4969-8df9-5a308937986a")
 
 auto_local_flight_dev_deps() = get(ENV, "ARROW_FLIGHT_DISABLE_AUTO_LOCAL_DEPS", "0") != "1"
@@ -71,6 +72,29 @@ function maybe_locate_purehttp2()
     return nothing
 end
 
+function maybe_locate_grpcserver()
+    if haskey(ENV, "ARROW_FLIGHT_GRPCSERVER_PATH")
+        candidate = abspath(ENV["ARROW_FLIGHT_GRPCSERVER_PATH"])
+        isdir(candidate) || error("ARROW_FLIGHT_GRPCSERVER_PATH does not exist: $candidate")
+        return candidate
+    end
+
+    auto_local_flight_dev_deps() || return nothing
+
+    for root in flight_purehttp2_perf_roots(TEST_ROOT)
+        for candidate in (
+            joinpath(root, ".data", "gRPCServer.jl"),
+            joinpath(root, "gRPCServer.jl"),
+            joinpath(root, ".cache", "vendor", "gRPCServer.jl"),
+            "/tmp/gRPCServer.jl",
+        )
+            isdir(candidate) && return candidate
+        end
+    end
+
+    return nothing
+end
+
 function strip_temp_source_override!(
     project_path::AbstractString,
     package_name::AbstractString,
@@ -91,11 +115,19 @@ const TEMP_ENV = mktempdir()
 const TEMP_PROJECT = joinpath(TEMP_ENV, "Project.toml")
 cp(joinpath(TEST_ROOT, "Project.toml"), TEMP_PROJECT)
 
+local_grpcserver = maybe_locate_grpcserver()
+!isnothing(local_grpcserver) && strip_temp_source_override!(TEMP_PROJECT, "gRPCServer")
 local_purehttp2 = maybe_locate_purehttp2()
 !isnothing(local_purehttp2) && strip_temp_source_override!(TEMP_PROJECT, "PureHTTP2")
 
 Pkg.activate(TEMP_ENV)
 dev_packages = PackageSpec[PackageSpec(path=ARROW_ROOT), PackageSpec(path=ARROWTYPES_ROOT)]
+if !isnothing(local_grpcserver)
+    push!(
+        dev_packages,
+        PackageSpec(name="gRPCServer", uuid=GRPCSERVER_UUID, path=local_grpcserver),
+    )
+end
 if !isnothing(local_purehttp2)
     push!(
         dev_packages,
@@ -107,6 +139,8 @@ Pkg.instantiate()
 
 using Test
 using Arrow
+using JSON3
+using gRPCServer
 using PureHTTP2
 using Tables
 
@@ -116,6 +150,10 @@ include(joinpath(TEST_ROOT, "flight", "live_service_support.jl"))
 include(joinpath(TEST_ROOT, "flight", "purehttp2_extension", "support.jl"))
 include(joinpath(TEST_ROOT, "flight", "purehttp2_extension", "performance_tests.jl"))
 
-@testset "Flight PureHTTP2 large transport performance" begin
+@testset "Flight gRPCServer large transport performance" begin
     purehttp2_extension_test_large_transport_performance()
+end
+
+@testset "Flight gRPCServer large transport concurrent soak" begin
+    purehttp2_extension_test_large_transport_concurrent_soak()
 end

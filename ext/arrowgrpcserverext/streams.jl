@@ -15,20 +15,25 @@
 # specific language governing permissions and limitations
 # under the License.
 
-module Flight
+function _drain_response!(stream::gRPCServer.ServerStream, response::Channel)
+    # gRPCServer falls back to `ServerStream{Any}` when a descriptor only carries
+    # protobuf type names. Drain generically and let `send!` enforce compatibility.
+    for message in response
+        gRPCServer.send!(stream, message)
+    end
+    return nothing
+end
 
-using Base64
-using ProtoBuf
-using Sockets
-using Tables
-
-const ArrowParent = parentmodule(@__MODULE__)
-
-include("exports.jl")
-include("protocol.jl")
-include("descriptors.jl")
-include("shared.jl")
-include("server.jl")
-include("convert.jl")
-
-end # module Flight
+function _streaming_handler_result(task::Task, producer::Union{Nothing,Task}=nothing)
+    if !isnothing(producer)
+        if istaskfailed(producer)
+            throw(producer.exception)
+        end
+        wait(producer)
+    end
+    if istaskfailed(task)
+        throw(task.exception)
+    end
+    wait(task)
+    return nothing
+end

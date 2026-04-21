@@ -15,20 +15,6 @@
 # specific language governing permissions and limitations
 # under the License.
 
-module Flight
-
-using Base64
-using ProtoBuf
-using Sockets
-using Tables
-
-const ArrowParent = parentmodule(@__MODULE__)
-
-include("exports.jl")
-include("protocol.jl")
-include("descriptors.jl")
-include("shared.jl")
-include("server.jl")
-include("convert.jl")
-
-end # module Flight
+include("support/context.jl")
+include("support/streams.jl")
+include("support/live_server.jl")

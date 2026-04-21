@@ -28,18 +28,33 @@ struct FlightServerBackendCapabilities
 end
 
 """
-    flight_server_backend_capabilities(backend::Symbol = :purehttp2)
+    flight_server_backend_capabilities(backend::Symbol = :grpcserver)
 
 Return the packaged capability contract for one Arrow Flight server backend.
 """
-function flight_server_backend_capabilities(backend::Symbol=:purehttp2)
-    if backend == :purehttp2
-        return FlightServerBackendCapabilities(:purehttp2, true, true, true, true, String[])
-    elseif backend == :grpcserver
-        throw(
-            ArgumentError(
-                "Arrow Flight server backend :grpcserver has been retired; use :purehttp2",
-            ),
+function flight_server_backend_capabilities(backend::Symbol=:grpcserver)
+    if backend == :grpcserver
+        if !grpcserver_extension_loaded()
+            return FlightServerBackendCapabilities(
+                :grpcserver,
+                false,
+                false,
+                false,
+                false,
+                String[
+                    "Arrow.jl ships the packaged Flight listener backend behind the optional gRPCServer.jl extension; load gRPCServer to activate it",
+                    "The legacy Arrow-owned PureHTTP2 listener surface has been retired; gRPCServer.jl now owns the packaged HTTP/2 transport",
+                ],
+            )
+        end
+
+        return FlightServerBackendCapabilities(
+            :grpcserver,
+            true,
+            true,
+            true,
+            true,
+            String[],
         )
     elseif backend == :nghttp2
         if !nghttp2_extension_loaded()
@@ -51,7 +66,7 @@ function flight_server_backend_capabilities(backend::Symbol=:purehttp2)
                 false,
                 String[
                     "Arrow.jl ships the nghttp2 backend behind the optional Nghttp2Wrapper.jl extension; load Nghttp2Wrapper to activate it",
-                    "PureHTTP2 remains the only default packaged Flight listener backend",
+                    "The packaged live Flight listener backend now lives behind gRPCServer.jl",
                 ],
             )
         end
@@ -64,7 +79,7 @@ function flight_server_backend_capabilities(backend::Symbol=:purehttp2)
             false,
             String[
                 "Arrow Flight request-streaming methods Handshake, DoPut, and DoExchange are still unsupported on the nghttp2 backend",
-                "The current nghttp2 backend is not the default packaged backend; PureHTTP2 remains the package-owned CI and product lane",
+                "The current nghttp2 backend is not the packaged live backend; gRPCServer.jl owns the supported Flight listener path",
                 "Future work still needs request-streaming and bidirectional proof before :nghttp2 can satisfy the full Flight server contract",
             ],
         )
@@ -72,17 +87,17 @@ function flight_server_backend_capabilities(backend::Symbol=:purehttp2)
 
     throw(
         ArgumentError(
-            "Unsupported Arrow Flight server backend :$(backend); expected one of :purehttp2 or :nghttp2",
+            "Unsupported Arrow Flight server backend :$(backend); expected one of :grpcserver or :nghttp2",
         ),
     )
 end
 
 """
-    flight_server_backend_supported(backend::Symbol = :purehttp2)
+    flight_server_backend_supported(backend::Symbol = :grpcserver)
 
 Return whether one backend satisfies the packaged Arrow Flight server contract.
 """
-function flight_server_backend_supported(backend::Symbol=:purehttp2)
+function flight_server_backend_supported(backend::Symbol=:grpcserver)
     capabilities = flight_server_backend_capabilities(backend)
     return capabilities.request_streaming &&
            capabilities.response_streaming &&
@@ -91,13 +106,13 @@ function flight_server_backend_supported(backend::Symbol=:purehttp2)
 end
 
 """
-    require_flight_server_backend(backend::Symbol = :purehttp2; subject = "Arrow Flight server")
+    require_flight_server_backend(backend::Symbol = :grpcserver; subject = "Arrow Flight server")
 
 Throw an `ArgumentError` when the requested backend does not satisfy the
 packaged Arrow Flight server contract.
 """
 function require_flight_server_backend(
-    backend::Symbol=:purehttp2;
+    backend::Symbol=:grpcserver;
     subject::AbstractString="Arrow Flight server",
 )
     flight_server_backend_supported(backend) && return nothing

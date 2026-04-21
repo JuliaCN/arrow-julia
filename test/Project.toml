@@ -23,6 +23,7 @@ DataAPI = "9a962f9c-6df0-11e9-0e5d-c546b8b5ee8a"
 DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
 Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
 FilePathsBase = "48062228-2e41-5def-b9a4-89aafe57970f"
+gRPCServer = "608c6337-0d7d-447f-bb69-0f5674ee3959"
 JSON3 = "0f8b85d8-7281-11e9-16c2-39a750bddbf1"
 Mmap = "a63ad114-7e13-5084-954f-fe012c677804"
 OffsetArrays = "6fe1bfb0-de20-5000-8ca7-80f57d26f881"
@@ -45,6 +46,7 @@ CategoricalArrays = "1"
 DataAPI = "1"
 DataFrames = "1"
 FilePathsBase = "0.9"
+gRPCServer = "0.1"
 JSON3 = "1"
 OffsetArrays = "1"
 PooledArrays = "1"
@@ -57,4 +59,5 @@ TimeZones = "1"
 PureHTTP2 = "0.5"
 
 [sources]
+gRPCServer = { url = "https://github.com/tao3k/gRPCServer.jl", rev = "261cd70ac0b76c060cef0507245c400da0b5def9" }
 PureHTTP2 = { url = "https://github.com/s-celles/PureHTTP2.jl", rev = "03d8853e9556a4355d7b650853cda62b1906d88e" }

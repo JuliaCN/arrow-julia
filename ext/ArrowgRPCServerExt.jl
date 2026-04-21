@@ -15,20 +15,17 @@
 # specific language governing permissions and limitations
 # under the License.
 
-module Flight
+module ArrowgRPCServerExt
 
-using Base64
-using ProtoBuf
+using Arrow
+using gRPCServer
 using Sockets
-using Tables
 
-const ArrowParent = parentmodule(@__MODULE__)
+include("arrowgrpcserverext/constants.jl")
+include("arrowgrpcserverext/context.jl")
+include("arrowgrpcserverext/streams.jl")
+include("arrowgrpcserverext/transport.jl")
+include("arrowgrpcserverext/handlers.jl")
+include("arrowgrpcserverext/descriptor.jl")
 
-include("exports.jl")
-include("protocol.jl")
-include("descriptors.jl")
-include("shared.jl")
-include("server.jl")
-include("convert.jl")
-
-end # module Flight
+end # module ArrowgRPCServerExt
