@@ -404,6 +404,9 @@ function purehttp2_extension_test_concurrent_large_doget_listener()
         @test Int(result["total_requests"]) == 4
         @test Int(result["wall_ns"]) > 0
         @test Int(result["request_median_ns"]) > 0
+        @test Int(result["request_p95_ns"]) >= Int(result["request_median_ns"])
+        @test Int(result["request_p99_ns"]) >= Int(result["request_p95_ns"])
+        @test Int(result["request_max_ns"]) >= Int(result["request_p99_ns"])
         @test max_active_handlers[] >= 2
     finally
         Arrow.Flight.stop!(server; force=true)

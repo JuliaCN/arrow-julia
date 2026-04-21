@@ -266,12 +266,19 @@ with ThreadPoolExecutor(max_workers=concurrent_clients) as executor:
     finished = time.perf_counter_ns()
 
 samples = sorted(sample for worker in worker_samples for sample in worker)
+def percentile_index(count: int, numerator: int, denominator: int) -> int:
+    if count <= 1:
+        return 0
+    return min(count - 1, max(0, (count * numerator + denominator - 1) // denominator - 1))
+
 print(json.dumps({
     "concurrent_clients": concurrent_clients,
     "requests_per_client": requests_per_client,
     "total_requests": len(samples),
     "wall_ns": finished - started,
     "request_median_ns": samples[(len(samples) - 1) // 2],
+    "request_p95_ns": samples[percentile_index(len(samples), 95, 100)],
+    "request_p99_ns": samples[percentile_index(len(samples), 99, 100)],
     "request_max_ns": max(samples),
 }))
 """
@@ -919,6 +926,8 @@ function flight_live_pyarrow_concurrent_doget_metric(
     wall_ns = Int(result["wall_ns"])
     total_bytes = fixture.message_bytes * total_requests
     request_median_ns = Int(result["request_median_ns"])
+    request_p95_ns = Int(result["request_p95_ns"])
+    request_p99_ns = Int(result["request_p99_ns"])
     request_max_ns = Int(result["request_max_ns"])
     return (
         backend=backend,
@@ -936,6 +945,10 @@ function flight_live_pyarrow_concurrent_doget_metric(
         total_requests=total_requests,
         request_median_ns=request_median_ns,
         request_median_ms=request_median_ns / 1.0e6,
+        request_p95_ns=request_p95_ns,
+        request_p95_ms=request_p95_ns / 1.0e6,
+        request_p99_ns=request_p99_ns,
+        request_p99_ms=request_p99_ns / 1.0e6,
         request_max_ns=request_max_ns,
         request_max_ms=request_max_ns / 1.0e6,
     )
@@ -1057,12 +1070,18 @@ end
 function flight_live_transport_print_metrics(io::IO, metrics)
     for metric in metrics
         samples_ms = [round(sample / 1.0e6; digits=2) for sample in metric.samples_ns]
+        request_latency_summary =
+            hasproperty(metric, :request_median_ms) ?
+            " request_median_ms=$(round(metric.request_median_ms; digits=2))" *
+            " request_p95_ms=$(round(metric.request_p95_ms; digits=2))" *
+            " request_p99_ms=$(round(metric.request_p99_ms; digits=2))" *
+            " request_max_ms=$(round(metric.request_max_ms; digits=2))" : ""
         println(
             io,
             "$(metric.backend) $(metric.operation): total_bytes=$(metric.total_bytes) " *
             "median_ms=$(round(metric.median_ms; digits=2)) " *
             "throughput_mib_per_sec=$(round(metric.throughput_mib_per_sec; digits=2)) " *
-            "samples_ms=$(samples_ms)",
+            "$(request_latency_summary) samples_ms=$(samples_ms)",
         )
     end
     return nothing
@@ -1072,6 +1091,8 @@ function flight_live_transport_print_concurrent_summary(io::IO, metrics)
     isempty(metrics) && return nothing
     throughputs = [metric.throughput_mib_per_sec for metric in metrics]
     request_latencies = [metric.request_median_ms for metric in metrics]
+    request_p95_latencies = [metric.request_p95_ms for metric in metrics]
+    request_p99_latencies = [metric.request_p99_ms for metric in metrics]
     wall_latencies = [metric.median_ms for metric in metrics]
     println(
         io,
@@ -1080,6 +1101,8 @@ function flight_live_transport_print_concurrent_summary(io::IO, metrics)
         "requests_per_client=$(metrics[1].requests_per_client) " *
         "wall_ms_range=$(round(minimum(wall_latencies); digits=2))-$(round(maximum(wall_latencies); digits=2)) " *
         "request_median_ms_range=$(round(minimum(request_latencies); digits=2))-$(round(maximum(request_latencies); digits=2)) " *
+        "request_p95_ms_range=$(round(minimum(request_p95_latencies); digits=2))-$(round(maximum(request_p95_latencies); digits=2)) " *
+        "request_p99_ms_range=$(round(minimum(request_p99_latencies); digits=2))-$(round(maximum(request_p99_latencies); digits=2)) " *
         "throughput_mib_per_sec_range=$(round(minimum(throughputs); digits=2))-$(round(maximum(throughputs); digits=2))",
     )
     return nothing
