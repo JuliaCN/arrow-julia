@@ -22,8 +22,7 @@ mutable struct GRPCServerRequestGate
 end
 
 function GRPCServerRequestGate(max_active_requests::Integer)
-    max_active_requests > 0 ||
-        throw(ArgumentError("max_active_requests must be positive"))
+    max_active_requests > 0 || throw(ArgumentError("max_active_requests must be positive"))
     return GRPCServerRequestGate(Int(max_active_requests), 0, ReentrantLock())
 end
 

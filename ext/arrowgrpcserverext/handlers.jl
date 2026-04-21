@@ -35,7 +35,7 @@ function _transport_method(method::Flight.MethodDescriptor)
 end
 
 function _with_request_gate(handler::Function, request_gate::GRPCServerRequestGate)
-    return function(args...)
+    return function (args...)
         _try_acquire_request!(request_gate) || _throw_request_limit_error(request_gate)
         try
             return handler(args...)
