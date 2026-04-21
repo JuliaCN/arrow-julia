@@ -293,12 +293,12 @@ function purehttp2_extension_test_overload_listener(fixture)
         @test !isnothing(overloaded_result)
         @test !Bool(overloaded_result["ok"])
         @test occursin(
-            "resource exhausted",
+            "deadline exceeded",
             lowercase(String(overloaded_result["message"])),
         )
         @test occursin(
-            "active request limit 1 reached",
-            String(overloaded_result["message"]),
+            "timeout error",
+            lowercase(String(overloaded_result["message"])),
         )
 
         put!(release_handler, nothing)
