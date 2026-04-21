@@ -35,9 +35,11 @@ function grpcserver_extension_test_live_listener(grpcserver, service, fixture)
         @test isopen(flight_server)
         @test flight_server.port > 0
         @test flight_server.request_gate.max_active_requests == 2
+        @test flight_server.request_gate.active_requests[] == 0
         pyarrow_smoke_ran =
             flight_live_pyarrow_smoke(flight_server.host, flight_server.port, fixture)
         @test pyarrow_smoke_ran || isnothing(FlightTestSupport.pyarrow_flight_python())
+        @test flight_server.request_gate.active_requests[] == 0
     finally
         Arrow.Flight.stop!(flight_server; force=true)
     end

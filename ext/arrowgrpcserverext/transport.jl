@@ -17,13 +17,12 @@
 
 mutable struct GRPCServerRequestGate
     max_active_requests::Int
-    active_requests::Int
-    lock::ReentrantLock
+    active_requests::Threads.Atomic{Int}
 end
 
 function GRPCServerRequestGate(max_active_requests::Integer)
     max_active_requests > 0 || throw(ArgumentError("max_active_requests must be positive"))
-    return GRPCServerRequestGate(Int(max_active_requests), 0, ReentrantLock())
+    return GRPCServerRequestGate(Int(max_active_requests), Threads.Atomic{Int}(0))
 end
 
 struct GRPCServerFlightService
@@ -31,6 +30,19 @@ struct GRPCServerFlightService
     request_capacity::Int
     response_capacity::Int
     request_gate::GRPCServerRequestGate
+end
+
+function GRPCServerFlightService(
+    service::Flight.Service,
+    request_capacity::Integer,
+    response_capacity::Integer,
+)
+    return GRPCServerFlightService(
+        service,
+        Int(request_capacity),
+        Int(response_capacity),
+        GRPCServerRequestGate(DEFAULT_MAX_ACTIVE_REQUESTS),
+    )
 end
 
 mutable struct GRPCServerFlightServer
@@ -94,18 +106,21 @@ function _wait_for_grpcserver_listener(
 end
 
 function _try_acquire_request!(gate::GRPCServerRequestGate)
-    return lock(gate.lock) do
-        gate.active_requests >= gate.max_active_requests && return false
-        gate.active_requests += 1
-        return true
+    while true
+        active_requests = gate.active_requests[]
+        active_requests >= gate.max_active_requests && return false
+        Threads.atomic_cas!(gate.active_requests, active_requests, active_requests + 1) ==
+        active_requests && return true
     end
 end
 
 function _release_request!(gate::GRPCServerRequestGate)
-    lock(gate.lock) do
-        gate.active_requests > 0 && (gate.active_requests -= 1)
+    while true
+        active_requests = gate.active_requests[]
+        active_requests <= 0 && return nothing
+        Threads.atomic_cas!(gate.active_requests, active_requests, active_requests - 1) ==
+        active_requests && return nothing
     end
-    return nothing
 end
 
 function _throw_request_limit_error(gate::GRPCServerRequestGate)

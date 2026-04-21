@@ -271,6 +271,7 @@ function purehttp2_extension_test_overload_listener(fixture)
     try
         purehttp2_extension_wait_for_live_server(server.host, server.port)
         @test getfield(server, :request_gate).max_active_requests == 1
+        @test getfield(server, :request_gate).active_requests[] == 0
 
         first_task = Threads.@spawn begin
             request_info =
@@ -302,6 +303,7 @@ function purehttp2_extension_test_overload_listener(fixture)
 
         put!(release_handler, nothing)
         fetch(first_task)
+        @test getfield(server, :request_gate).active_requests[] == 0
     finally
         Arrow.Flight.stop!(server; force=true)
     end
@@ -408,6 +410,7 @@ function purehttp2_extension_test_concurrent_large_doget_listener()
         @test Int(result["request_p99_ns"]) >= Int(result["request_p95_ns"])
         @test Int(result["request_max_ns"]) >= Int(result["request_p99_ns"])
         @test max_active_handlers[] >= 2
+        @test getfield(server, :request_gate).active_requests[] == 0
     finally
         Arrow.Flight.stop!(server; force=true)
     end
