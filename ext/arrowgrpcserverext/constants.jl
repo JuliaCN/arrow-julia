@@ -17,4 +17,5 @@
 
 const Flight = Arrow.Flight
 const STREAM_BUFFER_SIZE = 16
+const DEFAULT_MAX_ACTIVE_REQUESTS = max(Threads.nthreads() * 8, 32)
 const GENERATED_TYPE_PREFIX = "Arrow.Flight.Generated."

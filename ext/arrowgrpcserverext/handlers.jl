@@ -19,110 +19,99 @@ function _rethrow_flight_status_error(error::Flight.FlightStatusError)
     throw(gRPCServer.GRPCError(gRPCServer.StatusCode.T(error.code), error.message))
 end
 
-function _unary_handler(service::Flight.Service, method::Flight.MethodDescriptor)
-    return (context, request) -> begin
+function _configured_service(service::Flight.Service)
+    return GRPCServerFlightService(
+        service,
+        STREAM_BUFFER_SIZE,
+        STREAM_BUFFER_SIZE,
+        GRPCServerRequestGate(DEFAULT_MAX_ACTIVE_REQUESTS),
+    )
+end
+
+_configured_service(service::GRPCServerFlightService) = service
+
+function _transport_method(method::Flight.MethodDescriptor)
+    return Flight.TransportMethodDescriptor(method)
+end
+
+function _with_request_gate(handler::Function, request_gate::GRPCServerRequestGate)
+    return function(args...)
+        _try_acquire_request!(request_gate) || _throw_request_limit_error(request_gate)
         try
-            Flight.dispatch(service, _call_context(context), method, request)
-        catch error
-            error isa Flight.FlightStatusError && _rethrow_flight_status_error(error)
-            rethrow()
+            return handler(args...)
+        finally
+            _release_request!(request_gate)
         end
     end
 end
 
-function _server_streaming_handler(service::Flight.Service, method::Flight.MethodDescriptor)
-    return (context, request, stream) -> begin
-        response = Channel{method.response_type}(STREAM_BUFFER_SIZE)
-        task = @async begin
-            try
-                if method.handler_field === :listactions
-                    Flight.listactions(service, _call_context(context), response)
-                else
-                    Flight.dispatch(service, _call_context(context), method, request, response)
-                end
-            catch error
-                error isa Flight.FlightStatusError && _rethrow_flight_status_error(error)
-                rethrow()
-            finally
-                close(response)
-            end
-        end
-        try
-            _drain_response!(stream, response)
-            _streaming_handler_result(task)
-            gRPCServer.close!(stream)
-        finally
-            istaskdone(task) || wait(task)
-        end
+function _unary_handler(service, method::Flight.MethodDescriptor)
+    configured = _configured_service(service)
+    transport_method = _transport_method(method)
+    return _with_request_gate(configured.request_gate) do context, request
+        return Flight.transport_unary_call(
+            configured.service,
+            _call_context(context),
+            transport_method,
+            request;
+            on_status_error=_rethrow_flight_status_error,
+        )
     end
 end
 
-function _client_streaming_handler(service::Flight.Service, method::Flight.MethodDescriptor)
-    return (context, stream) -> begin
-        request = Channel{method.request_type}(STREAM_BUFFER_SIZE)
-        producer = @async begin
-            try
-                for message in stream
-                    put!(request, message)
-                end
-            finally
-                close(request)
-            end
-        end
-        task = @async begin
-            try
-                Flight.dispatch(service, _call_context(context), method, request)
-            catch error
-                error isa Flight.FlightStatusError && _rethrow_flight_status_error(error)
-                rethrow()
-            end
-        end
-        try
-            return fetch(task)
-        finally
-            _streaming_handler_result(task, producer)
-        end
-    end
-end
-
-function _bidi_streaming_handler(service::Flight.Service, method::Flight.MethodDescriptor)
-    return (context, stream) -> begin
-        request = Channel{method.request_type}(STREAM_BUFFER_SIZE)
-        response = Channel{method.response_type}(STREAM_BUFFER_SIZE)
-        producer = @async begin
-            try
-                for message in stream
-                    put!(request, message)
-                end
-            finally
-                close(request)
-            end
-        end
-        task = @async begin
-            try
-                Flight.dispatch(service, _call_context(context), method, request, response)
-            catch error
-                error isa Flight.FlightStatusError && _rethrow_flight_status_error(error)
-                rethrow()
-            finally
-                close(response)
-            end
-        end
-        try
-            for message in response
-                gRPCServer.send!(stream, message)
-            end
-            _streaming_handler_result(task, producer)
-            gRPCServer.close!(stream)
-        finally
-            istaskdone(task) || wait(task)
-            isnothing(producer) || (istaskdone(producer) || wait(producer))
-        end
+function _server_streaming_handler(service, method::Flight.MethodDescriptor)
+    configured = _configured_service(service)
+    transport_method = _transport_method(method)
+    return _with_request_gate(configured.request_gate) do context, request, stream
+        Flight.transport_server_streaming_call(
+            configured.service,
+            _call_context(context),
+            transport_method,
+            request,
+            message -> gRPCServer.send!(stream, message);
+            response_capacity=configured.response_capacity,
+            on_status_error=_rethrow_flight_status_error,
+        )
+        gRPCServer.close!(stream)
         return nothing
     end
 end
 
-function _handler(service::Flight.Service, method::Flight.MethodDescriptor)
+function _client_streaming_handler(service, method::Flight.MethodDescriptor)
+    configured = _configured_service(service)
+    transport_method = _transport_method(method)
+    return _with_request_gate(configured.request_gate) do context, stream
+        return Flight.transport_client_streaming_call(
+            configured.service,
+            _call_context(context),
+            transport_method,
+            stream;
+            request_capacity=configured.request_capacity,
+            on_status_error=_rethrow_flight_status_error,
+        )
+    end
+end
+
+function _bidi_streaming_handler(service, method::Flight.MethodDescriptor)
+    configured = _configured_service(service)
+    transport_method = _transport_method(method)
+    return _with_request_gate(configured.request_gate) do context, stream
+        Flight.transport_bidi_streaming_call(
+            configured.service,
+            _call_context(context),
+            transport_method,
+            stream,
+            message -> gRPCServer.send!(stream, message);
+            request_capacity=configured.request_capacity,
+            response_capacity=configured.response_capacity,
+            on_status_error=_rethrow_flight_status_error,
+        )
+        gRPCServer.close!(stream)
+        return nothing
+    end
+end
+
+function _handler(service, method::Flight.MethodDescriptor)
     if !method.request_streaming && !method.response_streaming
         return _unary_handler(service, method)
     elseif !method.request_streaming && method.response_streaming

@@ -136,7 +136,7 @@ function purehttp2_extension_test_live_listener(fixture)
     protocol = fixture.protocol
     live_fixture = flight_live_fixture(protocol)
     live_service = flight_live_service(protocol, live_fixture)
-    server = Arrow.Flight.purehttp2_flight_server(
+    server = Arrow.Flight.grpcserver_flight_server(
         live_service;
         host="127.0.0.1",
         port=0,
@@ -183,15 +183,16 @@ function purehttp2_extension_test_concurrent_listener(fixture)
             lock(max_active_lock) do
                 max_active_handlers[] = max(max_active_handlers[], current_active)
             end
-            deadline = time_ns() + 400_000_000
-            while time_ns() < deadline
+            try
+                sleep(0.4)
+                return info
+            finally
+                Threads.atomic_add!(active_handlers, -1)
             end
-            Threads.atomic_add!(active_handlers, -1)
-            return info
         end,
     )
 
-    server = Arrow.Flight.purehttp2_flight_server(
+    server = Arrow.Flight.grpcserver_flight_server(
         service;
         host="127.0.0.1",
         port=0,
@@ -258,7 +259,7 @@ function purehttp2_extension_test_overload_listener(fixture)
         end,
     )
 
-    server = Arrow.Flight.purehttp2_flight_server(
+    server = Arrow.Flight.grpcserver_flight_server(
         service;
         host="127.0.0.1",
         port=0,
@@ -321,7 +322,7 @@ function purehttp2_extension_test_large_pyarrow_doexchange_listener(fixture)
         descriptor=descriptor,
     )
 
-    server = Arrow.Flight.purehttp2_flight_server(
+    server = Arrow.Flight.grpcserver_flight_server(
         service;
         host="127.0.0.1",
         port=0,
@@ -332,6 +333,78 @@ function purehttp2_extension_test_large_pyarrow_doexchange_listener(fixture)
     try
         purehttp2_extension_wait_for_live_server(server.host, server.port)
         @test flight_live_pyarrow_large_doexchange(server.host, server.port, descriptor)
+    finally
+        Arrow.Flight.stop!(server; force=true)
+    end
+end
+
+function purehttp2_extension_test_concurrent_large_doget_listener()
+    !isnothing(FlightTestSupport.pyarrow_flight_python()) || return nothing
+
+    protocol = Arrow.Flight.Protocol
+    fixture = flight_live_transport_fixture(
+        protocol;
+        batch_count=2,
+        rows_per_batch=256,
+        payload_bytes=4_096,
+    )
+    active_handlers = Threads.Atomic{Int}(0)
+    max_active_handlers = Ref(0)
+    max_active_lock = ReentrantLock()
+
+    service = Arrow.Flight.Service(
+        getflightinfo=(ctx, req) -> begin
+            @test req.path == fixture.descriptor.path
+            return fixture.info
+        end,
+        doget=(ctx, req, response) -> begin
+            @test req.ticket == fixture.ticket.ticket
+            current_active = Threads.atomic_add!(active_handlers, 1) + 1
+            lock(max_active_lock) do
+                max_active_handlers[] = max(max_active_handlers[], current_active)
+            end
+            try
+                sleep(0.05)
+                Arrow.Flight.putflightdata!(
+                    response,
+                    Tables.partitioner(fixture.batches);
+                    descriptor=fixture.descriptor,
+                    metadata=fixture.dataset_metadata,
+                    colmetadata=fixture.dataset_colmetadata,
+                    close=true,
+                )
+                return :doget_ok
+            finally
+                Threads.atomic_add!(active_handlers, -1)
+            end
+        end,
+    )
+
+    server = Arrow.Flight.grpcserver_flight_server(
+        service;
+        host="127.0.0.1",
+        port=0,
+        max_active_requests=2,
+        request_capacity=8,
+        response_capacity=8,
+    )
+
+    try
+        purehttp2_extension_wait_for_live_server(server.host, server.port)
+        result = flight_live_pyarrow_concurrent_doget(
+            server.host,
+            server.port,
+            fixture;
+            concurrent_clients=2,
+            requests_per_client=2,
+        )
+        @test !isnothing(result)
+        @test Int(result["concurrent_clients"]) == 2
+        @test Int(result["requests_per_client"]) == 2
+        @test Int(result["total_requests"]) == 4
+        @test Int(result["wall_ns"]) > 0
+        @test Int(result["request_median_ns"]) > 0
+        @test max_active_handlers[] >= 2
     finally
         Arrow.Flight.stop!(server; force=true)
     end

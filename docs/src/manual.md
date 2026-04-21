@@ -291,9 +291,9 @@ packaged backend contract is exposed through
 [`Arrow.Flight.flight_server_backend_capabilities`](@ref),
 [`Arrow.Flight.flight_server_backend_supported`](@ref), and
 [`Arrow.Flight.require_flight_server_backend`](@ref); the current default live
-listener profile is `:purehttp2`; `:grpcserver` now activates only when
-`gRPCServer.jl` is loaded so the optional compatibility extension can bridge
-`Flight.Service` into the latest `gRPCServer.jl` listener stack, and
+listener profile is `:grpcserver`; it activates only when `gRPCServer.jl` is
+loaded so the optional extension can bridge `Flight.Service` into the latest
+`gRPCServer.jl` listener stack, and
 `:nghttp2` activates only when `Nghttp2Wrapper.jl` is loaded so the optional
 extension can provide `Arrow.Flight.nghttp2_flight_server(...)`. The current
 nghttp2 backend proves unary plus buffered server-streaming methods with
@@ -304,7 +304,11 @@ against that live Julia server currently spans all of those except
 environment does not expose a poll API. A separate focused runner,
 `test/flight_purehttp2_perf.jl`, now measures large-response end-to-end
 `DoGet` performance on that same package-owned listener through a reusable
-backend-factory seam. A second focused runner, `test/flight_nghttp2_probe.jl`,
+backend-factory seam, and it can replay concurrent soak rounds via
+`ARROW_FLIGHT_PYARROW_CONCURRENT_CLIENTS`,
+`ARROW_FLIGHT_PYARROW_REQUESTS_PER_CLIENT`, and
+`ARROW_FLIGHT_PYARROW_SOAK_ROUNDS`. A second focused runner,
+`test/flight_nghttp2_probe.jl`,
 verifies the currently exported `Nghttp2Wrapper.jl` low-level session /
 callback / submit hooks and raw h2c substrate behavior. A third focused
 runner, `test/flight_nghttp2.jl`, proves the weakdep-backed Flight listener

@@ -122,18 +122,11 @@ jobs:
               isfile(manifest_path) && rm(manifest_path; force=true)
           end
           Pkg.Registry.add("General")
-          Pkg.add([
-              PackageSpec(
-                  name="PureHTTP2",
-                  url="https://github.com/s-celles/PureHTTP2.jl",
-                  rev="03d8853e9556a4355d7b650853cda62b1906d88e",
-              ),
-              PackageSpec(
-                  name="gRPCClient",
-                  url="https://github.com/tao3k/gRPCClient.jl.git",
-                  rev="faa9107a19f65e56c5c566c71d0844aaca651612",
-              ),
-          ])
+          Pkg.add(PackageSpec(
+              name="gRPCClient",
+              url="https://github.com/tao3k/gRPCClient.jl.git",
+              rev="faa9107a19f65e56c5c566c71d0844aaca651612",
+          ))
           Pkg.develop(PackageSpec(path="src/ArrowTypes"))
       - uses: julia-actions/julia-buildpkg@v1.6
         with:
@@ -239,18 +232,32 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v6
-      - uses: julia-actions/julia-buildpkg@latest
-      - name: Dev local packages for docs
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: '1'
+      - uses: actions/cache@v5
+        env:
+          cache-name: cache-docs-artifacts
+        with:
+          path: ~/.julia/artifacts
+          key: ${{ runner.os }}-docs-${{ env.cache-name }}-${{ hashFiles('Project.toml', 'Manifest.toml', 'docs/Project.toml', 'docs/Manifest.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-docs-${{ env.cache-name }}-
+            ${{ runner.os }}-docs-
+            ${{ runner.os }}-
+      - name: Configure doc environment
         shell: julia --project=docs {0}
         run: |
           using Pkg
           Pkg.develop(PackageSpec(path="."))
           Pkg.develop(PackageSpec(path="src/ArrowTypes"))
+          Pkg.resolve()
           Pkg.instantiate()
-      - uses: julia-actions/julia-docdeploy@latest
+      - name: Build and deploy docs
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DOCUMENTER_KEY: ${{ secrets.DOCUMENTER_KEY }}
+        run: julia --project=docs docs/make.jl
   Format:
     runs-on: ubuntu-latest
     timeout-minutes: 5

@@ -235,7 +235,9 @@ function _store_dictionary_batch!(
             Int64(1),
             getfield(x, :convert),
         )
-        A = ArrowParent.ChainedVector([values])
+        # Materialize dictionary values eagerly so delta batches can extend one
+        # stable pool instead of chaining back to per-batch Arrow buffers.
+        A = collect(values)
         S =
             field.dictionary.indexType === nothing ? Int32 :
             ArrowParent.juliaeltype(field, field.dictionary.indexType, false)
@@ -243,7 +245,7 @@ function _store_dictionary_batch!(
             id,
             A,
             field.dictionary.isOrdered,
-            values.metadata,
+            ArrowParent.getmetadata(values),
         )
     end
     return nothing

@@ -23,7 +23,13 @@ function _register_proto_types!(method::Flight.MethodDescriptor)
 end
 
 function gRPCServer.service_descriptor(service::Flight.Service)
-    descriptor = Flight.servicedescriptor(service)
+    return gRPCServer.service_descriptor(
+        GRPCServerFlightService(service, STREAM_BUFFER_SIZE, STREAM_BUFFER_SIZE),
+    )
+end
+
+function gRPCServer.service_descriptor(service::GRPCServerFlightService)
+    descriptor = Flight.servicedescriptor(service.service)
     methods = Dict{String,gRPCServer.MethodDescriptor}()
     for method in descriptor.methods
         _register_proto_types!(method)
@@ -33,6 +39,7 @@ function gRPCServer.service_descriptor(service::Flight.Service)
             _proto_type_name(method.request_type),
             _proto_type_name(method.response_type),
             _handler(service, method),
+            live_streaming=method.request_streaming,
         )
     end
     return gRPCServer.ServiceDescriptor(descriptor.name, methods, nothing)

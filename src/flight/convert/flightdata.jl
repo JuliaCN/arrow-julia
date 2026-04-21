@@ -103,6 +103,126 @@ function _partition_with_app_metadata(tbl, cursor)
     return tbl, app_metadata, cursor
 end
 
+const MAX_TRANSPORT_SAFE_GRPC_MESSAGE_BYTES = 32_000
+
+function _transport_safe_row_ranges(rowcount::Integer)
+    midpoint = max(1, fld(Int(rowcount), 2))
+    return 1:midpoint, (midpoint + 1):Int(rowcount)
+end
+
+function _transport_safe_recordbatch_message(
+    schema::Tables.Schema,
+    cols,
+    app_metadata::Vector{UInt8},
+    alignment::Integer,
+)
+    return _flightdata_message(
+        ArrowParent.makerecordbatchmsg(schema, cols, alignment);
+        app_metadata=app_metadata,
+        alignment=alignment,
+    )
+end
+
+function _emit_transport_safe_recordbatch!(
+    emit,
+    tbl,
+    schema::Tables.Schema,
+    dictencodings::Dict{Int64,Any},
+    record_app_metadata::Vector{UInt8};
+    compress,
+    largelists::Bool,
+    denseunions::Bool,
+    dictencode::Bool,
+    dictencodenested::Bool,
+    alignment::Integer,
+    maxdepth::Integer,
+    tblmeta,
+    tblcolmetadata,
+    precomputed_cols=nothing,
+)
+    tblcols = Tables.columns(tbl)
+    cols =
+        isnothing(precomputed_cols) ?
+        ArrowParent.toarrowtable(
+            tblcols,
+            dictencodings,
+            largelists,
+            compress,
+            denseunions,
+            dictencode,
+            dictencodenested,
+            maxdepth,
+            tblmeta,
+            tblcolmetadata,
+        ) : precomputed_cols
+
+    rowcount = Tables.rowcount(cols)
+    record_message =
+        _transport_safe_recordbatch_message(schema, cols, record_app_metadata, alignment)
+
+    if !dictencode &&
+       !dictencodenested &&
+       isempty(cols.dictencodingdeltas) &&
+       rowcount > 1 &&
+       length(grpcmessage(record_message)) > MAX_TRANSPORT_SAFE_GRPC_MESSAGE_BYTES
+        left_rows, right_rows = _transport_safe_row_ranges(rowcount)
+        _emit_transport_safe_recordbatch!(
+            emit,
+            Tables.subset(tbl, left_rows; viewhint=true),
+            schema,
+            dictencodings,
+            record_app_metadata;
+            compress=compress,
+            largelists=largelists,
+            denseunions=denseunions,
+            dictencode=dictencode,
+            dictencodenested=dictencodenested,
+            alignment=alignment,
+            maxdepth=maxdepth,
+            tblmeta=tblmeta,
+            tblcolmetadata=tblcolmetadata,
+            precomputed_cols=nothing,
+        )
+        _emit_transport_safe_recordbatch!(
+            emit,
+            Tables.subset(tbl, right_rows; viewhint=true),
+            schema,
+            dictencodings,
+            UInt8[];
+            compress=compress,
+            largelists=largelists,
+            denseunions=denseunions,
+            dictencode=dictencode,
+            dictencodenested=dictencodenested,
+            alignment=alignment,
+            maxdepth=maxdepth,
+            tblmeta=tblmeta,
+            tblcolmetadata=tblcolmetadata,
+            precomputed_cols=nothing,
+        )
+        return nothing
+    end
+
+    for de in cols.dictencodingdeltas
+        dictsch = Tables.Schema((:col,), (eltype(de.data),))
+        emit(
+            _flightdata_message(
+                ArrowParent.makedictionarybatchmsg(
+                    dictsch,
+                    (col=de.data,),
+                    de.id,
+                    true,
+                    alignment,
+                );
+                alignment=alignment,
+            ),
+        )
+    end
+
+    emit(record_message)
+    return nothing
+end
+
 function _emitflightdata!(
     emit,
     source;
@@ -181,29 +301,23 @@ function _emitflightdata!(
                     )
                 end
             end
-        elseif !isempty(cols.dictencodingdeltas)
-            for de in cols.dictencodingdeltas
-                dictsch = Tables.Schema((:col,), (eltype(de.data),))
-                emit(
-                    _flightdata_message(
-                        ArrowParent.makedictionarybatchmsg(
-                            dictsch,
-                            (col=de.data,),
-                            de.id,
-                            true,
-                            alignment,
-                        );
-                        alignment=alignment,
-                    ),
-                )
-            end
         end
-        emit(
-            _flightdata_message(
-                ArrowParent.makerecordbatchmsg(schema[], cols, alignment);
-                app_metadata=record_app_metadata,
-                alignment=alignment,
-            ),
+        _emit_transport_safe_recordbatch!(
+            emit,
+            tbl,
+            schema[],
+            dictencodings,
+            record_app_metadata;
+            compress=compress,
+            largelists=largelists,
+            denseunions=denseunions,
+            dictencode=dictencode,
+            dictencodenested=dictencodenested,
+            alignment=alignment,
+            maxdepth=maxdepth,
+            tblmeta=tblmeta,
+            tblcolmetadata=tblcolmetadata,
+            precomputed_cols=cols,
         )
         descriptor = nothing
     end

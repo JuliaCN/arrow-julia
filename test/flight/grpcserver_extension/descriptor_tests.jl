@@ -18,14 +18,14 @@
 function grpcserver_extension_test_backend_profiles()
     @test !isnothing(Base.get_extension(Arrow, :ArrowgRPCServerExt))
 
-    capabilities = Arrow.Flight.flight_server_backend_capabilities(:grpcserver)
+    capabilities = Arrow.Flight.flight_server_backend_capabilities()
     @test capabilities.backend == :grpcserver
     @test capabilities.request_streaming
     @test capabilities.response_streaming
     @test capabilities.response_trailers
     @test capabilities.bidirectional_doexchange
     @test isempty(capabilities.blockers)
-    @test Arrow.Flight.flight_server_backend_supported(:grpcserver)
+    @test Arrow.Flight.flight_server_backend_supported()
     @test isnothing(
         Arrow.Flight.require_flight_server_backend(
             :grpcserver;
@@ -37,6 +37,7 @@ end
 function grpcserver_extension_test_descriptor(grpcserver, service)
     grpc_descriptor = grpcserver.service_descriptor(service)
     @test Base.get_extension(Arrow, :ArrowgRPCServerExt) !== nothing
+    @test isdefined(Arrow.Flight, :grpcserver_flight_server)
     @test grpc_descriptor.name == "arrow.flight.protocol.FlightService"
     @test haskey(grpc_descriptor.methods, "GetFlightInfo")
     @test haskey(grpc_descriptor.methods, "DoGet")

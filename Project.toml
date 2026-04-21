@@ -33,7 +33,6 @@ JSON3 = "0f8b85d8-7281-11e9-16c2-39a750bddbf1"
 ProtoBuf = "3349acd9-ac6a-5e09-bcdb-63829b23a429"
 Mmap = "a63ad114-7e13-5084-954f-fe012c677804"
 PooledArrays = "2dfb63ee-cc39-5dd5-95bd-886bf059d720"
-PureHTTP2 = "7d1e1b98-28e7-4969-8df9-5a308937986a"
 SentinelArrays = "91c51154-3ec4-41a3-a24f-3f23e20d615c"
 Sockets = "6462fe0b-24de-5631-8697-dd941f90decc"
 StringViews = "354b36f9-a18e-4713-926e-db85100087ba"
@@ -52,8 +51,7 @@ ArrowFlightNghttp2Ext = "Nghttp2Wrapper"
 
 [sources]
 ArrowTypes = { path = "src/ArrowTypes" }
-gRPCServer = { url = "https://github.com/s-celles/gRPCServer.jl", rev = "1b9a85338068ccfe592b1be8159660804f0644ad" }
-PureHTTP2 = { url = "https://github.com/s-celles/PureHTTP2.jl", rev = "03d8853e9556a4355d7b650853cda62b1906d88e" }
+gRPCServer = { url = "https://github.com/tao3k/gRPCServer.jl", rev = "f0bc25e285b2233ee9679cc785343f63c647654f" }
 
 [extras]
 gRPCServer = "608c6337-0d7d-447f-bb69-0f5674ee3959"
@@ -70,7 +68,6 @@ gRPCServer = "0.1"
 JSON3 = "1"
 Nghttp2Wrapper = "0.2"
 ProtoBuf = "~1.2.1"
-PureHTTP2 = "0.5"
 PooledArrays = "0.5, 1.0"
 SentinelArrays = "1"
 StringViews = "1"

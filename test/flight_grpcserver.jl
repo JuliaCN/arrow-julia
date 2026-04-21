@@ -21,6 +21,9 @@ using TOML
 const TEST_ROOT = @__DIR__
 const ARROW_ROOT = normpath(joinpath(TEST_ROOT, ".."))
 const ARROWTYPES_ROOT = joinpath(ARROW_ROOT, "src", "ArrowTypes")
+const GRPCSERVER_UUID = Base.UUID("608c6337-0d7d-447f-bb69-0f5674ee3959")
+
+auto_local_flight_dev_deps() = get(ENV, "ARROW_FLIGHT_DISABLE_AUTO_LOCAL_DEPS", "0") != "1"
 
 function maybe_git_root(path::AbstractString)
     try
@@ -46,50 +49,60 @@ function flight_grpcserver_roots(path::AbstractString)
 end
 
 function maybe_locate_grpcserver()
-    if !haskey(ENV, "ARROW_FLIGHT_GRPCSERVER_PATH")
-        return nothing
+    if haskey(ENV, "ARROW_FLIGHT_GRPCSERVER_PATH")
+        candidate = abspath(ENV["ARROW_FLIGHT_GRPCSERVER_PATH"])
+        isdir(candidate) || error("ARROW_FLIGHT_GRPCSERVER_PATH does not exist: $candidate")
+        return candidate
     end
 
-    candidate = abspath(ENV["ARROW_FLIGHT_GRPCSERVER_PATH"])
-    isdir(candidate) || error("ARROW_FLIGHT_GRPCSERVER_PATH does not exist: $candidate")
-    return candidate
+    auto_local_flight_dev_deps() || return nothing
+
+    for root in flight_grpcserver_roots(TEST_ROOT)
+        for candidate in (
+            joinpath(root, ".data", "gRPCServer.jl"),
+            joinpath(root, "gRPCServer.jl"),
+            joinpath(root, ".cache", "vendor", "gRPCServer.jl"),
+            "/tmp/gRPCServer.jl",
+        )
+            isdir(candidate) && return candidate
+        end
+    end
+
+    return nothing
 end
 
-function grpcserver_source_spec()
-    project = TOML.parsefile(joinpath(ARROW_ROOT, "Project.toml"))
-    sources = get(project, "sources", Dict{String,Any}())
-    haskey(sources, "gRPCServer") || error("Arrow Project.toml is missing [sources].gRPCServer")
-
-    source = sources["gRPCServer"]
-    if haskey(source, "path")
-        path = source["path"]
-        grpcserver_path = isabspath(path) ? normpath(path) : normpath(joinpath(ARROW_ROOT, path))
-        return (; mode=:develop, spec=PackageSpec(path=grpcserver_path))
+function strip_temp_source_override!(
+    project_path::AbstractString,
+    package_name::AbstractString,
+)
+    project = TOML.parsefile(project_path)
+    sources = get(project, "sources", nothing)
+    sources isa AbstractDict || return nothing
+    haskey(sources, package_name) || return nothing
+    delete!(sources, package_name)
+    isempty(sources) && delete!(project, "sources")
+    open(project_path, "w") do io
+        TOML.print(io, project)
     end
-
-    haskey(source, "url") || error("Arrow Project.toml [sources].gRPCServer is missing url")
-    kwargs = Dict{Symbol,Any}(:name => "gRPCServer", :url => source["url"])
-    haskey(source, "rev") && (kwargs[:rev] = source["rev"])
-    return (; mode=:add, spec=PackageSpec(; kwargs...))
+    return nothing
 end
 
 const TEMP_ENV = mktempdir()
-cp(joinpath(TEST_ROOT, "Project.toml"), joinpath(TEMP_ENV, "Project.toml"))
-
-Pkg.activate(TEMP_ENV)
-Pkg.develop([PackageSpec(path=ARROW_ROOT), PackageSpec(path=ARROWTYPES_ROOT)])
+const TEMP_PROJECT = joinpath(TEMP_ENV, "Project.toml")
+cp(joinpath(TEST_ROOT, "Project.toml"), TEMP_PROJECT)
 
 local_grpcserver = maybe_locate_grpcserver()
-if isnothing(local_grpcserver)
-    grpcserver_source = grpcserver_source_spec()
-    if grpcserver_source.mode == :develop
-        Pkg.develop(grpcserver_source.spec)
-    else
-        Pkg.add(grpcserver_source.spec)
-    end
-else
-    Pkg.develop(PackageSpec(path=local_grpcserver))
+!isnothing(local_grpcserver) && strip_temp_source_override!(TEMP_PROJECT, "gRPCServer")
+
+Pkg.activate(TEMP_ENV)
+dev_packages = PackageSpec[PackageSpec(path=ARROW_ROOT), PackageSpec(path=ARROWTYPES_ROOT)]
+if !isnothing(local_grpcserver)
+    push!(
+        dev_packages,
+        PackageSpec(name="gRPCServer", uuid=GRPCSERVER_UUID, path=local_grpcserver),
+    )
 end
+Pkg.develop(dev_packages)
 Pkg.instantiate()
 
 using Test

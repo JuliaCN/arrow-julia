@@ -94,6 +94,16 @@ function _transport_handler_result(task::Task, producer::Union{Nothing,Task}=not
     return nothing
 end
 
+function _transport_cleanup_task(task::Union{Nothing,Task})
+    isnothing(task) && return nothing
+    istaskdone(task) && return nothing
+    try
+        wait(task)
+    catch
+    end
+    return nothing
+end
+
 function _pump_transport_messages!(request::Channel, messages)
     try
         for message in messages
@@ -153,7 +163,8 @@ function transport_server_streaming_call(
         _transport_handler_result(task)
         return nothing
     finally
-        istaskdone(task) || wait(task)
+        isopen(response) && close(response)
+        _transport_cleanup_task(task)
     end
 end
 
@@ -235,8 +246,9 @@ function transport_bidi_streaming_call(
         _transport_handler_result(task, producer)
         return nothing
     finally
-        istaskdone(task) || wait(task)
-        isnothing(producer) || (istaskdone(producer) || wait(producer))
+        isopen(response) && close(response)
+        _transport_cleanup_task(task)
+        _transport_cleanup_task(producer)
     end
 end
 
@@ -266,6 +278,7 @@ function transport_bidi_streaming_live_call(
         _transport_handler_result(task)
         return nothing
     finally
-        istaskdone(task) || wait(task)
+        isopen(response) && close(response)
+        _transport_cleanup_task(task)
     end
 end
