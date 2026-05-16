@@ -322,6 +322,9 @@ Imported C Data schema and field metadata are decoded from
 `ArrowSchema.metadata` and exposed through [`Arrow.getmetadata`](@ref) on the
 imported table and metadata-bearing imported columns without changing borrowed
 data-buffer ownership.
+Nullable top-level struct arrays are imported by applying the top-level
+validity bitmap to each borrowed column, so invalid record-batch rows read as
+`missing` while child buffers remain borrowed.
 
 This producer surface supports primitive, boolean, UTF-8 string, binary, UTF-8
 view, binary view, list, fixed-size, map, dense/sparse union, run-end encoded,

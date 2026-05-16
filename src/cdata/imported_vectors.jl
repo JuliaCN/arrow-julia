@@ -809,6 +809,54 @@ _wrap_imported_metadata(column::AbstractVector, metadata) =
     ImportedMetadataVector{eltype(column),typeof(column),typeof(metadata)}(column, metadata)
 
 """
+    Arrow.CData.ImportedRowValidityVector
+
+Top-level struct validity wrapper for imported C Data record batches. Vector
+operations and column-specific fields delegate to the borrowed parent column,
+while invalid top-level rows read as `missing`.
+"""
+struct ImportedRowValidityVector{T,V<:AbstractVector} <: AbstractVector{T}
+    parent::V
+    validity::Vector{UInt8}
+    validity_offset::Int
+end
+
+function Base.getproperty(vector::ImportedRowValidityVector, name::Symbol)
+    if name === :parent || name === :validity || name === :validity_offset
+        return getfield(vector, name)
+    end
+    return getproperty(getfield(vector, :parent), name)
+end
+
+function Base.propertynames(vector::ImportedRowValidityVector, private::Bool=false)
+    parent_names = propertynames(getfield(vector, :parent), private)
+    return private ? (:parent, :validity, :validity_offset, parent_names...) : parent_names
+end
+
+Base.parent(vector::ImportedRowValidityVector) = getfield(vector, :parent)
+Base.IndexStyle(::Type{<:ImportedRowValidityVector{T,V}}) where {T,V} = Base.IndexStyle(V)
+Base.size(vector::ImportedRowValidityVector) = size(parent(vector))
+Base.axes(vector::ImportedRowValidityVector) = axes(parent(vector))
+Base.length(vector::ImportedRowValidityVector) = length(parent(vector))
+Base.iterate(vector::ImportedRowValidityVector, state...) =
+    iterate(parent(vector), state...)
+Base.pointer(vector::ImportedRowValidityVector, args...) = pointer(parent(vector), args...)
+
+function Base.getindex(vector::ImportedRowValidityVector, index::Int)
+    @boundscheck checkbounds(vector, index)
+    _validity_bit(vector.validity, index, vector.validity_offset) || return missing
+    return parent(vector)[index]
+end
+
+_wrap_imported_row_validity(column::AbstractVector, validity::Vector{UInt8}, offset::Int) =
+    isempty(validity) ? column :
+    ImportedRowValidityVector{Union{Missing,eltype(column)},typeof(column)}(
+        column,
+        validity,
+        offset,
+    )
+
+"""
     Arrow.CData.ImportedTable
 
 Borrowed Tables.jl-compatible view imported from Arrow C Data Interface base

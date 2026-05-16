@@ -40,6 +40,39 @@
     @test CData.isreleased(exported)
 end
 
+@testset "imports nullable top-level struct rows" begin
+    table = Arrow.Table(
+        Arrow.tobuffer((id=Int32[1, 2, 3, 4], name=["a", "bb", "ccc", "dddd"]),),
+    )
+    exported = CData.exporttable(table)
+    top_validity = UInt8[0x0b]
+    top_buffers = Ptr{Cvoid}[Ptr{Cvoid}(pointer(top_validity))]
+    _set_array_layout!(CData.array_ptr(exported); null_count=1, buffers=top_buffers)
+
+    GC.@preserve top_validity top_buffers begin
+        imported = CData.importtable(CData.schema_ptr(exported), CData.array_ptr(exported))
+        id = Tables.getcolumn(imported, :id)
+        name = Tables.getcolumn(imported, :name)
+        id_array = _child_array(CData.array(exported), 1)
+        name_array = _child_array(CData.array(exported), 2)
+
+        @test id isa CData.ImportedRowValidityVector
+        @test name isa CData.ImportedRowValidityVector
+        @test Tables.schema(imported).types == (Union{Missing,Int32}, Union{Missing,String})
+        @test isequal(collect(id), Union{Missing,Int32}[1, 2, missing, 4])
+        @test isequal(collect(name), Union{Missing,String}["a", "bb", missing, "dddd"])
+        @test pointer(id) == Ptr{Int32}(unsafe_load(id_array.buffers, 2))
+        @test pointer(name.offsets) == Ptr{Int32}(unsafe_load(name_array.buffers, 2))
+        @test pointer(name.data) == Ptr{UInt8}(unsafe_load(name_array.buffers, 3))
+        @test pointer(id.validity) ==
+              Ptr{UInt8}(unsafe_load(CData.array(exported).buffers, 1))
+
+        CData.release!(imported)
+        @test CData.isreleased(imported)
+        @test CData.isreleased(exported)
+    end
+end
+
 @testset "exports and imports fixed-size columns" begin
     table = Arrow.Table(
         Arrow.tobuffer((

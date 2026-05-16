@@ -894,13 +894,10 @@ function importtable(schema_ptr::Ptr{ArrowSchema}, array_ptr::Ptr{ArrowArray})
     schema.n_children == array.n_children ||
         throw(ArgumentError("Arrow C Data import schema/array child count mismatch"))
     array.offset >= 0 || throw(ArgumentError("top-level struct array has negative offset"))
-    array.null_count == 0 || throw(
-        ArgumentError(
-            "Arrow C Data import does not yet support nullable top-level structs",
-        ),
-    )
     array.n_buffers == 1 ||
         throw(ArgumentError("top-level struct array must expose one buffer"))
+    array.buffers == C_NULL &&
+        throw(ArgumentError("top-level struct array has C_NULL buffers"))
     schema.n_children > 0 &&
         schema.children == C_NULL &&
         throw(ArgumentError("top-level struct schema has C_NULL children"))
@@ -909,22 +906,27 @@ function importtable(schema_ptr::Ptr{ArrowSchema}, array_ptr::Ptr{ArrowArray})
         throw(ArgumentError("top-level struct array has C_NULL children"))
     names = Symbol[]
     imported_columns = AbstractVector[]
+    top_validity =
+        _nullable_field(schema, array) ?
+        _validity_vector(array, Symbol("top-level struct")) : UInt8[]
+    top_offset = _logical_offset(array)
     for i = 1:schema.n_children
         child_schema_ptr = unsafe_load(schema.children, i)
         child_array_ptr = unsafe_load(array.children, i)
         name, column = _import_column_data(child_schema_ptr, child_array_ptr)
         push!(names, name)
-        offset = _logical_offset(array)
         metadata = _metadata_from_schema_ptr(child_schema_ptr)
         imported_column =
-            offset == 0 ? column :
+            top_offset == 0 ? column :
             begin
-                stop = offset + _logical_length(array)
+                stop = top_offset + _logical_length(array)
                 length(column) >= stop || throw(
                     ArgumentError("top-level struct child $name is too short for offset"),
                 )
-                @view column[(offset + 1):stop]
+                @view column[(top_offset + 1):stop]
             end
+        imported_column =
+            _wrap_imported_row_validity(imported_column, top_validity, top_offset)
         push!(imported_columns, _wrap_imported_metadata(imported_column, metadata))
     end
     return ImportedTable(

@@ -44,6 +44,7 @@ function _set_array_layout!(
     length=nothing,
     null_count=nothing,
     offset=nothing,
+    buffers=nothing,
 )
     array = unsafe_load(array_ptr)
     updated = CData.ArrowArray(
@@ -52,7 +53,7 @@ function _set_array_layout!(
         offset === nothing ? array.offset : Int64(offset),
         array.n_buffers,
         array.n_children,
-        array.buffers,
+        buffers === nothing ? array.buffers : pointer(buffers),
         array.children,
         array.dictionary,
         array.release,
