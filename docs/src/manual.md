@@ -316,6 +316,10 @@ durations, and intervals. Imported tables must be released explicitly with
 C Device, and PyCapsule import paths remain unsupported.
 Imported arrays honor non-zero `ArrowArray.offset` values for the supported
 layouts, including bit-level offsets for validity and boolean buffers.
+Imported C Data schema and field metadata are decoded from
+`ArrowSchema.metadata` and exposed through [`Arrow.getmetadata`](@ref) on the
+imported table and metadata-bearing imported columns without changing borrowed
+data-buffer ownership.
 
 This producer surface supports primitive, boolean, UTF-8 string, binary, UTF-8
 view, binary view, list, fixed-size, map, dense/sparse union, run-end encoded,

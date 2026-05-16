@@ -28,6 +28,39 @@
     @test CData.isreleased(exported)
 end
 
+@testset "imports schema and field metadata" begin
+    source = Arrow.withmetadata(
+        (id=Int32[1, 2, 3], name=["alpha", "beta", "gamma"]);
+        metadata=Dict("dataset" => "cdata", "stage" => "import"),
+        colmetadata=Dict(
+            :id => Dict("semantic.role" => "identifier"),
+            :name => Dict("semantic.role" => "label", "semantic.domain" => "example"),
+        ),
+    )
+    table = Arrow.Table(Arrow.tobuffer(source))
+    exported = CData.exporttable(table)
+    imported = CData.importtable(CData.schema_ptr(exported), CData.array_ptr(exported))
+
+    id = Tables.getcolumn(imported, :id)
+    name = Tables.getcolumn(imported, :name)
+    id_array = _child_array(CData.array(exported), 1)
+    name_array = _child_array(CData.array(exported), 2)
+
+    @test Arrow.getmetadata(imported) == Dict("dataset" => "cdata", "stage" => "import")
+    @test Arrow.getmetadata(id) == Dict("semantic.role" => "identifier")
+    @test Arrow.getmetadata(name) ==
+          Dict("semantic.role" => "label", "semantic.domain" => "example")
+    @test collect(id) == Int32[1, 2, 3]
+    @test collect(name) == ["alpha", "beta", "gamma"]
+    @test pointer(id) == Ptr{Int32}(unsafe_load(id_array.buffers, 2))
+    @test pointer(name.offsets) == Ptr{Int32}(unsafe_load(name_array.buffers, 2))
+    @test pointer(name.data) == Ptr{UInt8}(unsafe_load(name_array.buffers, 3))
+
+    CData.release!(imported)
+    @test CData.isreleased(imported)
+    @test CData.isreleased(exported)
+end
+
 @testset "imports large UTF-8 and binary C Data columns" begin
     large_table = Arrow.Table(Arrow.tobuffer((name=["a", "bb", ""],); largelists=true))
     large_exported = CData.exporttable(large_table)

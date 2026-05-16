@@ -822,7 +822,10 @@ function _import_struct_column(schema::ArrowSchema, array::ArrowArray, name::Sym
     )
 end
 
-function _import_column(schema_ptr::Ptr{ArrowSchema}, array_ptr::Ptr{ArrowArray})
+_metadata_from_schema_ptr(schema_ptr::Ptr{ArrowSchema}) =
+    _metadata_from_ptr(unsafe_load(schema_ptr).metadata)
+
+function _import_column_data(schema_ptr::Ptr{ArrowSchema}, array_ptr::Ptr{ArrowArray})
     schema_ptr == C_NULL && throw(ArgumentError("child ArrowSchema pointer is C_NULL"))
     array_ptr == C_NULL && throw(ArgumentError("child ArrowArray pointer is C_NULL"))
     schema = unsafe_load(schema_ptr)
@@ -859,6 +862,12 @@ function _import_column(schema_ptr::Ptr{ArrowSchema}, array_ptr::Ptr{ArrowArray}
     format == "n" && return name, _import_null_column(array, name)
     format == "b" && return name, _import_bool_column(schema, array, name)
     return name, _import_primitive_column(schema, array, name)
+end
+
+function _import_column(schema_ptr::Ptr{ArrowSchema}, array_ptr::Ptr{ArrowArray})
+    name, column = _import_column_data(schema_ptr, array_ptr)
+    metadata = _metadata_from_schema_ptr(schema_ptr)
+    return name, _wrap_imported_metadata(column, metadata)
 end
 
 """
@@ -901,18 +910,28 @@ function importtable(schema_ptr::Ptr{ArrowSchema}, array_ptr::Ptr{ArrowArray})
     names = Symbol[]
     imported_columns = AbstractVector[]
     for i = 1:schema.n_children
-        name, column =
-            _import_column(unsafe_load(schema.children, i), unsafe_load(array.children, i))
+        child_schema_ptr = unsafe_load(schema.children, i)
+        child_array_ptr = unsafe_load(array.children, i)
+        name, column = _import_column_data(child_schema_ptr, child_array_ptr)
         push!(names, name)
         offset = _logical_offset(array)
-        if offset == 0
-            push!(imported_columns, column)
-        else
-            stop = offset + _logical_length(array)
-            length(column) >= stop ||
-                throw(ArgumentError("top-level struct child $name is too short for offset"))
-            push!(imported_columns, @view column[(offset + 1):stop])
-        end
+        metadata = _metadata_from_schema_ptr(child_schema_ptr)
+        imported_column =
+            offset == 0 ? column :
+            begin
+                stop = offset + _logical_length(array)
+                length(column) >= stop || throw(
+                    ArgumentError("top-level struct child $name is too short for offset"),
+                )
+                @view column[(offset + 1):stop]
+            end
+        push!(imported_columns, _wrap_imported_metadata(imported_column, metadata))
     end
-    return ImportedTable(schema_ptr, array_ptr, names, imported_columns)
+    return ImportedTable(
+        schema_ptr,
+        array_ptr,
+        names,
+        imported_columns,
+        _metadata_from_ptr(schema.metadata),
+    )
 end

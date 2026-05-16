@@ -770,6 +770,45 @@ function Base.getindex(vector::ImportedStructVector, i::Int)
 end
 
 """
+    Arrow.CData.ImportedMetadataVector
+
+Metadata-bearing wrapper for imported C Data columns. Vector operations and
+column-specific fields delegate to the borrowed parent column, while
+[`Arrow.getmetadata`](@ref) returns the imported `ArrowSchema.metadata`.
+"""
+struct ImportedMetadataVector{T,V<:AbstractVector{T},M} <: AbstractVector{T}
+    parent::V
+    metadata::M
+end
+
+function Base.getproperty(vector::ImportedMetadataVector, name::Symbol)
+    if name === :parent || name === :metadata
+        return getfield(vector, name)
+    end
+    return getproperty(getfield(vector, :parent), name)
+end
+
+function Base.propertynames(vector::ImportedMetadataVector, private::Bool=false)
+    parent_names = propertynames(getfield(vector, :parent), private)
+    return private ? (:parent, :metadata, parent_names...) : parent_names
+end
+
+Base.parent(vector::ImportedMetadataVector) = getfield(vector, :parent)
+Base.IndexStyle(::Type{<:ImportedMetadataVector{T,V}}) where {T,V} = Base.IndexStyle(V)
+Base.size(vector::ImportedMetadataVector) = size(parent(vector))
+Base.axes(vector::ImportedMetadataVector) = axes(parent(vector))
+Base.length(vector::ImportedMetadataVector) = length(parent(vector))
+Base.getindex(vector::ImportedMetadataVector, index::Int) = parent(vector)[index]
+Base.iterate(vector::ImportedMetadataVector, state...) = iterate(parent(vector), state...)
+Base.pointer(vector::ImportedMetadataVector, args...) = pointer(parent(vector), args...)
+
+getmetadata(vector::ImportedMetadataVector) = getfield(vector, :metadata)
+
+_wrap_imported_metadata(column::AbstractVector, metadata) =
+    metadata === nothing ? column :
+    ImportedMetadataVector{eltype(column),typeof(column),typeof(metadata)}(column, metadata)
+
+"""
     Arrow.CData.ImportedTable
 
 Borrowed Tables.jl-compatible view imported from Arrow C Data Interface base
@@ -780,7 +819,15 @@ mutable struct ImportedTable
     array_base::Ptr{ArrowArray}
     names::Vector{Symbol}
     columns::Vector{AbstractVector}
+    metadata::Any
 end
+
+ImportedTable(
+    schema_base::Ptr{ArrowSchema},
+    array_base::Ptr{ArrowArray},
+    names::Vector{Symbol},
+    columns::Vector{AbstractVector},
+) = ImportedTable(schema_base, array_base, names, columns, nothing)
 
 schema_ptr(table::ImportedTable) = table.schema_base
 array_ptr(table::ImportedTable) = table.array_base
@@ -788,6 +835,7 @@ schema(table::ImportedTable) = unsafe_load(schema_ptr(table))
 array(table::ImportedTable) = unsafe_load(array_ptr(table))
 isreleased(table::ImportedTable) =
     schema(table).release == C_NULL && array(table).release == C_NULL
+getmetadata(table::ImportedTable) = table.metadata
 
 Tables.istable(::Type{ImportedTable}) = true
 Tables.columnaccess(::Type{ImportedTable}) = true

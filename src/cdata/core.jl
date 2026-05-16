@@ -168,6 +168,35 @@ end
 
 _metadata_ptr(bytes::Vector{UInt8}) = isempty(bytes) ? Ptr{UInt8}(C_NULL) : pointer(bytes)
 
+function _read_metadata_int32(ptr::Ptr{UInt8}, offset::Base.RefValue{Int})
+    value = unsafe_load(Ptr{Int32}(ptr + offset[]))
+    offset[] += sizeof(Int32)
+    return Int(value)
+end
+
+function _read_metadata_string(ptr::Ptr{UInt8}, offset::Base.RefValue{Int})
+    len = _read_metadata_int32(ptr, offset)
+    len >= 0 || throw(ArgumentError("Arrow C Data metadata has negative byte length"))
+    value = len == 0 ? "" : unsafe_string(ptr + offset[], len)
+    offset[] += len
+    return value
+end
+
+function _metadata_from_ptr(ptr::Ptr{UInt8})
+    ptr == C_NULL && return nothing
+    offset = Ref(0)
+    count = _read_metadata_int32(ptr, offset)
+    count >= 0 || throw(ArgumentError("Arrow C Data metadata has negative entry count"))
+    entries = Pair{String,String}[]
+    sizehint!(entries, count)
+    for _ = 1:count
+        key = _read_metadata_string(ptr, offset)
+        value = _read_metadata_string(ptr, offset)
+        push!(entries, key => value)
+    end
+    return toidict(entries)
+end
+
 """
     Arrow.CData.header_path()
 
