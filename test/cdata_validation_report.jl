@@ -84,6 +84,31 @@ function print_measure(label::AbstractString, elapsed_ms, allocated)
     return nothing
 end
 
+function optional_int_limit(name::AbstractString)
+    value = strip(get(ENV, name, ""))
+    isempty(value) && return nothing
+    parsed = tryparse(Int, value)
+    parsed !== nothing && parsed >= 0 ||
+        throw(ArgumentError("$name must be a non-negative integer"))
+    return parsed
+end
+
+function optional_float_limit(name::AbstractString)
+    value = strip(get(ENV, name, ""))
+    isempty(value) && return nothing
+    parsed = tryparse(Float64, value)
+    parsed !== nothing && parsed >= 0 ||
+        throw(ArgumentError("$name must be a non-negative number"))
+    return parsed
+end
+
+function enforce_max(label::AbstractString, value, limit)
+    limit === nothing && return nothing
+    println("$(label)_max=$(limit)")
+    value <= limit || error("$(label)=$(value) exceeded configured max $(limit)")
+    return nothing
+end
+
 function main()
     rows = parse(Int, get(ENV, "ARROW_CDATA_REPORT_ROWS", "100000"))
     rows > 0 || throw(ArgumentError("ARROW_CDATA_REPORT_ROWS must be positive"))
@@ -106,6 +131,12 @@ function main()
     print_measure("scan", scan_ms, scan_alloc)
     println("zero_copy_checks=passed")
     println("checksum=$(sum_value)")
+    enforce_max(
+        "import_alloc_bytes",
+        import_alloc,
+        optional_int_limit("ARROW_CDATA_MAX_IMPORT_ALLOC_BYTES"),
+    )
+    enforce_max("import_ms", import_ms, optional_float_limit("ARROW_CDATA_MAX_IMPORT_MS"))
 
     CData.release!(imported)
     @assert CData.isreleased(imported)
