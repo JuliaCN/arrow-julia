@@ -1,3 +1,19 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 @testset "exports primitive and boolean table columns" begin
     table = Arrow.Table(
         Arrow.tobuffer((
@@ -251,40 +267,42 @@ end
     table = Arrow.Table(Arrow.tobuffer((id=Int32[1, 2], name=["a", "b"])))
     schema_ref = Ref{CData.ArrowSchema}()
     array_ref = Ref{CData.ArrowArray}()
-    schema_out = Base.unsafe_convert(Ptr{CData.ArrowSchema}, schema_ref)
-    array_out = Base.unsafe_convert(Ptr{CData.ArrowArray}, array_ref)
+    GC.@preserve schema_ref array_ref begin
+        schema_out = Base.unsafe_convert(Ptr{CData.ArrowSchema}, schema_ref)
+        array_out = Base.unsafe_convert(Ptr{CData.ArrowArray}, array_ref)
 
-    exported = CData.exporttable!(schema_out, array_out, table)
-    schema = unsafe_load(schema_out)
-    array = unsafe_load(array_out)
+        exported = CData.exporttable!(schema_out, array_out, table)
+        schema = unsafe_load(schema_out)
+        array = unsafe_load(array_out)
 
-    @test CData.schema_ptr(exported) == schema_out
-    @test CData.array_ptr(exported) == array_out
-    @test _cstring(schema.format) == "+s"
-    @test array.length == 2
-    @test schema.release != C_NULL
-    @test array.release != C_NULL
-    @test schema.private_data != C_NULL
-    @test array.private_data != C_NULL
-    @test CData._retained_handle_count() >= before + 6
+        @test CData.schema_ptr(exported) == schema_out
+        @test CData.array_ptr(exported) == array_out
+        @test _cstring(schema.format) == "+s"
+        @test array.length == 2
+        @test schema.release != C_NULL
+        @test array.release != C_NULL
+        @test schema.private_data != C_NULL
+        @test array.private_data != C_NULL
+        @test CData._retained_handle_count() >= before + 6
 
-    ccall(array.release, Cvoid, (Ptr{CData.ArrowArray},), array_out)
-    @test CData.array(exported).release == C_NULL
-    @test !CData.isreleased(exported)
-    ccall(schema.release, Cvoid, (Ptr{CData.ArrowSchema},), schema_out)
-    @test CData.isreleased(exported)
-    CData.release!(exported)
-    @test CData.isreleased(exported)
-    @test CData._retained_handle_count() == before
+        ccall(array.release, Cvoid, (Ptr{CData.ArrowArray},), array_out)
+        @test CData.array(exported).release == C_NULL
+        @test !CData.isreleased(exported)
+        ccall(schema.release, Cvoid, (Ptr{CData.ArrowSchema},), schema_out)
+        @test CData.isreleased(exported)
+        CData.release!(exported)
+        @test CData.isreleased(exported)
+        @test CData._retained_handle_count() == before
 
-    @test_throws ArgumentError CData.exporttable!(
-        Ptr{CData.ArrowSchema}(C_NULL),
-        array_out,
-        table,
-    )
-    @test_throws ArgumentError CData.exporttable!(
-        schema_out,
-        Ptr{CData.ArrowArray}(C_NULL),
-        table,
-    )
+        @test_throws ArgumentError CData.exporttable!(
+            Ptr{CData.ArrowSchema}(C_NULL),
+            array_out,
+            table,
+        )
+        @test_throws ArgumentError CData.exporttable!(
+            schema_out,
+            Ptr{CData.ArrowArray}(C_NULL),
+            table,
+        )
+    end
 end
