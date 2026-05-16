@@ -61,6 +61,32 @@ end
     @test CData.isreleased(exported)
 end
 
+@testset "imports extension metadata as raw storage fallback" begin
+    json_values =
+        Arrow.JSONText{String}[Arrow.JSONText("{\"a\":1}"), Arrow.JSONText("[1,2,3]")]
+    table = Arrow.Table(Arrow.tobuffer((payload=json_values,)); convert=false)
+    exported = CData.exporttable(table)
+    imported = CData.importtable(CData.schema_ptr(exported), CData.array_ptr(exported))
+
+    payload = Tables.getcolumn(imported, :payload)
+    payload_schema = _child_schema(CData.schema(exported), 1)
+    payload_array = _child_array(CData.array(exported), 1)
+    payload_metadata = Arrow.getmetadata(payload)
+
+    @test _cstring(payload_schema.format) == "u"
+    @test payload isa CData.ImportedMetadataVector
+    @test eltype(payload) === String
+    @test collect(payload) == ["{\"a\":1}", "[1,2,3]"]
+    @test payload_metadata["ARROW:extension:name"] == "arrow.json"
+    @test payload_metadata["ARROW:extension:metadata"] == ""
+    @test pointer(payload.offsets) == Ptr{Int32}(unsafe_load(payload_array.buffers, 2))
+    @test pointer(payload.data) == Ptr{UInt8}(unsafe_load(payload_array.buffers, 3))
+
+    CData.release!(imported)
+    @test CData.isreleased(imported)
+    @test CData.isreleased(exported)
+end
+
 @testset "imports large UTF-8 and binary C Data columns" begin
     large_table = Arrow.Table(Arrow.tobuffer((name=["a", "bb", ""],); largelists=true))
     large_exported = CData.exporttable(large_table)

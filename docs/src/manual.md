@@ -312,8 +312,10 @@ over imported child arrays, run-end encoded columns over imported `run_ends`
 and `values` children, struct columns over imported child arrays, null columns,
 and logical scalar columns such as decimals, dates, times, timestamps,
 durations, and intervals. Imported tables must be released explicitly with
-[`Arrow.CData.release!`](@ref). Logical extension reconstruction, C Stream,
-C Device, and PyCapsule import paths remain unsupported.
+[`Arrow.CData.release!`](@ref). C Data import preserves
+`ARROW:extension:name` and `ARROW:extension:metadata` field metadata as a raw
+storage fallback; it does not reconstruct Julia extension wrapper values.
+C Stream, C Device, and PyCapsule import paths remain unsupported.
 Imported arrays honor non-zero `ArrowArray.offset` values for the supported
 layouts, including bit-level offsets for validity and boolean buffers.
 Imported C Data schema and field metadata are decoded from
