@@ -86,6 +86,16 @@ function _compile_cdata_embed_smoke()
     return output
 end
 
+function _active_project_dir()
+    project = Base.active_project()
+    return project === nothing ? (@__DIR__) : dirname(project)
+end
+
+function _current_load_path()
+    separator = Sys.iswindows() ? ";" : ":"
+    return join(Base.LOAD_PATH, separator)
+end
+
 function _run_cdata_embed_smoke(executable)
     julia_lib = _julia_lib_dir()
     julia_private_lib = joinpath(julia_lib, "julia")
@@ -97,8 +107,8 @@ function _run_cdata_embed_smoke(executable)
         Sys.iswindows() ? ";" : ":",
     )
     withenv(
-        "JULIA_PROJECT" => get(ENV, "JULIA_PROJECT", @__DIR__),
-        "JULIA_LOAD_PATH" => get(ENV, "JULIA_LOAD_PATH", "@:@stdlib"),
+        "JULIA_PROJECT" => _active_project_dir(),
+        "JULIA_LOAD_PATH" => _current_load_path(),
         lib_path_var => lib_path,
     ) do
         run(`$executable`)
