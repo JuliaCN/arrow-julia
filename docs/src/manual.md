@@ -328,18 +328,17 @@ validity bitmap to each borrowed column, so invalid record-batch rows read as
 `missing` while child buffers remain borrowed.
 
 This producer surface supports primitive, boolean, UTF-8 string, binary, UTF-8
-view, binary view, list, fixed-size, map, dense/sparse union, run-end encoded,
-struct, and dictionary encoded columns, including schema and field metadata
-encoded on the exported `ArrowSchema` objects. Null columns and logical scalar
-primitive storage use their standard C Data format strings, for example `n`,
-`d:precision,scale`, `tdD`, `ttn`, `tsm:`, and `tDm`. Union columns use
+view, binary view, list, list-view, fixed-size, map, dense/sparse union,
+run-end encoded, struct, and dictionary encoded columns, including schema and
+field metadata encoded on the exported `ArrowSchema` objects. Null columns and
+logical scalar primitive storage use their standard C Data format strings, for
+example `n`, `d:precision,scale`, `tdD`, `ttn`, `tsm:`, and `tDm`. Union columns use
 `+ud:<ids>` for dense unions and `+us:<ids>` for sparse unions. Run-end encoded
 columns use `+r` with `run_ends` and `values` children. Binary and UTF-8 view
 columns use `vz` and `vu`, including the C Data variadic-buffer-lengths buffer.
-List-view import supports `+vl` and `+vL`; `exporttable` does not synthesize
-list-view columns because Arrow.jl does not currently expose a native list-view
-`ArrowVector` producer shape. Unsupported layouts still fail with explicit
-errors. The surface is meant for same-process FFI consumers that can use
+List-view columns use `+vl` and `+vL` through `Arrow.ListView`, which carries
+offsets, sizes, and one child value array. Unsupported layouts still fail with
+explicit errors. The surface is meant for same-process FFI consumers that can use
 standard Arrow C Data Interface pointers. It is not a cross-process or network
 zero-copy transport; use Arrow IPC or Arrow Flight for persistence and
 transport.

@@ -179,6 +179,73 @@ end
     @test unsafe_load(dictionary_array_ptr).release == C_NULL
 end
 
+function _single_column_table(name::Symbol, column::AbstractVector)
+    return Arrow.Table(
+        Symbol[name],
+        Type[eltype(column)],
+        AbstractVector[column],
+        Dict{Symbol,AbstractVector}(name => column),
+        Ref{Arrow.Meta.Schema}(),
+    )
+end
+
+@testset "exports list-view columns" begin
+    item_table = Arrow.Table(Arrow.tobuffer((item=Int32[12, -7, 25, 0, -127, 127, 50],)))
+    item = Tables.getcolumn(item_table, :item)
+    offsets = Int32[0, 7, 3, 0]
+    sizes = Int32[3, 0, 4, 0]
+    validity = Arrow.ValidityBitmap(Union{Missing,Int8}[1, missing, 1, 1])
+    list_view = Arrow.ListView(offsets, sizes, item; validity=validity)
+    table = _single_column_table(:values, list_view)
+    exported = CData.exporttable(table)
+
+    schema = CData.schema(exported)
+    array = CData.array(exported)
+    values_schema = _child_schema(schema, 1)
+    values_array = _child_array(array, 1)
+    item_array = _child_array(values_array, 1)
+
+    @test _cstring(values_schema.format) == "+vl"
+    @test values_schema.flags & CData.ARROW_FLAG_NULLABLE == CData.ARROW_FLAG_NULLABLE
+    @test values_array.n_buffers == 3
+    @test values_array.n_children == 1
+    @test unsafe_load(values_array.buffers, 1) ==
+          Ptr{Cvoid}(pointer(validity.bytes, validity.pos))
+    @test unsafe_load(values_array.buffers, 2) == Ptr{Cvoid}(pointer(offsets))
+    @test unsafe_load(values_array.buffers, 3) == Ptr{Cvoid}(pointer(sizes))
+    @test unsafe_load(item_array.buffers, 2) == Ptr{Cvoid}(pointer(getfield(item, :data)))
+
+    imported = CData.importtable(CData.schema_ptr(exported), CData.array_ptr(exported))
+    values = Tables.getcolumn(imported, :values)
+    @test values isa CData.ImportedListViewVector
+    @test isequal(
+        [ismissing(value) ? missing : collect(value) for value in values],
+        Union{Missing,Vector{Int32}}[
+            Int32[12, -7, 25],
+            missing,
+            Int32[0, -127, 127, 50],
+            Int32[],
+        ],
+    )
+
+    CData.release!(imported)
+    @test CData.isreleased(imported)
+    CData.release!(exported)
+    @test CData.isreleased(exported)
+
+    large = Arrow.ListView(Int64[0, 3], Int64[3, 2], item)
+    large_exported = CData.exporttable(_single_column_table(:values, large))
+    large_schema = _child_schema(CData.schema(large_exported), 1)
+    large_array = _child_array(CData.array(large_exported), 1)
+    @test _cstring(large_schema.format) == "+vL"
+    @test unsafe_load(large_array.buffers, 1) == C_NULL
+    @test unsafe_load(large_array.buffers, 2) == Ptr{Cvoid}(pointer(large.offsets))
+    @test unsafe_load(large_array.buffers, 3) == Ptr{Cvoid}(pointer(large.sizes))
+
+    CData.release!(large_exported)
+    @test CData.isreleased(large_exported)
+end
+
 @testset "exports into caller-owned base structs" begin
     before = CData._retained_handle_count()
     table = Arrow.Table(Arrow.tobuffer((id=Int32[1, 2], name=["a", "b"])))

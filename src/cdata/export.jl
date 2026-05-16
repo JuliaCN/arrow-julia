@@ -98,6 +98,15 @@ function _schema_export_for_column(name::Symbol, column)
             metadata=metadata,
             children=SchemaExport[child_schema],
         )
+    elseif col isa ListView
+        child_schema = _schema_export_for_column(:item, getfield(col, :data))
+        return _schema_export(
+            _list_view_format(col),
+            String(name);
+            flags=flags,
+            metadata=metadata,
+            children=SchemaExport[child_schema],
+        )
     elseif col isa View
         return _schema_export(
             _view_format(col),
@@ -312,6 +321,20 @@ function _array_export_for_column(name::Symbol, column)
             push!(buffers, _list_data_pointer(col))
             return _array_export(col, length(col), nullcount(col), buffers)
         end
+        child_array = _array_export_for_column(:item, getfield(col, :data))
+        return _array_export(
+            col,
+            length(col),
+            nullcount(col),
+            buffers;
+            children=ArrayExport[child_array],
+        )
+    elseif col isa ListView
+        buffers = Ptr{Cvoid}[
+            _validity_pointer(col),
+            _primitive_data_pointer(getfield(col, :offsets)),
+            _primitive_data_pointer(getfield(col, :sizes)),
+        ]
         child_array = _array_export_for_column(:item, getfield(col, :data))
         return _array_export(
             col,

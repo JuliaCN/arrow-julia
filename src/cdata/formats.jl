@@ -164,6 +164,10 @@ function _list_offsets_type(::List{T,O,A}) where {T,O,A}
     return O
 end
 
+function _list_view_offsets_type(::ListView{T,O,A}) where {T,O,A}
+    return O
+end
+
 function _map_offsets_type(::Map{T,O,A}) where {T,O,A}
     return O
 end
@@ -173,6 +177,13 @@ function _offset_width_format(column::List, normal::AbstractString, large::Abstr
     O === Int32 && return normal
     O === Int64 && return large
     throw(ArgumentError("Arrow C Data export does not support list offset type $O"))
+end
+
+function _list_view_format(column::ListView)
+    O = _list_view_offsets_type(column)
+    O === Int32 && return "+vl"
+    O === Int64 && return "+vL"
+    throw(ArgumentError("Arrow C Data export does not support list-view offset type $O"))
 end
 
 function _assert_standard_map_offsets(column::Map)

@@ -44,6 +44,63 @@ end
 
 Base.size(l::List) = (l.ℓ,)
 
+"""
+    Arrow.ListView
+
+An `ArrowVector` where each element is a variable sized list view over a child
+array. Unlike [`Arrow.List`](@ref), list-view elements use independent offsets
+and sizes, allowing repeated or out-of-order spans over the child values.
+"""
+struct ListView{T,O<:Union{Int32,Int64},A<:AbstractVector} <: ArrowVector{T}
+    arrow::Vector{UInt8}
+    validity::ValidityBitmap
+    offsets::Vector{O}
+    sizes::Vector{O}
+    data::A
+    ℓ::Int
+    metadata::Union{Nothing,Base.ImmutableDict{String,String}}
+end
+
+Base.size(l::ListView) = (l.ℓ,)
+
+function _assert_list_view_spans(offsets::Vector{O}, sizes::Vector{O}, data) where {O}
+    length(offsets) == length(sizes) ||
+        throw(ArgumentError("list-view offsets and sizes must have the same length"))
+    for i in eachindex(offsets)
+        offset = Int(@inbounds offsets[i])
+        size = Int(@inbounds sizes[i])
+        offset >= 0 || throw(ArgumentError("list-view offsets must be non-negative"))
+        size >= 0 || throw(ArgumentError("list-view sizes must be non-negative"))
+        offset + size <= length(data) ||
+            throw(ArgumentError("list-view span exceeds child value length"))
+    end
+    return nothing
+end
+
+function ListView(
+    offsets::Vector{O},
+    sizes::Vector{O},
+    data::A;
+    validity::ValidityBitmap=ValidityBitmap(fill(true, length(offsets))),
+    metadata=nothing,
+    arrow::Vector{UInt8}=UInt8[],
+) where {O<:Union{Int32,Int64},A<:AbstractVector}
+    length(validity) == length(offsets) ||
+        throw(ArgumentError("list-view validity length must match offsets length"))
+    _assert_list_view_spans(offsets, sizes, data)
+    item = AbstractVector{eltype(data)}
+    T = nullcount(validity) == 0 ? item : Union{Missing,item}
+    return ListView{T,O,A}(arrow, validity, offsets, sizes, data, length(offsets), metadata)
+end
+
+@propagate_inbounds function Base.getindex(l::ListView, i::Integer)
+    @boundscheck checkbounds(l, i)
+    @inbounds l.validity[i] || return missing
+    @inbounds start = Int(l.offsets[i]) + 1
+    @inbounds stop = start + Int(l.sizes[i]) - 1
+    return @view l.data[start:stop]
+end
+
 @propagate_inbounds function Base.getindex(l::List{T}, i::Integer) where {T}
     @boundscheck checkbounds(l, i)
     @inbounds lo, hi = l.offsets[i]

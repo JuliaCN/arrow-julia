@@ -45,6 +45,7 @@ import ..Arrow:
     Int256,
     Interval,
     List,
+    ListView,
     Map,
     Meta,
     MetadataVector,
