@@ -97,8 +97,8 @@ function _run_cdata_embed_smoke(executable)
         Sys.iswindows() ? ";" : ":",
     )
     withenv(
-        "JULIA_PROJECT" => @__DIR__,
-        "JULIA_LOAD_PATH" => "@:@stdlib",
+        "JULIA_PROJECT" => get(ENV, "JULIA_PROJECT", @__DIR__),
+        "JULIA_LOAD_PATH" => get(ENV, "JULIA_LOAD_PATH", "@:@stdlib"),
         lib_path_var => lib_path,
     ) do
         run(`$executable`)
