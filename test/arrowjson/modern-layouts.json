@@ -1,0 +1,260 @@
+{
+  "schema": {
+    "fields": [
+      {
+        "name": "utf8_view_nullable",
+        "type": {
+          "name": "utf8view"
+        },
+        "nullable": true,
+        "children": []
+      },
+      {
+        "name": "binary_view_nullable",
+        "type": {
+          "name": "binaryview"
+        },
+        "nullable": true,
+        "children": []
+      },
+      {
+        "name": "list_view_nullable",
+        "type": {
+          "name": "listview"
+        },
+        "nullable": true,
+        "children": [
+          {
+            "name": "item",
+            "type": {
+              "name": "int",
+              "isSigned": true,
+              "bitWidth": 32
+            },
+            "nullable": true,
+            "children": []
+          }
+        ]
+      },
+      {
+        "name": "large_list_view_nullable",
+        "type": {
+          "name": "largelistview"
+        },
+        "nullable": true,
+        "children": [
+          {
+            "name": "item",
+            "type": {
+              "name": "int",
+              "isSigned": true,
+              "bitWidth": 32
+            },
+            "nullable": true,
+            "children": []
+          }
+        ]
+      },
+      {
+        "name": "month_day_nano_interval_nullable",
+        "type": {
+          "name": "interval",
+          "unit": "MONTH_DAY_NANO"
+        },
+        "nullable": true,
+        "children": []
+      }
+    ]
+  },
+  "batches": [
+    {
+      "count": 4,
+      "columns": [
+        {
+          "name": "utf8_view_nullable",
+          "count": 4,
+          "VALIDITY": [
+            1,
+            1,
+            0,
+            1
+          ],
+          "VIEWS": [
+            {
+              "SIZE": 5,
+              "INLINED": "alpha"
+            },
+            {
+              "SIZE": 19,
+              "PREFIX_HEX": "65787465",
+              "BUFFER_INDEX": 0,
+              "OFFSET": 0
+            },
+            {
+              "SIZE": 0,
+              "INLINED": ""
+            },
+            {
+              "SIZE": 4,
+              "INLINED": "tail"
+            }
+          ],
+          "VARIADIC_DATA_BUFFERS": [
+            "65787465726E616C2D766965772D76616C7565"
+          ]
+        },
+        {
+          "name": "binary_view_nullable",
+          "count": 4,
+          "VALIDITY": [
+            1,
+            1,
+            0,
+            1
+          ],
+          "VIEWS": [
+            {
+              "SIZE": 4,
+              "INLINED": "DEADBEEF"
+            },
+            {
+              "SIZE": 13,
+              "PREFIX_HEX": "00010203",
+              "BUFFER_INDEX": 0,
+              "OFFSET": 0
+            },
+            {
+              "SIZE": 0,
+              "INLINED": ""
+            },
+            {
+              "SIZE": 0,
+              "INLINED": ""
+            }
+          ],
+          "VARIADIC_DATA_BUFFERS": [
+            "000102030405060708090A0B0C"
+          ]
+        },
+        {
+          "name": "list_view_nullable",
+          "count": 4,
+          "VALIDITY": [
+            1,
+            1,
+            0,
+            1
+          ],
+          "OFFSET": [
+            0,
+            4,
+            0,
+            1
+          ],
+          "SIZE": [
+            3,
+            2,
+            0,
+            4
+          ],
+          "children": [
+            {
+              "name": "item",
+              "count": 6,
+              "VALIDITY": [
+                1,
+                0,
+                1,
+                1,
+                1,
+                1
+              ],
+              "DATA": [
+                10,
+                20,
+                30,
+                40,
+                50,
+                60
+              ]
+            }
+          ]
+        },
+        {
+          "name": "large_list_view_nullable",
+          "count": 4,
+          "VALIDITY": [
+            1,
+            0,
+            1,
+            1
+          ],
+          "OFFSET": [
+            "1",
+            "0",
+            "3",
+            "0"
+          ],
+          "SIZE": [
+            "2",
+            "0",
+            "2",
+            "3"
+          ],
+          "children": [
+            {
+              "name": "item",
+              "count": 5,
+              "VALIDITY": [
+                1,
+                1,
+                1,
+                1,
+                1
+              ],
+              "DATA": [
+                1,
+                2,
+                3,
+                4,
+                5
+              ]
+            }
+          ]
+        },
+        {
+          "name": "month_day_nano_interval_nullable",
+          "count": 4,
+          "VALIDITY": [
+            1,
+            0,
+            1,
+            1
+          ],
+          "DATA": [
+            {
+              "months": 1,
+              "days": 2,
+              "nanoseconds": 3000
+            },
+            {
+              "months": 0,
+              "days": 0,
+              "nanoseconds": 0
+            },
+            {
+              "months": -3,
+              "days": 10,
+              "nanoseconds": 987654321
+            },
+            {
+              "months": 0,
+              "days": -1,
+              "nanoseconds": -500
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

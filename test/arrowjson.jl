@@ -140,13 +140,16 @@ end
 
 Type(::Base.Type{Arrow.Interval{U,T}}) where {U,T} = Interval(
     "interval",
-    U == Arrow.Meta.IntervalUnit.YEAR_MONTH ? "YEAR_MONTH" : "DAY_TIME",
+    U == Arrow.Meta.IntervalUnit.YEAR_MONTH ? "YEAR_MONTH" :
+    U == Arrow.Meta.IntervalUnit.DAY_TIME ? "DAY_TIME" : "MONTH_DAY_NANO",
 )
 StructTypes.StructType(::Base.Type{Interval}) = StructTypes.Struct()
 juliatype(f, x::Interval) = Arrow.Interval{
     x.unit == "YEAR_MONTH" ? Arrow.Meta.IntervalUnit.YEAR_MONTH :
-    Arrow.Meta.IntervalUnit.DAY_TIME,
-    x.unit == "YEAR_MONTH" ? Int32 : Int64,
+    x.unit == "DAY_TIME" ? Arrow.Meta.IntervalUnit.DAY_TIME :
+    Arrow.Meta.IntervalUnit.MONTH_DAY_NANO,
+    x.unit == "YEAR_MONTH" ? Int32 :
+    x.unit == "DAY_TIME" ? Int64 : Arrow.MonthDayNanoInterval,
 }
 
 struct UnionT <: Type
@@ -181,6 +184,20 @@ end
 
 StructTypes.StructType(::Base.Type{LargeList}) = StructTypes.Struct()
 juliatype(f, x::LargeList) = Vector{juliatype(f.children[1])}
+
+struct ListView <: Type
+    name::String
+end
+
+StructTypes.StructType(::Base.Type{ListView}) = StructTypes.Struct()
+juliatype(f, x::ListView) = Vector{juliatype(f.children[1])}
+
+struct LargeListView <: Type
+    name::String
+end
+
+StructTypes.StructType(::Base.Type{LargeListView}) = StructTypes.Struct()
+juliatype(f, x::LargeListView) = Vector{juliatype(f.children[1])}
 
 struct FixedSizeList <: Type
     name::String
@@ -244,6 +261,13 @@ end
 StructTypes.StructType(::Base.Type{LargeUtf8}) = StructTypes.Struct()
 juliatype(f, x::LargeUtf8) = String
 
+struct Utf8View <: Type
+    name::String
+end
+
+StructTypes.StructType(::Base.Type{Utf8View}) = StructTypes.Struct()
+juliatype(f, x::Utf8View) = String
+
 struct Binary <: Type
     name::String
 end
@@ -260,6 +284,13 @@ end
 StructTypes.StructType(::Base.Type{LargeBinary}) = StructTypes.Struct()
 juliatype(f, x::LargeBinary) = Vector{UInt8}
 
+struct BinaryView <: Type
+    name::String
+end
+
+StructTypes.StructType(::Base.Type{BinaryView}) = StructTypes.Struct()
+juliatype(f, x::BinaryView) = Vector{UInt8}
+
 struct Bool <: Type
     name::String
 end
@@ -267,6 +298,13 @@ end
 Type(::Base.Type{Base.Bool}) = Bool("bool")
 StructTypes.StructType(::Base.Type{Bool}) = StructTypes.Struct()
 juliatype(f, x::Bool) = Base.Bool
+
+struct RunEndEncoded <: Type
+    name::String
+end
+
+StructTypes.StructType(::Base.Type{RunEndEncoded}) = StructTypes.Struct()
+juliatype(f, x::RunEndEncoded) = juliatype(f.children[2])
 
 StructTypes.subtypekey(::Base.Type{Type}) = :name
 
@@ -283,15 +321,20 @@ const SUBTYPES = @eval (
     union=UnionT,
     list=List,
     largelist=LargeList,
+    listview=ListView,
+    largelistview=LargeListView,
     fixedsizelist=FixedSizeList,
     ($(Symbol("struct")))=Struct,
     map=Map,
     null=Null,
     utf8=Utf8,
     largeutf8=LargeUtf8,
+    utf8view=Utf8View,
     binary=Binary,
     largebinary=LargeBinary,
+    binaryview=BinaryView,
     bool=Bool,
+    runendencoded=RunEndEncoded,
 )
 
 StructTypes.subtypes(::Base.Type{Type}) = SUBTYPES
@@ -354,17 +397,42 @@ end
 Base.size(x::Offsets) = size(x.data)
 Base.getindex(x::Offsets, i::Base.Int) = getindex(x.data, i)
 
+mutable struct ViewData
+    SIZE::Int64
+    INLINED::Union{Nothing,String}
+    PREFIX_HEX::Union{Nothing,String}
+    BUFFER_INDEX::Union{Nothing,Int64}
+    OFFSET::Union{Nothing,Int64}
+end
+
+ViewData() = ViewData(0, nothing, nothing, nothing, nothing)
+StructTypes.StructType(::Base.Type{ViewData}) = StructTypes.Mutable()
+
 mutable struct FieldData
     name::String
     count::Int64
     VALIDITY::Union{Nothing,Vector{Int8}}
     OFFSET::Union{Nothing,Offsets}
     TYPE_ID::Union{Nothing,Vector{Int8}}
+    SIZE::Union{Nothing,Offsets}
+    VIEWS::Union{Nothing,Vector{ViewData}}
+    VARIADIC_DATA_BUFFERS::Union{Nothing,Vector{String}}
     DATA::Union{Nothing,Vector{Any}}
     children::Vector{FieldData}
 end
 
-FieldData() = FieldData("", 0, nothing, nothing, nothing, nothing, FieldData[])
+FieldData() = FieldData(
+    "",
+    0,
+    nothing,
+    nothing,
+    nothing,
+    nothing,
+    nothing,
+    nothing,
+    nothing,
+    FieldData[],
+)
 StructTypes.StructType(::Base.Type{FieldData}) = StructTypes.Mutable()
 
 function FieldData(nm, ::Base.Type{T}, col, dictencodings) where {T}
@@ -382,8 +450,8 @@ function FieldData(nm, ::Base.Type{T}, col, dictencodings) where {T}
         return FieldData(nm, IT, col, nothing)
     end
     S = Arrow.maybemissing(T)
-    len = Arrow._length(col)
-    VALIDITY = OFFSET = TYPE_ID = DATA = nothing
+    len = length(col)
+    VALIDITY = OFFSET = TYPE_ID = SIZE = VIEWS = VARIADIC_DATA_BUFFERS = DATA = nothing
     children = FieldData[]
     if S <: Pair
         return FieldData(
@@ -395,7 +463,9 @@ function FieldData(nm, ::Base.Type{T}, col, dictencodings) where {T}
         # VALIDITY
         VALIDITY = Int8[!ismissing(x) for x in col]
         # OFFSET
-        if S <: Vector || S == String
+        if S <: Vector{UInt8}
+            DATA = [ismissing(x) ? "" : _hexstring(x) for x in col]
+        elseif S <: Vector || S == String
             lenfun =
                 S == String ? x -> ismissing(x) ? 0 : sizeof(x) :
                 x -> ismissing(x) ? 0 : length(x)
@@ -420,8 +490,7 @@ function FieldData(nm, ::Base.Type{T}, col, dictencodings) where {T}
         elseif S <: NTuple
             if Arrow.ArrowTypes.gettype(Arrow.ArrowTypes.ArrowKind(S)) == UInt8
                 DATA = [
-                    ismissing(x) ? Arrow.ArrowTypes.default(S) : String(collect(x)) for
-                    x in col
+                    ismissing(x) ? _hexstring(Arrow.ArrowTypes.default(S)) : _hexstring(x) for x in col
                 ]
             else
                 push!(
@@ -500,7 +569,18 @@ function FieldData(nm, ::Base.Type{T}, col, dictencodings) where {T}
             )
         end
     end
-    return FieldData(nm, len, VALIDITY, OFFSET, TYPE_ID, DATA, children)
+    return FieldData(
+        nm,
+        len,
+        VALIDITY,
+        OFFSET,
+        TYPE_ID,
+        SIZE,
+        VIEWS,
+        VARIADIC_DATA_BUFFERS,
+        DATA,
+        children,
+    )
 end
 
 mutable struct RecordBatch
@@ -592,6 +672,57 @@ end
 ArrowArray(f::Field, fd::FieldData, d) = ArrowArray{juliatype(f)}(f, fd, d)
 Base.size(x::ArrowArray) = (x.fielddata.count,)
 
+_jsonint(x::Integer) = Base.Int(x)
+_jsonint(x::AbstractString) = parse(Base.Int, x)
+_offsetvalue(x) = _jsonint(x)
+_jsonfield(x::AbstractDict, key::Symbol) = haskey(x, String(key)) ? x[String(key)] : x[key]
+_jsonfield(x, key::Symbol) = getproperty(x, key)
+
+function _hexbytes(hex::AbstractString)
+    bytes = Vector{UInt8}(undef, length(hex) ÷ 2)
+    for (out, idx) in enumerate(1:2:length(hex))
+        bytes[out] = parse(UInt8, hex[idx:(idx + 1)]; base=16)
+    end
+    return bytes
+end
+
+_hexstring(bytes) = uppercase(bytes2hex(collect(UInt8, bytes)))
+
+function _utf8viewvalue(view::ViewData, buffers::Union{Nothing,Vector{String}})
+    view.INLINED !== nothing && return view.INLINED
+    buffer = _hexbytes(buffers[view.BUFFER_INDEX + 1])
+    first = view.OFFSET + 1
+    return String(buffer[first:(first + view.SIZE - 1)])
+end
+
+function _binaryviewvalue(view::ViewData, buffers::Union{Nothing,Vector{String}})
+    if view.INLINED !== nothing
+        return _hexbytes(view.INLINED)
+    end
+    buffer = _hexbytes(buffers[view.BUFFER_INDEX + 1])
+    first = view.OFFSET + 1
+    return buffer[first:(first + view.SIZE - 1)]
+end
+
+function _intervalvalue(::Base.Type{S}, value) where {S}
+    if S <: Arrow.Interval{Arrow.Meta.IntervalUnit.MONTH_DAY_NANO}
+        return S(
+            Arrow.MonthDayNanoInterval(
+                _jsonint(_jsonfield(value, :months)),
+                _jsonint(_jsonfield(value, :days)),
+                _jsonint(_jsonfield(value, :nanoseconds)),
+            ),
+        )
+    elseif S <: Arrow.Interval{Arrow.Meta.IntervalUnit.DAY_TIME} &&
+           hasproperty(value, :days)
+        days = Int32(_jsonint(_jsonfield(value, :days)))
+        milliseconds = Int32(_jsonint(_jsonfield(value, :milliseconds)))
+        return S(reinterpret(Int64, [days, milliseconds])[1])
+    else
+        return S(_jsonint(value))
+    end
+end
+
 function Base.getindex(x::ArrowArray{T}, i::Base.Int) where {T}
     @boundscheck checkbounds(x, i)
     S = Base.nonmissingtype(T)
@@ -605,6 +736,11 @@ function Base.getindex(x::ArrowArray{T}, i::Base.Int) where {T}
     end
     if T === Missing
         return missing
+    elseif x.field.type isa RunEndEncoded
+        run_ends = ArrowArray(x.field.children[1], x.fielddata.children[1], x.dictionaries)
+        values = ArrowArray(x.field.children[2], x.fielddata.children[2], x.dictionaries)
+        physical = searchsortedfirst(run_ends, i)
+        return values[physical]
     elseif S <: UnionT
         U = eltype(S)
         tids = Arrow.typeids(S) === nothing ? (0:fieldcount(U)) : Arrow.typeids(S)
@@ -626,25 +762,42 @@ function Base.getindex(x::ArrowArray{T}, i::Base.Int) where {T}
     end
     x.fielddata.VALIDITY[i] == 0 && return missing
     if S <: Vector{UInt8}
-        return copy(codeunits(x.fielddata.DATA[i]))
+        x.field.type isa BinaryView &&
+            return _binaryviewvalue(x.fielddata.VIEWS[i], x.fielddata.VARIADIC_DATA_BUFFERS)
+        return _hexbytes(x.fielddata.DATA[i])
     elseif S <: String
+        x.field.type isa Utf8View &&
+            return _utf8viewvalue(x.fielddata.VIEWS[i], x.fielddata.VARIADIC_DATA_BUFFERS)
         return x.fielddata.DATA[i]
     elseif S <: Vector
         offs = x.fielddata.OFFSET
+        if x.field.type isa Union{ListView,LargeListView}
+            A = ArrowArray{eltype(S)}(
+                x.field.children[1],
+                x.fielddata.children[1],
+                x.dictionaries,
+            )
+            first = _offsetvalue(offs[i]) + 1
+            last = first + _offsetvalue(x.fielddata.SIZE[i]) - 1
+            return A[first:last]
+        end
         A = ArrowArray{eltype(S)}(
             x.field.children[1],
             x.fielddata.children[1],
             x.dictionaries,
         )
-        return A[(offs[i] + 1):offs[i + 1]]
+        return A[(_offsetvalue(offs[i]) + 1):_offsetvalue(offs[i + 1])]
     elseif S <: Dict
         offs = x.fielddata.OFFSET
         A = ArrowArray(x.field.children[1], x.fielddata.children[1], x.dictionaries)
-        return Dict(y.key => y.value for y in A[(offs[i] + 1):offs[i + 1]])
+        return Dict(
+            y.key => y.value for
+            y in A[(_offsetvalue(offs[i]) + 1):_offsetvalue(offs[i + 1])]
+        )
     elseif S <: Tuple
         if Arrow.ArrowTypes.gettype(Arrow.ArrowTypes.ArrowKind(S)) == UInt8
             A = x.fielddata.DATA
-            return Tuple(map(UInt8, collect(A[i][1:(x.field.type.byteWidth)])))
+            return Tuple(_hexbytes(A[i])[1:(x.field.type.byteWidth)])
         else
             sz = x.field.type.listSize
             A = ArrowArray{Arrow.ArrowTypes.gettype(Arrow.ArrowTypes.ArrowKind(S))}(
@@ -671,6 +824,8 @@ function Base.getindex(x::ArrowArray{T}, i::Base.Int) where {T}
         return Arrow.storagetype(S) == Int32 ? S(val) : S(parse(Int64, val))
     elseif S <: Arrow.Timestamp
         return S(parse(Int64, x.fielddata.DATA[i]))
+    elseif S <: Arrow.Interval
+        return _intervalvalue(S, x.fielddata.DATA[i])
     else
         return S(x.fielddata.DATA[i])
     end
@@ -684,11 +839,24 @@ function DataFile(source)
     dictionaries = DictionaryBatch[]
     dictencodings = Dict{String,Tuple{Base.Type,DictEncoding}}()
     dictid = Ref(0)
-    for (i, tbl1) in Tables.partitions(source)
-        tbl = Arrow.toarrowtable(Table.Columns(tbl1))
+    for (i, tbl1) in enumerate(Tables.partitions(source))
+        tbl = Arrow.toarrowtable(
+            Tables.Columns(tbl1),
+            Dict{Int64,Any}(),
+            false,
+            nothing,
+            true,
+            false,
+            false,
+            Arrow.DEFAULT_MAX_DEPTH,
+            nothing,
+            nothing,
+        )
         if i == 1
             sch = Tables.schema(tbl)
-            for (nm, T, col) in zip(sch.names, sch.types, tbl)
+            for (column_index, nm) in enumerate(sch.names)
+                T = sch.types[column_index]
+                col = Tables.getcolumn(tbl, column_index)
                 if col isa Arrow.DictEncode
                     id = dictid[]
                     dictid[] += 1
@@ -706,7 +874,9 @@ function DataFile(source)
         # build record batch
         len = Tables.rowcount(tbl)
         columns = FieldData[]
-        for (nm, T, col) in zip(sch.names, sch.types, tbl)
+        for (column_index, nm) in enumerate(sch.names)
+            T = sch.types[column_index]
+            col = Tables.getcolumn(tbl, column_index)
             push!(columns, FieldData(String(nm), T, col, dictencodings))
         end
         push!(batches, RecordBatch(len, columns))

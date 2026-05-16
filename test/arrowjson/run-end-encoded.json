@@ -1,0 +1,80 @@
+{
+  "schema": {
+    "fields": [
+      {
+        "name": "run_end_encoded_nullable",
+        "type": {
+          "name": "runendencoded"
+        },
+        "nullable": true,
+        "children": [
+          {
+            "name": "run_ends",
+            "type": {
+              "name": "int",
+              "isSigned": true,
+              "bitWidth": 16
+            },
+            "nullable": false,
+            "children": []
+          },
+          {
+            "name": "values",
+            "type": {
+              "name": "utf8"
+            },
+            "nullable": true,
+            "children": []
+          }
+        ]
+      }
+    ]
+  },
+  "batches": [
+    {
+      "count": 7,
+      "columns": [
+        {
+          "name": "run_end_encoded_nullable",
+          "count": 7,
+          "children": [
+            {
+              "name": "run_ends",
+              "count": 3,
+              "VALIDITY": [
+                1,
+                1,
+                1
+              ],
+              "DATA": [
+                2,
+                5,
+                7
+              ]
+            },
+            {
+              "name": "values",
+              "count": 3,
+              "VALIDITY": [
+                1,
+                0,
+                1
+              ],
+              "OFFSET": [
+                0,
+                2,
+                2,
+                4
+              ],
+              "DATA": [
+                "aa",
+                "",
+                "cc"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
