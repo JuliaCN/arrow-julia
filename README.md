@@ -69,13 +69,13 @@ including support for:
   * Lightweight schema/field metadata overlays via `Arrow.withmetadata(...)` for Tables.jl-compatible sources before serialization
   * Base Julia `Enum` logical types via the `JuliaLang.Enum` extension label, with native Julia roundtrips back to the original enum type while `convert=false` and non-Julia consumers still see the primitive storage type
   * View-backed Utf8/Binary columns, including recovery from under-reported variadic buffer counts by inferring the required external buffers from valid view elements
+  * Run-End Encoded arrays, including native `Arrow.RunEndEncoded` IPC read/write roundtrips and compressed child-buffer payloads
   * Streaming, file, record batch, and replacement and isdelta dictionary messages
   * In-process C Data Interface export and import through `Arrow.CData`, including nested, dictionary, union, run-end encoded, logical scalar, metadata, and release-governed same-process zero-copy surfaces
 
 It currently doesn't include support for:
   * Tensor or sparse tensor IPC payload semantics; Arrow.jl now recognizes those message headers explicitly and rejects them with precise errors instead of falling through to a generic unsupported-message path
   * C Stream Interface, C Device Interface, or PyCapsule protocol surfaces
-  * Writing Run-End Encoded arrays; Arrow.jl now reads REE arrays and exposes them as read-only vectors, but still rejects REE on write paths
 
 Flight RPC status:
   * Experimental `Arrow.Flight` support is available in-tree

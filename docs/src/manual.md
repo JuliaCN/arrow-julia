@@ -104,9 +104,10 @@ One note on performance: when writing `TimeZones.ZonedDateTime` columns to the a
 as the column has `ZonedDateTime` elements that all share a common timezone. This ensures the writing process can know "upfront" which timezone will be encoded and is thus much more
 efficient and performant.
 
-Run-End Encoded arrays are now supported on the read path. Arrow.jl exposes REE
-columns as read-only vectors and continues to reject REE on write paths, rather
-than attempting a partial or lossy re-encoding.
+Run-End Encoded arrays are supported on read and write paths when callers use
+native `Arrow.RunEndEncoded` columns. Arrow.jl preserves the official REE
+layout with bufferless parent arrays and `run_ends` / `values` children; it
+does not automatically run-end encode ordinary Julia vectors.
 
 Tensor and SparseTensor IPC messages are still unsupported, but Arrow.jl now
 recognizes those message headers explicitly and rejects them with precise

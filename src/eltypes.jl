@@ -24,7 +24,6 @@ finaljuliatype(T) = T
 finaljuliatype(::Type{Missing}) = Missing
 finaljuliatype(::Type{Union{T,Missing}}) where {T} = Union{Missing,finaljuliatype(T)}
 
-const RUN_END_ENCODED_UNSUPPORTED = "Run-End Encoded arrays are not supported yet"
 const BOOL8_SYMBOL = Symbol("arrow.bool8")
 const JSON_SYMBOL = Symbol("arrow.json")
 const OPAQUE_SYMBOL = Symbol("arrow.opaque")
@@ -761,6 +760,12 @@ end
 
 function juliaeltype(f::Meta.Field, x::Meta.RunEndEncoded, convert)
     return juliaeltype(f.children[2], buildmetadata(f.children[2]), convert)
+end
+
+function arrowtype(b, x::RunEndEncoded)
+    children = [fieldoffset(b, "run_ends", x.run_ends), fieldoffset(b, "values", x.values)]
+    Meta.runEndEncodedStart(b)
+    return Meta.RunEndEncoded, Meta.runEndEncodedEnd(b), children
 end
 
 function arrowtype(b, ::Type{Interval{U,T}}) where {U,T}

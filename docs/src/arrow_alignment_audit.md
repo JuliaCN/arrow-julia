@@ -68,7 +68,7 @@ Status labels:
 | ARROW-AUDIT-007 | ListView and LargeListView | Support offsets, sizes, and child arrays for out-of-order or repeated spans. | Covered for native `Arrow.ListView` IPC read/write, metadata mapping, C Data export/import, and integration JSON parser coverage. | Ordinary nested Julia vectors intentionally continue to write as `List` / `LargeList`; callers use native `Arrow.ListView` to request list-view physical layout. | `src/arraytypes/list.jl`, `src/table.jl`, `src/cdata/export.jl`, `src/cdata/import.jl`, `test/runtests.jl`, `test/arrowjson/modern-layouts.json`, `test/cdata/export_tests.jl`. | P1 | Keep native ListView IPC and C Data roundtrip coverage active. |
 | ARROW-AUDIT-008 | Struct, Map, DenseUnion, SparseUnion | Preserve nested fields, map entries, union type ids, and dense offsets. | Covered for normal package use and C Data export/import. | Large-offset maps remain rejected in C Data because the C Data map format has no offset-width variant. | `src/arraytypes/struct.jl`, `src/arraytypes/map.jl`, `src/arraytypes/union.jl`, `src/cdata/export.jl`, `docs/src/cdata_alignment.md`. | P0 | Keep explicit rejection for C Data large-offset maps and document it only inside the C Data boundary. |
 | ARROW-AUDIT-009 | Dictionary encoding and dictionary messages | Support dictionary arrays, replacement dictionaries, and `isDelta` dictionary messages. | Covered. | No known drift in the audited surface. | `src/arraytypes/dictencoded.jl`, `src/write.jl`, `test/runtests.jl`, `test/arrowjson/dictionary.json`. | P0 | Keep replacement and delta dictionary fixtures. |
-| ARROW-AUDIT-010 | Run-End Encoded layout | Read REE arrays and preserve the `run_ends` / `values` child contract. | Partial. Read path, C Data export/import, and integration JSON value materialization are covered; IPC write paths reject REE. | Full support remains incomplete until a writer representation and roundtrip policy are accepted. | `src/arraytypes/runendencoded.jl`, `src/table.jl`, `test/run_end_encoded_small.arrow`, `test/runtests.jl`, `test/arrowjson/run-end-encoded.json`, `test/cdata/import_nested_tests.jl`. | P1 | Decide whether to implement REE writing or keep explicit read-only support as the documented policy. |
+| ARROW-AUDIT-010 | Run-End Encoded layout | Read and write REE arrays while preserving the bufferless parent and `run_ends` / `values` child contract. | Covered for native `Arrow.RunEndEncoded` IPC read/write, C Data export/import, and integration JSON value materialization. | Ordinary Julia vectors intentionally do not auto-encode to REE; callers use native `Arrow.RunEndEncoded` to request this physical layout. | `src/arraytypes/runendencoded.jl`, `src/eltypes.jl`, `src/table.jl`, `test/run_end_encoded_small.arrow`, `test/runtests.jl`, `test/arrowjson/run-end-encoded.json`, `test/cdata/import_nested_tests.jl`. | P1 | Keep native REE IPC, C Data, and integration JSON coverage active. |
 | ARROW-AUDIT-011 | IPC stream, file, record batch, and dictionary messages | Read and write Arrow IPC stream/file payloads, schema messages, record batches, dictionary batches, and end markers. | Covered for table-oriented IPC. | Tensor/SparseTensor messages are explicitly outside this row and tracked separately. | `src/table.jl`, `src/write.jl`, `src/metadata/Message.jl`, `test/runtests.jl`, `test/integrationtest.jl`. | P0 | Keep IPC tests and avoid widening this row to tensor payloads. |
 | ARROW-AUDIT-012 | IPC compression and buffer alignment | Support compressed IPC buffers and alignment rules for serialized messages. | Covered for LZ4 and ZSTD. | No known drift in the audited surface. | `src/table.jl`, `src/write.jl`, `test/java_compress_len_neg_one.arrow`, `test/java_compressed_zero_length.arrow`, `test/runtests.jl`. | P1 | Keep edge-case fixtures for zero-length and negative compressed lengths. |
 | ARROW-AUDIT-013 | Tensor and SparseTensor IPC messages | Optional non-columnar IPC messages should be recognized if present. | Explicitly rejected. Arrow.jl recognizes these message headers and reports precise unsupported-message errors. | These structures are not required for a columnar implementation, but they are part of the broader Arrow spec surface. | `src/metadata/Message.jl`, `src/table.jl`, `docs/src/manual.md`, `README.md`. | P2 | Decide whether Arrow.jl should implement standalone tensor readers/writers or keep explicit rejection. |
@@ -102,8 +102,8 @@ Status labels:
    next add canonical extension JSON fixtures and decide the Archery parity /
    physical-layout preservation boundary.
 3. Core format decision:
-   decide whether REE writing and standalone Tensor/SparseTensor messages are
-   in scope for Arrow.jl or explicitly documented as read-only / unsupported.
+   decide whether standalone Tensor/SparseTensor messages are in scope for
+   Arrow.jl or explicitly documented as unsupported.
 4. Canonical extension closure:
    decide whether tensor extensions and `arrow.parquet.variant` remain
    storage-preserving passthroughs or receive semantic Julia wrappers.
@@ -128,8 +128,8 @@ The next implementation plan should start with:
 
 | Order | ID | Why |
 | --- | --- | --- |
-| 1 | ARROW-AUDIT-010 | REE is visible to users as read-only; write support or policy must be explicit. |
-| 2 | ARROW-AUDIT-020 | Security validation is the highest-risk surface before expanding interop claims. |
-| 3 | ARROW-AUDIT-021 | Integration coverage still needs canonical extension fixtures and an Archery parity decision. |
-| 4 | ARROW-AUDIT-026 | Flight has substantial implementation but needs cancellation, poll, handshake, and client-boundary closure. |
-| 5 | ARROW-AUDIT-017 | Tensor extension wrappers remain a documented semantic-policy gap. |
+| 1 | ARROW-AUDIT-020 | Security validation is the highest-risk surface before expanding interop claims. |
+| 2 | ARROW-AUDIT-021 | Integration coverage still needs canonical extension fixtures and an Archery parity decision. |
+| 3 | ARROW-AUDIT-026 | Flight has substantial implementation but needs cancellation, poll, handshake, and client-boundary closure. |
+| 4 | ARROW-AUDIT-017 | Tensor extension wrappers remain a documented semantic-policy gap. |
+| 5 | ARROW-AUDIT-018 | Parquet Variant and opaque extension policies still need deeper producer/semantic decisions. |

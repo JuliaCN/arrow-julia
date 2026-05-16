@@ -448,6 +448,65 @@ end
                   ArrowTypes.RunEndEncodedLayout{Int16}()
         end
 
+        @testset "Run-End Encoded IPC roundtrip" begin
+            function native_run_end_encoded_table(column)
+                return Arrow.Table(
+                    Symbol[:encoded],
+                    Type[eltype(column)],
+                    AbstractVector[column],
+                    Dict{Symbol,AbstractVector}(:encoded => column),
+                    Ref{Arrow.Meta.Schema}(),
+                )
+            end
+
+            logical_values = Union{Missing,Int32}[10, 10, missing, missing, missing, -5]
+            encoded = Arrow.RunEndEncoded(
+                Int16[2, 5, 6],
+                Union{Missing,Int32}[10, missing, -5],
+                length(logical_values),
+                nothing,
+            )
+
+            stream = Arrow.Stream(
+                Arrow.tobuffer(native_run_end_encoded_table(encoded); ntasks=0);
+                convert=false,
+            )
+            Tables.schema(stream)
+            field = only(getfield(stream, :schema).fields)
+            @test field.type isa Arrow.Meta.RunEndEncoded
+            @test String(field.children[1].name) == "run_ends"
+            @test String(field.children[2].name) == "values"
+            @test ArrowTypes.physicallayout(field) ==
+                  ArrowTypes.RunEndEncodedLayout{Int16}()
+
+            table = first(stream)
+            values = Tables.getcolumn(table, :encoded)
+            @test values isa Arrow.RunEndEncoded
+            @test eltype(values.run_ends) === Int16
+            @test collect(values.run_ends) == Int16[2, 5, 6]
+            @test isequal(collect(values), logical_values)
+
+            compressed_table = Arrow.Table(
+                Arrow.tobuffer(
+                    native_run_end_encoded_table(encoded);
+                    ntasks=0,
+                    compress=:lz4,
+                );
+                convert=false,
+            )
+            compressed_values = Tables.getcolumn(compressed_table, :encoded)
+            @test compressed_values isa Arrow.RunEndEncoded
+            @test isequal(collect(compressed_values), logical_values)
+
+            @test_throws ArgumentError Arrow.RunEndEncoded(UInt8[1], Int32[10], 1, nothing)
+            @test_throws ArgumentError Arrow.RunEndEncoded(
+                Union{Missing,Int16}[missing],
+                Int32[10],
+                1,
+                nothing,
+            )
+        end
+
         @testset "ListView IPC roundtrip" begin
             function native_list_view_table(column)
                 return Arrow.Table(
@@ -1099,10 +1158,13 @@ end
             @test length(batches) == 1
             @test collect(batches[1].x) == expected
 
-            @test_throws ArgumentError(Arrow.RUN_END_ENCODED_UNSUPPORTED) Arrow.tobuffer(tt)
-            @test_throws ArgumentError(Arrow.RUN_END_ENCODED_UNSUPPORTED) Arrow.tobuffer((
-                x=tt.x,
-            ))
+            roundtrip = Arrow.Table(Arrow.tobuffer(tt); convert=false)
+            @test roundtrip.x isa Arrow.RunEndEncoded
+            @test collect(roundtrip.x) == expected
+
+            column_roundtrip = Arrow.Table(Arrow.tobuffer((x=tt.x,)); convert=false)
+            @test column_roundtrip.x isa Arrow.RunEndEncoded
+            @test collect(column_roundtrip.x) == expected
         end
 
         @testset "canonical bool8/json/opaque" begin
