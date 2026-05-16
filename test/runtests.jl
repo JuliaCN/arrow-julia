@@ -40,6 +40,7 @@ include(joinpath(@__DIR__, "testtables.jl"))
 include(joinpath(@__DIR__, "testappend.jl"))
 include(joinpath(@__DIR__, "integrationtest.jl"))
 include(joinpath(@__DIR__, "dates.jl"))
+include(joinpath(@__DIR__, "cdata.jl"))
 include(joinpath(@__DIR__, "flight.jl"))
 
 struct CustomStruct

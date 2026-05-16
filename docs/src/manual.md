@@ -276,6 +276,89 @@ Arrow.jl now treats `Arrow.Flight` as a protocol-plus-server package surface.
 Package-owned interop and performance proofs run through external Python
 clients instead of an in-package Julia Flight gRPC client runtime.
 
+### C Data Interface
+
+Arrow.jl provides a first in-process producer surface for the Apache Arrow C
+Data Interface through [`Arrow.CData.exporttable`](@ref). The helper exports an
+`Arrow.Table` as a top-level struct array with `ArrowSchema` and `ArrowArray`
+base structs. The returned owner object keeps schema strings, child structs,
+buffer pointer arrays, and the source Julia Arrow buffers alive until
+[`Arrow.CData.release!`](@ref) is called or an external C consumer calls the
+base structs' `release` callbacks.
+
+Callers that already own C Data base struct storage can use
+[`Arrow.CData.exporttable!`](@ref) with `ArrowSchema*` and `ArrowArray*`
+output pointers. The returned owner object still keeps Julia-owned member
+memory alive, while [`Arrow.CData.schema_ptr`](@ref) and
+[`Arrow.CData.array_ptr`](@ref) refer to the caller-owned base structs.
+The package also ships `include/arrow_julia_cdata.h`; use
+[`Arrow.CData.header_path`](@ref) to locate that C consumer header from an
+installed package.
+The focused C Data tests also compile a standalone C executable that embeds
+Julia, loads Arrow.jl, exports into C-owned `ArrowSchema` / `ArrowArray`
+structs, validates them from C, and releases them from C. That smoke is an
+integration proof for the low-level ABI; Arrow.jl does not yet provide a
+stable high-level C table-construction or embedding library.
+
+[`Arrow.CData.importtable`](@ref) provides the first import-side surface. It
+borrows a top-level C Data struct array as a Tables.jl-compatible view when
+all child fields are primitive, boolean, UTF-8, large UTF-8, binary, large
+binary, UTF-8 view, or binary view columns, including nullable columns with
+validity bitmaps, dictionary encoded columns over those value arrays, or
+variable-size list columns over imported child arrays, fixed-size-binary and
+fixed-size-list columns, list-view columns over imported offsets, sizes, and
+child arrays, map columns over entries structs, dense and sparse union columns
+over imported child arrays, run-end encoded columns over imported `run_ends`
+and `values` children, struct columns over imported child arrays, null columns,
+and logical scalar columns such as decimals, dates, times, timestamps,
+durations, and intervals. Imported tables must be released explicitly with
+[`Arrow.CData.release!`](@ref). Logical extension reconstruction, C Stream,
+C Device, and PyCapsule import paths remain unsupported.
+
+This producer surface supports primitive, boolean, UTF-8 string, binary, UTF-8
+view, binary view, list, fixed-size, map, dense/sparse union, run-end encoded,
+struct, and dictionary encoded columns, including schema and field metadata
+encoded on the exported `ArrowSchema` objects. Null columns and logical scalar
+primitive storage use their standard C Data format strings, for example `n`,
+`d:precision,scale`, `tdD`, `ttn`, `tsm:`, and `tDm`. Union columns use
+`+ud:<ids>` for dense unions and `+us:<ids>` for sparse unions. Run-end encoded
+columns use `+r` with `run_ends` and `values` children. Binary and UTF-8 view
+columns use `vz` and `vu`, including the C Data variadic-buffer-lengths buffer.
+List-view import supports `+vl` and `+vL`; `exporttable` does not synthesize
+list-view columns because Arrow.jl does not currently expose a native list-view
+`ArrowVector` producer shape. Unsupported layouts still fail with explicit
+errors. The surface is meant for same-process FFI consumers that can use
+standard Arrow C Data Interface pointers. It is not a cross-process or network
+zero-copy transport; use Arrow IPC or Arrow Flight for persistence and
+transport.
+
+Map support follows the standard `+m` C Data layout with Int32 offsets and one
+entries struct child. Arrow.jl map columns that use large-list Int64 offsets are
+rejected explicitly because the C Data map format does not carry an offset-width
+variant.
+
+Arrow.CData's scope is intentionally aligned to the official
+[Arrow C Data Interface](https://arrow.apache.org/docs/format/CDataInterface.html):
+the interface is ABI-stable, same-process, and release-callback governed. It
+does not provide a high-level C API, cross-process sharing, or persistence.
+`ArrowSchema.format`, `ArrowSchema.name`, `ArrowSchema.metadata`,
+`ArrowSchema.children`, `ArrowSchema.dictionary`, `ArrowArray.buffers`,
+`ArrowArray.children`, `ArrowArray.dictionary`, and both `release` callbacks are
+retained by the Julia owner object until release. Metadata follows the official
+native-endian key/value byte layout, and omitted metadata is represented as
+`C_NULL`, not an empty string. Binary and UTF-8 view arrays include the C Data
+extra variadic-buffer-lengths buffer after the variadic data buffers.
+
+The focused validation suite in `test/cdata.jl` checks supported format strings,
+buffer pointer identity, negative layout validation, and release idempotency.
+For a performance and zero-copy receipt, run:
+
+```julia
+julia --project=test test/cdata_validation_report.jl
+```
+
+Set `ARROW_CDATA_REPORT_ROWS` to change the row count for that local report.
+
 Arrow.jl now ships built-in `PureHTTP2.jl` transport helpers in the Flight
 server core for package-owned h2c listeners,
 discovery, schema, unary, client-streaming, server-streaming, actions, poll,

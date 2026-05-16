@@ -26,10 +26,11 @@ This implementation supports the 1.0 version of the specification, including sup
   * Extension types
   * Streaming, file, record batch, and replacement and isdelta dictionary messages
   * Buffer compression/decompression via the standard LZ4 frame and Zstd formats
+  * In-process C Data Interface producer/import surfaces for standard `Arrow.Table` column layouts, including nested, dictionary, union, run-end encoded, and logical scalar physical storage
 
 It currently doesn't include support for:
   * Tensors or sparse tensors
-  * C data interface
+  * C Stream Interface or C Device Interface
 
 Flight RPC status:
   * Experimental `Arrow.Flight` support is available in-tree
@@ -75,7 +76,7 @@ using DataAPI,
     ConcurrentUtilities,
     StringViews
 
-export ArrowTypes, Flight
+export ArrowTypes, CData, Flight
 
 using Base: @propagate_inbounds
 import Base: ==
@@ -104,6 +105,7 @@ include("metadata/overlay.jl")
 include("write.jl")
 include("append.jl")
 include("show.jl")
+include("cdata.jl")
 include("flight/Flight.jl")
 
 const ZSTD_COMPRESSOR = Lockable{ZstdCompressor}[]
