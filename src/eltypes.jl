@@ -846,6 +846,17 @@ function arrowtype(b, x::List{T,O,A}) where {T,O,A}
     end
 end
 
+function arrowtype(b, x::ListView{T,O,A}) where {T,O,A}
+    children = [fieldoffset(b, "", x.data)]
+    if O == Int32
+        Meta.listViewStart(b)
+        return Meta.ListView, Meta.listViewEnd(b), children
+    else
+        Meta.largeListViewStart(b)
+        return Meta.LargeListView, Meta.largeListViewEnd(b), children
+    end
+end
+
 function juliaeltype(f::Meta.Field, list::Meta.FixedSizeList, convert)
     type = juliaeltype(f.children[1], buildmetadata(f.children[1]), convert)
     return NTuple{Int(list.listSize),type}

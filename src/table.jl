@@ -912,7 +912,8 @@ Base.length(x::VectorIterator) = length(x.schema.fields)
 const ListTypes =
     Union{Meta.Utf8,Meta.LargeUtf8,Meta.Binary,Meta.LargeBinary,Meta.List,Meta.LargeList}
 const LargeLists = Union{Meta.LargeUtf8,Meta.LargeBinary,Meta.LargeList,Meta.LargeListView}
-const ViewTypes = Union{Meta.Utf8View,Meta.BinaryView,Meta.ListView,Meta.LargeListView}
+const ViewTypes = Union{Meta.Utf8View,Meta.BinaryView}
+const ListViewTypes = Union{Meta.ListView,Meta.LargeListView}
 
 @inline function _viewbuffercount(validity, views, declared::Integer)
     count = Int(declared)
@@ -1076,6 +1077,53 @@ function build(
         end
     end
     return List{T,OT,typeof(A)}(bytes, validity, offsets, A, len, meta),
+    nodeidx,
+    bufferidx,
+    varbufferidx
+end
+
+function build(
+    f::Meta.Field,
+    L::ListViewTypes,
+    batch,
+    rb,
+    de,
+    nodeidx,
+    bufferidx,
+    varbufferidx,
+    convert,
+)
+    @debug "building array: L = $L"
+    validity = buildbitmap(batch, rb, nodeidx, bufferidx)
+    bufferidx += 1
+    OT = L isa Meta.LargeListView ? Int64 : Int32
+    offsetbuffer = rb.buffers[bufferidx]
+    offsetbytes, offsets = reinterp(OT, batch, offsetbuffer, rb.compression)
+    bufferidx += 1
+    sizebuffer = rb.buffers[bufferidx]
+    sizebytes, sizes = reinterp(OT, batch, sizebuffer, rb.compression)
+    bufferidx += 1
+    len = rb.nodes[nodeidx].length
+    nodeidx += 1
+    A, nodeidx, bufferidx, varbufferidx =
+        build(f.children[1], batch, rb, de, nodeidx, bufferidx, varbufferidx, convert)
+    meta = buildmetadata(f.custom_metadata)
+    T = juliaeltype(f, meta, convert)
+    S = Base.nonmissingtype(T)
+    if S <: Vector
+        ST = SubVector{eltype(A),typeof(A)}
+        T = S == T ? ST : Union{Missing,ST}
+    end
+    return ListView{T,OT,typeof(A)}(
+        offsetbytes,
+        sizebytes,
+        validity,
+        offsets,
+        sizes,
+        A,
+        len,
+        meta,
+    ),
     nodeidx,
     bufferidx,
     varbufferidx

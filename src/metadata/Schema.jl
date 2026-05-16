@@ -543,6 +543,11 @@ function Type(::Base.Type{T})::Int16 where {T}
     T == LargeBinary && return 19
     T == LargeUtf8 && return 20
     T == LargeList && return 21
+    T == RunEndEncoded && return 22
+    T == BinaryView && return 23
+    T == Utf8View && return 24
+    T == ListView && return 25
+    T == LargeListView && return 26
     return 0
 end
 

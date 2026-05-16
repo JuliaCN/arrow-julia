@@ -448,6 +448,80 @@ end
                   ArrowTypes.RunEndEncodedLayout{Int16}()
         end
 
+        @testset "ListView IPC roundtrip" begin
+            function native_list_view_table(column)
+                return Arrow.Table(
+                    Symbol[:values],
+                    Type[eltype(column)],
+                    AbstractVector[column],
+                    Dict{Symbol,AbstractVector}(:values => column),
+                    Ref{Arrow.Meta.Schema}(),
+                )
+            end
+
+            materialize_lists(column) =
+                [ismissing(value) ? missing : collect(value) for value in column]
+
+            item_table =
+                Arrow.Table(Arrow.tobuffer((item=Int32[12, -7, 25, 0, -127, 127, 50],)))
+            item = Tables.getcolumn(item_table, :item)
+            validity = Arrow.ValidityBitmap(Union{Missing,Int8}[1, missing, 1, 1])
+            list_view = Arrow.ListView(Int32[0, 7, 3, 0], Int32[3, 0, 4, 0], item; validity)
+
+            stream = Arrow.Stream(
+                Arrow.tobuffer(native_list_view_table(list_view); ntasks=0);
+                convert=false,
+            )
+            Tables.schema(stream)
+            field = only(getfield(stream, :schema).fields)
+            @test field.type isa Arrow.Meta.ListView
+            @test ArrowTypes.physicallayout(field) ==
+                  ArrowTypes.VariableListViewLayout{Int32}()
+
+            table = first(stream)
+            values = Tables.getcolumn(table, :values)
+            @test values isa Arrow.ListView
+            @test typeof(values).parameters[2] === Int32
+            @test isequal(
+                materialize_lists(values),
+                Union{Missing,Vector{Int32}}[
+                    Int32[12, -7, 25],
+                    missing,
+                    Int32[0, -127, 127, 50],
+                    Int32[],
+                ],
+            )
+
+            large_list_view = Arrow.ListView(Int64[0, 3], Int64[3, 2], item)
+            large_stream = Arrow.Stream(
+                Arrow.tobuffer(native_list_view_table(large_list_view); ntasks=0);
+                convert=false,
+            )
+            Tables.schema(large_stream)
+            large_field = only(getfield(large_stream, :schema).fields)
+            @test large_field.type isa Arrow.Meta.LargeListView
+            @test ArrowTypes.physicallayout(large_field) ==
+                  ArrowTypes.VariableListViewLayout{Int64}()
+
+            large_table = first(large_stream)
+            large_values = Tables.getcolumn(large_table, :values)
+            @test large_values isa Arrow.ListView
+            @test typeof(large_values).parameters[2] === Int64
+            @test [collect(value) for value in large_values] == [Int32[12, -7, 25], Int32[0, -127]]
+
+            compressed_large_table = Arrow.Table(
+                Arrow.tobuffer(
+                    native_list_view_table(large_list_view);
+                    ntasks=0,
+                    compress=:lz4,
+                );
+                convert=false,
+            )
+            compressed_large_values = Tables.getcolumn(compressed_large_table, :values)
+            @test compressed_large_values isa Arrow.ListView
+            @test [collect(value) for value in compressed_large_values] == [Int32[12, -7, 25], Int32[0, -127]]
+        end
+
         @testset "View buffer count inference" begin
             inline_len = Int32(Arrow.VIEW_INLINE_BYTES)
             views = Arrow.ViewElement[
