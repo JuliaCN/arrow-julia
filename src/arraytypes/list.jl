@@ -28,6 +28,33 @@ Base.size(o::Offsets) = (length(o.offsets) - 1,)
     return lo, hi
 end
 
+function _assert_offsets_spans(offsets::Vector{O}, len, data_length, label) where {O}
+    logical_len = Int(len)
+    logical_len >= 0 || throw(ArgumentError("$label length must be non-negative"))
+    logical_len == 0 && isempty(offsets) && return nothing
+    expected = logical_len + 1
+    length(offsets) == expected || throw(
+        ArgumentError(
+            "$label offsets length $(length(offsets)) does not match logical length $logical_len",
+        ),
+    )
+    previous = 0
+    limit = Int(data_length)
+    for (idx, offset) in enumerate(offsets)
+        current = Int(offset)
+        current >= 0 || throw(ArgumentError("$label offsets must be non-negative"))
+        current >= previous || throw(
+            ArgumentError(
+                "$label offsets must be monotonically increasing (failed at offset $idx)",
+            ),
+        )
+        current <= limit ||
+            throw(ArgumentError("$label offset $current exceeds child/data length $limit"))
+        previous = current
+    end
+    return nothing
+end
+
 """
     Arrow.List
 
@@ -64,7 +91,21 @@ end
 
 Base.size(l::ListView) = (l.ℓ,)
 
-function _assert_list_view_spans(offsets::Vector{O}, sizes::Vector{O}, data) where {O}
+function _assert_list_view_spans(
+    offsets::Vector{O},
+    sizes::Vector{O},
+    data;
+    len=nothing,
+) where {O}
+    if len !== nothing
+        logical_len = Int(len)
+        logical_len >= 0 || throw(ArgumentError("list-view length must be non-negative"))
+        length(offsets) == logical_len || throw(
+            ArgumentError(
+                "list-view offsets length $(length(offsets)) does not match logical length $logical_len",
+            ),
+        )
+    end
     length(offsets) == length(sizes) ||
         throw(ArgumentError("list-view offsets and sizes must have the same length"))
     for i in eachindex(offsets)

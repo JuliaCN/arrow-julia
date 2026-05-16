@@ -1076,6 +1076,7 @@ function build(
             T = S == T ? ST : Union{Missing,ST}
         end
     end
+    _assert_offsets_spans(offsets.offsets, len, length(A), "variable-size array")
     return List{T,OT,typeof(A)}(bytes, validity, offsets, A, len, meta),
     nodeidx,
     bufferidx,
@@ -1107,6 +1108,7 @@ function build(
     nodeidx += 1
     A, nodeidx, bufferidx, varbufferidx =
         build(f.children[1], batch, rb, de, nodeidx, bufferidx, varbufferidx, convert)
+    _assert_list_view_spans(offsets, sizes, A; len)
     meta = buildmetadata(f.custom_metadata)
     T = juliaeltype(f, meta, convert)
     S = Base.nonmissingtype(T)

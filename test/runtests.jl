@@ -581,6 +581,99 @@ end
             @test [collect(value) for value in compressed_large_values] == [Int32[12, -7, 25], Int32[0, -127]]
         end
 
+        @testset "Malformed IPC offset validation" begin
+            function native_arrow_vector_table(name::Symbol, column)
+                return Arrow.Table(
+                    Symbol[name],
+                    Type[eltype(column)],
+                    AbstractVector[column],
+                    Dict{Symbol,AbstractVector}(name => column),
+                    Ref{Arrow.Meta.Schema}(),
+                )
+            end
+
+            function assert_argument_error(f::Function, needle::AbstractString)
+                err = try
+                    f()
+                    nothing
+                catch e
+                    e
+                end
+                @test err !== nothing
+                @test occursin(needle, sprint(showerror, err))
+                return
+            end
+
+            item =
+                Tables.getcolumn(Arrow.Table(Arrow.tobuffer((item=Int32[1, 2, 3],))), :item)
+            validity = Arrow.ValidityBitmap(fill(true, 2))
+
+            descending = Arrow.List{Vector{Int32},Int32,typeof(item)}(
+                UInt8[],
+                validity,
+                Arrow.Offsets(UInt8[], Int32[0, 3, 2]),
+                item,
+                2,
+                nothing,
+            )
+            assert_argument_error(
+                () -> Arrow.Table(
+                    Arrow.tobuffer(
+                        native_arrow_vector_table(:values, descending);
+                        ntasks=0,
+                    );
+                    convert=false,
+                ),
+                "offsets must be monotonically increasing",
+            )
+
+            @test_throws ArgumentError(
+                "variable-size array offsets length 2 does not match logical length 2",
+            ) Arrow._assert_offsets_spans(
+                Int32[0, 2],
+                2,
+                length(item),
+                "variable-size array",
+            )
+
+            overflowing_utf8 = Arrow.List{String,Int32,Vector{UInt8}}(
+                UInt8[],
+                validity,
+                Arrow.Offsets(UInt8[], Int32[0, 1, 3]),
+                UInt8[0x61],
+                2,
+                nothing,
+            )
+            assert_argument_error(
+                () -> Arrow.Table(
+                    Arrow.tobuffer(
+                        native_arrow_vector_table(:values, overflowing_utf8);
+                        ntasks=0,
+                    );
+                    convert=false,
+                ),
+                "offset 3 exceeds child/data length 1",
+            )
+
+            list_view = Arrow.ListView{AbstractVector{Int32},Int32,typeof(item)}(
+                UInt8[],
+                UInt8[],
+                validity,
+                Int32[0, 2],
+                Int32[2, 2],
+                item,
+                2,
+                nothing,
+            )
+            assert_argument_error(
+                () -> Arrow.Table(
+                    Arrow.tobuffer(native_arrow_vector_table(:values, list_view); ntasks=0);
+                    convert=false,
+                ),
+                "list-view span exceeds child value length",
+            )
+        end
+
         @testset "View buffer count inference" begin
             inline_len = Int32(Arrow.VIEW_INLINE_BYTES)
             views = Arrow.ViewElement[
