@@ -358,6 +358,8 @@ julia --project=test test/cdata_validation_report.jl
 ```
 
 Set `ARROW_CDATA_REPORT_ROWS` to change the row count for that local report.
+See [C Data Interface Alignment](cdata_alignment.md) for the live support
+matrix and audit tracker.
 
 Arrow.jl now ships built-in `PureHTTP2.jl` transport helpers in the Flight
 server core for package-owned h2c listeners,
