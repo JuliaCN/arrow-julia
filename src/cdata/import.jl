@@ -27,15 +27,33 @@ end
 function _assert_import_column_layout(array::ArrowArray, name::Symbol)
     array.length >= 0 || throw(ArgumentError("column $name has negative length"))
     array.null_count >= -1 || throw(ArgumentError("column $name has invalid null count"))
-    array.offset == 0 ||
-        throw(ArgumentError("Arrow C Data import does not yet support non-zero offsets"))
+    array.offset >= 0 || throw(ArgumentError("column $name has negative offset"))
     return nothing
 end
 
 _nullable_field(schema::ArrowSchema, array::ArrowArray) =
     schema.flags & ARROW_FLAG_NULLABLE != 0 || array.null_count != 0
 
-_validity_nbytes(len::Integer) = Int(cld(len, 8))
+_logical_offset(array::ArrowArray) = Int(array.offset)
+_logical_length(array::ArrowArray) = Int(array.length)
+
+_validity_nbytes(len::Integer, offset::Integer=0) = len == 0 ? 0 : Int(cld(len + offset, 8))
+
+function _buffer_pointer(::Type{T}, ptr::Ptr{Cvoid}, offset::Integer=0) where {T}
+    return Ptr{T}(ptr) + Int(offset) * sizeof(T)
+end
+
+function _wrap_buffer(::Type{T}, ptr::Ptr{Cvoid}, len::Integer, offset::Integer=0) where {T}
+    len == 0 && return T[]
+    ptr == C_NULL && throw(ArgumentError("cannot wrap C_NULL buffer"))
+    return unsafe_wrap(Vector{T}, _buffer_pointer(T, ptr, offset), Int(len); own=false)
+end
+
+function _wrap_byte_buffer(ptr::Ptr{Cvoid}, len::Integer, offset::Integer=0)
+    len == 0 && return UInt8[]
+    ptr == C_NULL && throw(ArgumentError("cannot wrap C_NULL byte buffer"))
+    return unsafe_wrap(Vector{UInt8}, Ptr{UInt8}(ptr) + Int(offset), Int(len); own=false)
+end
 
 function _validity_vector(array::ArrowArray, name::Symbol)
     array.buffers == C_NULL && throw(ArgumentError("column $name has C_NULL buffers"))
@@ -43,16 +61,17 @@ function _validity_vector(array::ArrowArray, name::Symbol)
     if array.length > 0 && array.null_count != 0 && validity_ptr == C_NULL
         throw(ArgumentError("nullable column $name has C_NULL validity buffer"))
     end
-    nbytes = _validity_nbytes(array.length)
+    nbytes = _validity_nbytes(array.length, array.offset)
     nbytes == 0 && return UInt8[]
     validity_ptr == C_NULL && return UInt8[]
     return unsafe_wrap(Vector{UInt8}, Ptr{UInt8}(validity_ptr), nbytes; own=false)
 end
 
-function _validity_bit(validity::Vector{UInt8}, i::Int)
+function _validity_bit(validity::Vector{UInt8}, i::Int, offset::Int=0)
     isempty(validity) && return true
-    byte = @inbounds validity[((i - 1) >>> 3) + 1]
-    shift = (i - 1) & 7
+    physical = i + offset
+    byte = @inbounds validity[((physical - 1) >>> 3) + 1]
+    shift = (physical - 1) & 7
     mask = UInt8(1) << shift
     return (byte & mask) != 0
 end
@@ -64,7 +83,7 @@ function _bitmap_vector(
     label::AbstractString,
 )
     array.buffers == C_NULL && throw(ArgumentError("column $name has C_NULL buffers"))
-    nbytes = _validity_nbytes(array.length)
+    nbytes = _validity_nbytes(array.length, array.offset)
     nbytes == 0 && return UInt8[]
     data_ptr = unsafe_load(array.buffers, buffer_index)
     data_ptr == C_NULL && throw(ArgumentError("$label column $name has C_NULL data buffer"))
@@ -87,7 +106,15 @@ function _import_bool_column(schema::ArrowSchema, array::ArrowArray, name::Symbo
     nullable = _nullable_field(schema, array)
     validity = nullable ? _validity_vector(array, name) : UInt8[]
     data = _bitmap_vector(array, name, 2, "bool")
-    return ImportedBoolVector(data, validity, Int(array.length), nullable)
+    offset = _logical_offset(array)
+    return ImportedBoolVector(
+        data,
+        validity,
+        _logical_length(array),
+        nullable,
+        offset,
+        offset,
+    )
 end
 
 function _import_primitive_column(schema::ArrowSchema, array::ArrowArray, name::Symbol)
@@ -101,11 +128,13 @@ function _import_primitive_column(schema::ArrowSchema, array::ArrowArray, name::
     nullable = _nullable_field(schema, array)
     validity = nullable ? _validity_vector(array, name) : UInt8[]
     array.length == 0 &&
-        return nullable ? ImportedNullablePrimitiveVector(T[], validity, 0) : T[]
+        return nullable ? ImportedNullablePrimitiveVector(T[], validity, 0, 0) : T[]
     data_ptr == C_NULL &&
         throw(ArgumentError("primitive column $name has C_NULL data buffer"))
-    data = unsafe_wrap(Vector{T}, Ptr{T}(data_ptr), Int(array.length); own=false)
-    return nullable ? ImportedNullablePrimitiveVector(data, validity, Int(array.length)) :
+    offset = _logical_offset(array)
+    data = _wrap_buffer(T, data_ptr, array.length, offset)
+    return nullable ?
+           ImportedNullablePrimitiveVector(data, validity, _logical_length(array), offset) :
            data
 end
 
@@ -122,7 +151,8 @@ function _import_string_column(
     offsets_ptr = unsafe_load(array.buffers, 2)
     data_ptr = unsafe_load(array.buffers, 3)
     offsets_ptr == C_NULL && throw(ArgumentError("UTF-8 column $name has C_NULL offsets"))
-    offsets = unsafe_wrap(Vector{O}, Ptr{O}(offsets_ptr), Int(array.length) + 1; own=false)
+    offset = _logical_offset(array)
+    offsets = _wrap_buffer(O, offsets_ptr, _logical_length(array) + 1, offset)
     data_len = isempty(offsets) ? 0 : Int(offsets[end])
     data_len > 0 &&
         data_ptr == C_NULL &&
@@ -132,7 +162,8 @@ function _import_string_column(
         unsafe_wrap(Vector{UInt8}, Ptr{UInt8}(data_ptr), data_len; own=false)
     values = ImportedStringVector(offsets, data, Int(array.length))
     nullable = _nullable_field(schema, array)
-    return nullable ? ImportedNullableStringVector(values, _validity_vector(array, name)) :
+    return nullable ?
+           ImportedNullableStringVector(values, _validity_vector(array, name), offset) :
            values
 end
 
@@ -150,7 +181,8 @@ function _import_binary_column(
     offsets_ptr = unsafe_load(array.buffers, 2)
     data_ptr = unsafe_load(array.buffers, 3)
     offsets_ptr == C_NULL && throw(ArgumentError("binary column $name has C_NULL offsets"))
-    offsets = unsafe_wrap(Vector{O}, Ptr{O}(offsets_ptr), Int(array.length) + 1; own=false)
+    offset = _logical_offset(array)
+    offsets = _wrap_buffer(O, offsets_ptr, _logical_length(array) + 1, offset)
     data_len = isempty(offsets) ? 0 : Int(offsets[end])
     data_len > 0 &&
         data_ptr == C_NULL &&
@@ -160,7 +192,14 @@ function _import_binary_column(
         unsafe_wrap(Vector{UInt8}, Ptr{UInt8}(data_ptr), data_len; own=false)
     nullable = _nullable_field(schema, array)
     validity = nullable ? _validity_vector(array, name) : UInt8[]
-    return ImportedBinaryVector(offsets, data, validity, Int(array.length), nullable)
+    return ImportedBinaryVector(
+        offsets,
+        data,
+        validity,
+        _logical_length(array),
+        nullable,
+        offset,
+    )
 end
 
 function _assert_view_spans!(
@@ -168,9 +207,10 @@ function _assert_view_spans!(
     buffers::Vector{Vector{UInt8}},
     validity::Vector{UInt8},
     name::Symbol,
+    validity_offset::Int,
 )
     for i in eachindex(views)
-        _validity_bit(validity, i) || continue
+        _validity_bit(validity, i, validity_offset) || continue
         view = @inbounds views[i]
         len = Int(view.length)
         len >= 0 || throw(ArgumentError("view column $name has negative value length"))
@@ -207,24 +247,19 @@ function _import_view_column(
     )
     array.buffers == C_NULL && throw(ArgumentError("view column $name has C_NULL buffers"))
     views_ptr = unsafe_load(array.buffers, 2)
+    offset = _logical_offset(array)
     array.length > 0 &&
         views_ptr == C_NULL &&
         throw(ArgumentError("view column $name has C_NULL views buffer"))
     views =
         array.length == 0 ? ViewElement[] :
-        unsafe_wrap(
-            Vector{ViewElement},
-            Ptr{ViewElement}(views_ptr),
-            Int(array.length);
-            own=false,
-        )
+        _wrap_buffer(ViewElement, views_ptr, _logical_length(array), offset)
     inline =
         array.length == 0 ? UInt8[] :
-        unsafe_wrap(
-            Vector{UInt8},
-            Ptr{UInt8}(views_ptr),
-            Int(array.length) * VIEW_ELEMENT_BYTES;
-            own=false,
+        _wrap_byte_buffer(
+            views_ptr,
+            _logical_length(array) * VIEW_ELEMENT_BYTES,
+            offset * VIEW_ELEMENT_BYTES,
         )
     n_variadic = Int(array.n_buffers) - 3
     lengths_ptr = unsafe_load(array.buffers, Int(array.n_buffers))
@@ -251,7 +286,7 @@ function _import_view_column(
     end
     nullable = _nullable_field(schema, array)
     validity = nullable ? _validity_vector(array, name) : UInt8[]
-    _assert_view_spans!(views, buffers, validity, name)
+    _assert_view_spans!(views, buffers, validity, name, offset)
     if utf8
         return ImportedStringViewVector(
             views,
@@ -261,6 +296,7 @@ function _import_view_column(
             validity,
             Int(array.length),
             nullable,
+            offset,
         )
     end
     return ImportedBinaryViewVector(
@@ -271,6 +307,7 @@ function _import_view_column(
         validity,
         Int(array.length),
         nullable,
+        offset,
     )
 end
 
@@ -305,11 +342,12 @@ function _import_fixed_size_binary_column(
     width = _fixed_size_from_format(format, "w:")
     data_ptr = unsafe_load(array.buffers, 2)
     nbytes = width * Int(array.length)
+    offset = _logical_offset(array)
     data =
         nbytes == 0 ? UInt8[] :
         data_ptr == C_NULL ?
         throw(ArgumentError("fixed-size-binary column $name has C_NULL data buffer")) :
-        unsafe_wrap(Vector{UInt8}, Ptr{UInt8}(data_ptr), nbytes; own=false)
+        _wrap_byte_buffer(data_ptr, nbytes, offset * width)
     nullable = _nullable_field(schema, array)
     validity = nullable ? _validity_vector(array, name) : UInt8[]
     return ImportedFixedSizeBinaryVector(
@@ -318,6 +356,7 @@ function _import_fixed_size_binary_column(
         validity,
         Int(array.length),
         nullable,
+        offset,
     )
 end
 
@@ -345,6 +384,9 @@ function _import_fixed_size_list_column(
         _import_column(unsafe_load(schema.children, 1), unsafe_load(array.children, 1))
     length(values) >= list_size * Int(array.length) ||
         throw(ArgumentError("fixed-size-list column $name child array is too short"))
+    offset = _logical_offset(array)
+    length(values) >= list_size * (offset + Int(array.length)) ||
+        throw(ArgumentError("fixed-size-list column $name child array is too short"))
     nullable = _nullable_field(schema, array)
     validity = nullable ? _validity_vector(array, name) : UInt8[]
     return ImportedFixedSizeListVector(
@@ -353,6 +395,8 @@ function _import_fixed_size_list_column(
         validity,
         Int(array.length),
         nullable,
+        offset * list_size,
+        offset,
     )
 end
 
@@ -391,16 +435,18 @@ function _import_dictionary_column(schema::ArrowSchema, array::ArrowArray, name:
     nullable = _nullable_field(schema, array)
     validity = nullable ? _validity_vector(array, name) : UInt8[]
     array.length == 0 &&
-        return ImportedDictionaryVector(I[], dictionary, validity, 0, nullable)
+        return ImportedDictionaryVector(I[], dictionary, validity, 0, nullable, 0)
     index_ptr == C_NULL &&
         throw(ArgumentError("dictionary column $name has C_NULL indices buffer"))
-    indices = unsafe_wrap(Vector{I}, Ptr{I}(index_ptr), Int(array.length); own=false)
+    offset = _logical_offset(array)
+    indices = _wrap_buffer(I, index_ptr, _logical_length(array), offset)
     return ImportedDictionaryVector(
         indices,
         dictionary,
         validity,
         Int(array.length),
         nullable,
+        offset,
     )
 end
 
@@ -418,9 +464,8 @@ end
 
 function _assert_list_offsets!(offsets::Vector, values::AbstractVector, name::Symbol)
     isempty(offsets) && throw(ArgumentError("list column $name has empty offsets"))
-    first(offsets) == 0 ||
-        throw(ArgumentError("list column $name offsets must start at zero"))
     previous = Int(first(offsets))
+    previous >= 0 || throw(ArgumentError("list column $name has negative offset"))
     for offset in Iterators.drop(offsets, 1)
         current = Int(offset)
         current >= previous ||
@@ -475,11 +520,19 @@ function _import_list_column(
     _, values =
         _import_column(unsafe_load(schema.children, 1), unsafe_load(array.children, 1))
     O = _list_offset_type_for_format(format)
-    offsets = unsafe_wrap(Vector{O}, Ptr{O}(offsets_ptr), Int(array.length) + 1; own=false)
+    offset = _logical_offset(array)
+    offsets = _wrap_buffer(O, offsets_ptr, _logical_length(array) + 1, offset)
     _assert_list_offsets!(offsets, values, name)
     nullable = _nullable_field(schema, array)
     validity = nullable ? _validity_vector(array, name) : UInt8[]
-    return ImportedListVector(offsets, values, validity, Int(array.length), nullable)
+    return ImportedListVector(
+        offsets,
+        values,
+        validity,
+        _logical_length(array),
+        nullable,
+        offset,
+    )
 end
 
 function _import_list_view_column(
@@ -516,12 +569,12 @@ function _import_list_view_column(
     _, values =
         _import_column(unsafe_load(schema.children, 1), unsafe_load(array.children, 1))
     O = _list_view_offset_type_for_format(format)
+    offset = _logical_offset(array)
     offsets =
         array.length == 0 ? O[] :
-        unsafe_wrap(Vector{O}, Ptr{O}(offsets_ptr), Int(array.length); own=false)
+        _wrap_buffer(O, offsets_ptr, _logical_length(array), offset)
     sizes =
-        array.length == 0 ? O[] :
-        unsafe_wrap(Vector{O}, Ptr{O}(sizes_ptr), Int(array.length); own=false)
+        array.length == 0 ? O[] : _wrap_buffer(O, sizes_ptr, _logical_length(array), offset)
     _assert_list_view_spans!(offsets, sizes, values, name)
     nullable = _nullable_field(schema, array)
     validity = nullable ? _validity_vector(array, name) : UInt8[]
@@ -532,6 +585,7 @@ function _import_list_view_column(
         validity,
         Int(array.length),
         nullable,
+        offset,
     )
 end
 
@@ -553,16 +607,24 @@ function _import_map_column(schema::ArrowSchema, array::ArrowArray, name::Symbol
 
     _, entries =
         _import_column(unsafe_load(schema.children, 1), unsafe_load(array.children, 1))
+    offset = _logical_offset(array)
     offsets = unsafe_wrap(
         Vector{Int32},
-        Ptr{Int32}(offsets_ptr),
+        _buffer_pointer(Int32, offsets_ptr, offset),
         Int(array.length) + 1;
         own=false,
     )
     _assert_list_offsets!(offsets, entries, name)
     nullable = _nullable_field(schema, array)
     validity = nullable ? _validity_vector(array, name) : UInt8[]
-    return ImportedMapVector(offsets, entries, validity, Int(array.length), nullable)
+    return ImportedMapVector(
+        offsets,
+        entries,
+        validity,
+        _logical_length(array),
+        nullable,
+        offset,
+    )
 end
 
 function _parse_union_format(format::AbstractString)
@@ -593,12 +655,7 @@ function _import_union_type_ids(array::ArrowArray, name::Symbol)
     type_ids_ptr = unsafe_load(array.buffers, 1)
     array.length == 0 && return UInt8[]
     type_ids_ptr == C_NULL && throw(ArgumentError("union column $name has C_NULL type ids"))
-    return unsafe_wrap(
-        Vector{UInt8},
-        Ptr{UInt8}(type_ids_ptr),
-        Int(array.length);
-        own=false,
-    )
+    return _wrap_buffer(UInt8, type_ids_ptr, _logical_length(array), _logical_offset(array))
 end
 
 function _assert_union_type_ids!(
@@ -682,12 +739,7 @@ function _import_union_column(
             throw(ArgumentError("dense union column $name has C_NULL offsets"))
         offsets =
             array.length == 0 ? Int32[] :
-            unsafe_wrap(
-                Vector{Int32},
-                Ptr{Int32}(offsets_ptr),
-                Int(array.length);
-                own=false,
-            )
+            _wrap_buffer(Int32, offsets_ptr, _logical_length(array), _logical_offset(array))
         _assert_dense_union_offsets!(offsets, type_ids, children, declared_ids, name)
         return ImportedDenseUnionVector(
             type_ids,
@@ -727,7 +779,12 @@ function _import_run_end_encoded_column(
         throw(ArgumentError("run-end encoded column $name first child must be run_ends"))
     values_name == :values ||
         throw(ArgumentError("run-end encoded column $name second child must be values"))
-    return ImportedRunEndEncodedVector(run_ends, values, Int(array.length))
+    return ImportedRunEndEncodedVector(
+        run_ends,
+        values,
+        Int(array.length),
+        _logical_offset(array),
+    )
 end
 
 function _import_struct_column(schema::ArrowSchema, array::ArrowArray, name::Symbol)
@@ -754,7 +811,15 @@ function _import_struct_column(schema::ArrowSchema, array::ArrowArray, name::Sym
     end
     nullable = _nullable_field(schema, array)
     validity = nullable ? _validity_vector(array, name) : UInt8[]
-    return ImportedStructVector(names, columns, validity, Int(array.length), nullable)
+    return ImportedStructVector(
+        names,
+        columns,
+        validity,
+        _logical_length(array),
+        nullable,
+        _logical_offset(array),
+        _logical_offset(array),
+    )
 end
 
 function _import_column(schema_ptr::Ptr{ArrowSchema}, array_ptr::Ptr{ArrowArray})
@@ -819,9 +884,7 @@ function importtable(schema_ptr::Ptr{ArrowSchema}, array_ptr::Ptr{ArrowArray})
     )
     schema.n_children == array.n_children ||
         throw(ArgumentError("Arrow C Data import schema/array child count mismatch"))
-    array.offset == 0 || throw(
-        ArgumentError("Arrow C Data import does not yet support non-zero top-level offset"),
-    )
+    array.offset >= 0 || throw(ArgumentError("top-level struct array has negative offset"))
     array.null_count == 0 || throw(
         ArgumentError(
             "Arrow C Data import does not yet support nullable top-level structs",
@@ -841,7 +904,15 @@ function importtable(schema_ptr::Ptr{ArrowSchema}, array_ptr::Ptr{ArrowArray})
         name, column =
             _import_column(unsafe_load(schema.children, i), unsafe_load(array.children, i))
         push!(names, name)
-        push!(imported_columns, column)
+        offset = _logical_offset(array)
+        if offset == 0
+            push!(imported_columns, column)
+        else
+            stop = offset + _logical_length(array)
+            length(column) >= stop ||
+                throw(ArgumentError("top-level struct child $name is too short for offset"))
+            push!(imported_columns, @view column[(offset + 1):stop])
+        end
     end
     return ImportedTable(schema_ptr, array_ptr, names, imported_columns)
 end

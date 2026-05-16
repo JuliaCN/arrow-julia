@@ -50,6 +50,7 @@ struct ImportedBinaryVector{T,O<:Union{Int32,Int64}} <: AbstractVector{T}
     data::Vector{UInt8}
     validity::Vector{UInt8}
     len::Int
+    validity_offset::Int
 end
 
 function ImportedBinaryVector(
@@ -58,10 +59,11 @@ function ImportedBinaryVector(
     validity::Vector{UInt8},
     len::Int,
     nullable::Bool,
+    validity_offset::Int=0,
 ) where {O<:Union{Int32,Int64}}
     T = AbstractVector{UInt8}
     ET = nullable ? Union{Missing,T} : T
-    return ImportedBinaryVector{ET,O}(offsets, data, validity, len)
+    return ImportedBinaryVector{ET,O}(offsets, data, validity, len, validity_offset)
 end
 
 Base.IndexStyle(::Type{<:ImportedBinaryVector}) = Base.IndexLinear()
@@ -69,7 +71,7 @@ Base.size(vector::ImportedBinaryVector) = (vector.len,)
 
 function Base.getindex(vector::ImportedBinaryVector, i::Int)
     @boundscheck checkbounds(vector, i)
-    _validity_bit(vector.validity, i) || return missing
+    _validity_bit(vector.validity, i, vector.validity_offset) || return missing
     lo = Int(@inbounds vector.offsets[i]) + 1
     hi = Int(@inbounds vector.offsets[i + 1])
     return @view vector.data[lo:hi]
@@ -89,6 +91,7 @@ struct ImportedStringViewVector{T} <: AbstractVector{T}
     lengths::Vector{Int64}
     validity::Vector{UInt8}
     len::Int
+    validity_offset::Int
 end
 
 """
@@ -105,6 +108,7 @@ struct ImportedBinaryViewVector{T} <: AbstractVector{T}
     lengths::Vector{Int64}
     validity::Vector{UInt8}
     len::Int
+    validity_offset::Int
 end
 
 function ImportedStringViewVector(
@@ -115,9 +119,18 @@ function ImportedStringViewVector(
     validity::Vector{UInt8},
     len::Int,
     nullable::Bool,
+    validity_offset::Int=0,
 )
     T = nullable ? Union{Missing,String} : String
-    return ImportedStringViewVector{T}(views, inline, buffers, lengths, validity, len)
+    return ImportedStringViewVector{T}(
+        views,
+        inline,
+        buffers,
+        lengths,
+        validity,
+        len,
+        validity_offset,
+    )
 end
 
 function ImportedBinaryViewVector(
@@ -128,10 +141,19 @@ function ImportedBinaryViewVector(
     validity::Vector{UInt8},
     len::Int,
     nullable::Bool,
+    validity_offset::Int=0,
 )
     T = AbstractVector{UInt8}
     ET = nullable ? Union{Missing,T} : T
-    return ImportedBinaryViewVector{ET}(views, inline, buffers, lengths, validity, len)
+    return ImportedBinaryViewVector{ET}(
+        views,
+        inline,
+        buffers,
+        lengths,
+        validity,
+        len,
+        validity_offset,
+    )
 end
 
 Base.IndexStyle(::Type{<:ImportedStringViewVector}) = Base.IndexLinear()
@@ -157,7 +179,7 @@ end
 
 function Base.getindex(vector::ImportedStringViewVector, i::Int)
     @boundscheck checkbounds(vector, i)
-    _validity_bit(vector.validity, i) || return missing
+    _validity_bit(vector.validity, i, vector.validity_offset) || return missing
     buffer, start, len = _view_buffer_span(vector, i)
     len == 0 && return ""
     return unsafe_string(pointer(buffer, start), len)
@@ -165,7 +187,7 @@ end
 
 function Base.getindex(vector::ImportedBinaryViewVector, i::Int)
     @boundscheck checkbounds(vector, i)
-    _validity_bit(vector.validity, i) || return missing
+    _validity_bit(vector.validity, i, vector.validity_offset) || return missing
     buffer, start, len = _view_buffer_span(vector, i)
     len == 0 && return @view vector.inline[1:0]
     return @view buffer[start:(start + len - 1)]
@@ -182,6 +204,7 @@ struct ImportedFixedSizeBinaryVector{T,N} <: AbstractVector{T}
     data::Vector{UInt8}
     validity::Vector{UInt8}
     len::Int
+    validity_offset::Int
 end
 
 function ImportedFixedSizeBinaryVector(
@@ -190,10 +213,11 @@ function ImportedFixedSizeBinaryVector(
     validity::Vector{UInt8},
     len::Int,
     nullable::Bool,
+    validity_offset::Int=0,
 ) where {N}
     T = NTuple{N,UInt8}
     ET = nullable ? Union{Missing,T} : T
-    return ImportedFixedSizeBinaryVector{ET,N}(data, validity, len)
+    return ImportedFixedSizeBinaryVector{ET,N}(data, validity, len, validity_offset)
 end
 
 Base.IndexStyle(::Type{<:ImportedFixedSizeBinaryVector}) = Base.IndexLinear()
@@ -201,7 +225,7 @@ Base.size(vector::ImportedFixedSizeBinaryVector) = (vector.len,)
 
 function Base.getindex(vector::ImportedFixedSizeBinaryVector{T,N}, i::Int) where {T,N}
     @boundscheck checkbounds(vector, i)
-    _validity_bit(vector.validity, i) || return missing
+    _validity_bit(vector.validity, i, vector.validity_offset) || return missing
     offset = (i - 1) * N
     return ntuple(j -> @inbounds(vector.data[offset + j]), Val(N))
 end
@@ -216,6 +240,7 @@ struct ImportedNullablePrimitiveVector{T} <: AbstractVector{Union{Missing,T}}
     data::Vector{T}
     validity::Vector{UInt8}
     len::Int
+    validity_offset::Int
 end
 
 Base.IndexStyle(::Type{<:ImportedNullablePrimitiveVector}) = Base.IndexLinear()
@@ -223,7 +248,7 @@ Base.size(vector::ImportedNullablePrimitiveVector) = (vector.len,)
 
 function Base.getindex(vector::ImportedNullablePrimitiveVector{T}, i::Int) where {T}
     @boundscheck checkbounds(vector, i)
-    _validity_bit(vector.validity, i) || return missing
+    _validity_bit(vector.validity, i, vector.validity_offset) || return missing
     return @inbounds vector.data[i]
 end
 
@@ -238,6 +263,7 @@ struct ImportedNullableStringVector{O<:Union{Int32,Int64}} <:
        AbstractVector{Union{Missing,String}}
     values::ImportedStringVector{O}
     validity::Vector{UInt8}
+    validity_offset::Int
 end
 
 Base.IndexStyle(::Type{<:ImportedNullableStringVector}) = Base.IndexLinear()
@@ -245,7 +271,7 @@ Base.size(vector::ImportedNullableStringVector) = size(vector.values)
 
 function Base.getindex(vector::ImportedNullableStringVector, i::Int)
     @boundscheck checkbounds(vector, i)
-    _validity_bit(vector.validity, i) || return missing
+    _validity_bit(vector.validity, i, vector.validity_offset) || return missing
     return @inbounds vector.values[i]
 end
 
@@ -260,6 +286,8 @@ struct ImportedBoolVector{T} <: AbstractVector{T}
     data::Vector{UInt8}
     validity::Vector{UInt8}
     len::Int
+    validity_offset::Int
+    data_offset::Int
 end
 
 function ImportedBoolVector(
@@ -267,9 +295,11 @@ function ImportedBoolVector(
     validity::Vector{UInt8},
     len::Int,
     nullable::Bool,
+    validity_offset::Int=0,
+    data_offset::Int=0,
 )
     T = nullable ? Union{Missing,Bool} : Bool
-    return ImportedBoolVector{T}(data, validity, len)
+    return ImportedBoolVector{T}(data, validity, len, validity_offset, data_offset)
 end
 
 Base.IndexStyle(::Type{<:ImportedBoolVector}) = Base.IndexLinear()
@@ -277,8 +307,8 @@ Base.size(vector::ImportedBoolVector) = (vector.len,)
 
 function Base.getindex(vector::ImportedBoolVector, i::Int)
     @boundscheck checkbounds(vector, i)
-    _validity_bit(vector.validity, i) || return missing
-    return _validity_bit(vector.data, i)
+    _validity_bit(vector.validity, i, vector.validity_offset) || return missing
+    return _validity_bit(vector.data, i, vector.data_offset)
 end
 
 """
@@ -293,6 +323,7 @@ struct ImportedDictionaryVector{T,I,D<:AbstractVector} <: AbstractVector{T}
     dictionary::D
     validity::Vector{UInt8}
     len::Int
+    validity_offset::Int
 end
 
 function ImportedDictionaryVector(
@@ -301,9 +332,16 @@ function ImportedDictionaryVector(
     validity::Vector{UInt8},
     len::Int,
     nullable::Bool,
+    validity_offset::Int=0,
 ) where {I,D<:AbstractVector}
     T = nullable ? Union{Missing,eltype(dictionary)} : eltype(dictionary)
-    return ImportedDictionaryVector{T,I,D}(indices, dictionary, validity, len)
+    return ImportedDictionaryVector{T,I,D}(
+        indices,
+        dictionary,
+        validity,
+        len,
+        validity_offset,
+    )
 end
 
 Base.IndexStyle(::Type{<:ImportedDictionaryVector}) = Base.IndexLinear()
@@ -311,7 +349,7 @@ Base.size(vector::ImportedDictionaryVector) = (vector.len,)
 
 function Base.getindex(vector::ImportedDictionaryVector, i::Int)
     @boundscheck checkbounds(vector, i)
-    _validity_bit(vector.validity, i) || return missing
+    _validity_bit(vector.validity, i, vector.validity_offset) || return missing
     index = Int(@inbounds vector.indices[i]) + 1
     @boundscheck checkbounds(vector.dictionary, index)
     return @inbounds vector.dictionary[index]
@@ -329,6 +367,7 @@ struct ImportedListVector{T,O<:Union{Int32,Int64},V<:AbstractVector} <: Abstract
     values::V
     validity::Vector{UInt8}
     len::Int
+    validity_offset::Int
 end
 
 function ImportedListVector(
@@ -337,10 +376,11 @@ function ImportedListVector(
     validity::Vector{UInt8},
     len::Int,
     nullable::Bool,
+    validity_offset::Int=0,
 ) where {O<:Union{Int32,Int64},V<:AbstractVector}
     T = AbstractVector{eltype(values)}
     ET = nullable ? Union{Missing,T} : T
-    return ImportedListVector{ET,O,V}(offsets, values, validity, len)
+    return ImportedListVector{ET,O,V}(offsets, values, validity, len, validity_offset)
 end
 
 Base.IndexStyle(::Type{<:ImportedListVector}) = Base.IndexLinear()
@@ -348,7 +388,7 @@ Base.size(vector::ImportedListVector) = (vector.len,)
 
 function Base.getindex(vector::ImportedListVector, i::Int)
     @boundscheck checkbounds(vector, i)
-    _validity_bit(vector.validity, i) || return missing
+    _validity_bit(vector.validity, i, vector.validity_offset) || return missing
     lo = Int(@inbounds vector.offsets[i]) + 1
     hi = Int(@inbounds vector.offsets[i + 1])
     return @view vector.values[lo:hi]
@@ -368,6 +408,7 @@ struct ImportedListViewVector{T,O<:Union{Int32,Int64},V<:AbstractVector} <:
     values::V
     validity::Vector{UInt8}
     len::Int
+    validity_offset::Int
 end
 
 function ImportedListViewVector(
@@ -377,10 +418,18 @@ function ImportedListViewVector(
     validity::Vector{UInt8},
     len::Int,
     nullable::Bool,
+    validity_offset::Int=0,
 ) where {O<:Union{Int32,Int64},V<:AbstractVector}
     T = AbstractVector{eltype(values)}
     ET = nullable ? Union{Missing,T} : T
-    return ImportedListViewVector{ET,O,V}(offsets, sizes, values, validity, len)
+    return ImportedListViewVector{ET,O,V}(
+        offsets,
+        sizes,
+        values,
+        validity,
+        len,
+        validity_offset,
+    )
 end
 
 Base.IndexStyle(::Type{<:ImportedListViewVector}) = Base.IndexLinear()
@@ -388,7 +437,7 @@ Base.size(vector::ImportedListViewVector) = (vector.len,)
 
 function Base.getindex(vector::ImportedListViewVector, i::Int)
     @boundscheck checkbounds(vector, i)
-    _validity_bit(vector.validity, i) || return missing
+    _validity_bit(vector.validity, i, vector.validity_offset) || return missing
     size = Int(@inbounds vector.sizes[i])
     size == 0 && return @view vector.values[1:0]
     lo = Int(@inbounds vector.offsets[i]) + 1
@@ -405,6 +454,8 @@ struct ImportedFixedSizeListVector{T,N,V<:AbstractVector} <: AbstractVector{T}
     values::V
     validity::Vector{UInt8}
     len::Int
+    validity_offset::Int
+    value_offset::Int
 end
 
 function ImportedFixedSizeListVector(
@@ -413,10 +464,18 @@ function ImportedFixedSizeListVector(
     validity::Vector{UInt8},
     len::Int,
     nullable::Bool,
+    value_offset::Int=0,
+    validity_offset::Int=0,
 ) where {N,V<:AbstractVector}
     T = NTuple{N,eltype(values)}
     ET = nullable ? Union{Missing,T} : T
-    return ImportedFixedSizeListVector{ET,N,V}(values, validity, len)
+    return ImportedFixedSizeListVector{ET,N,V}(
+        values,
+        validity,
+        len,
+        validity_offset,
+        value_offset,
+    )
 end
 
 Base.IndexStyle(::Type{<:ImportedFixedSizeListVector}) = Base.IndexLinear()
@@ -424,8 +483,8 @@ Base.size(vector::ImportedFixedSizeListVector) = (vector.len,)
 
 function Base.getindex(vector::ImportedFixedSizeListVector{T,N}, i::Int) where {T,N}
     @boundscheck checkbounds(vector, i)
-    _validity_bit(vector.validity, i) || return missing
-    offset = (i - 1) * N
+    _validity_bit(vector.validity, i, vector.validity_offset) || return missing
+    offset = vector.value_offset + (i - 1) * N
     return ntuple(j -> @inbounds(vector.values[offset + j]), Val(N))
 end
 
@@ -441,6 +500,7 @@ struct ImportedMapVector{T,O<:Union{Int32,Int64},E<:AbstractVector} <: AbstractV
     entries::E
     validity::Vector{UInt8}
     len::Int
+    validity_offset::Int
 end
 
 function _map_entry_types(entries::AbstractVector)
@@ -458,11 +518,12 @@ function ImportedMapVector(
     validity::Vector{UInt8},
     len::Int,
     nullable::Bool,
+    validity_offset::Int=0,
 ) where {O<:Union{Int32,Int64},E<:AbstractVector}
     K, V = _map_entry_types(entries)
     T = Dict{K,V}
     ET = nullable ? Union{Missing,T} : T
-    return ImportedMapVector{ET,O,E}(offsets, entries, validity, len)
+    return ImportedMapVector{ET,O,E}(offsets, entries, validity, len, validity_offset)
 end
 
 Base.IndexStyle(::Type{<:ImportedMapVector}) = Base.IndexLinear()
@@ -470,7 +531,7 @@ Base.size(vector::ImportedMapVector) = (vector.len,)
 
 function Base.getindex(vector::ImportedMapVector{T}, i::Int) where {T}
     @boundscheck checkbounds(vector, i)
-    _validity_bit(vector.validity, i) || return missing
+    _validity_bit(vector.validity, i, vector.validity_offset) || return missing
     K, V = _map_entry_types(vector.entries)
     result = Dict{K,V}()
     lo = Int(@inbounds vector.offsets[i]) + 1
@@ -599,6 +660,7 @@ struct ImportedRunEndEncodedVector{T,R<:AbstractVector,V<:AbstractVector} <:
     run_ends::R
     values::V
     len::Int
+    offset::Int
 end
 
 function _assert_run_end_type(::Type{T}) where {T}
@@ -611,13 +673,16 @@ function _assert_run_end_type(::Type{T}) where {T}
     return nothing
 end
 
-function _assert_run_end_shape(run_ends::AbstractVector, values::AbstractVector, len::Int)
+function _assert_run_end_shape(
+    run_ends::AbstractVector,
+    values::AbstractVector,
+    len::Int,
+    offset::Int,
+)
     _assert_run_end_type(eltype(run_ends))
     length(run_ends) == length(values) ||
         throw(ArgumentError("run-end encoded run_ends and values lengths must match"))
     if len == 0
-        isempty(run_ends) ||
-            throw(ArgumentError("zero-length run-end encoded arrays must have zero runs"))
         return nothing
     end
     isempty(run_ends) &&
@@ -629,14 +694,19 @@ function _assert_run_end_shape(run_ends::AbstractVector, values::AbstractVector,
             throw(ArgumentError("run-end encoded run_ends must be strictly increasing"))
         previous = current
     end
-    previous == len ||
-        throw(ArgumentError("run-end encoded final run_end must match logical length"))
+    previous >= offset + len ||
+        throw(ArgumentError("run-end encoded final run_end must cover logical length"))
     return nothing
 end
 
-function ImportedRunEndEncodedVector(run_ends::R, values::V, len::Int) where {R,V}
-    _assert_run_end_shape(run_ends, values, len)
-    return ImportedRunEndEncodedVector{eltype(values),R,V}(run_ends, values, len)
+function ImportedRunEndEncodedVector(
+    run_ends::R,
+    values::V,
+    len::Int,
+    offset::Int=0,
+) where {R,V}
+    _assert_run_end_shape(run_ends, values, len, offset)
+    return ImportedRunEndEncodedVector{eltype(values),R,V}(run_ends, values, len, offset)
 end
 
 Base.IndexStyle(::Type{<:ImportedRunEndEncodedVector}) = Base.IndexLinear()
@@ -644,7 +714,7 @@ Base.size(vector::ImportedRunEndEncodedVector) = (vector.len,)
 
 function Base.getindex(vector::ImportedRunEndEncodedVector, i::Int)
     @boundscheck checkbounds(vector, i)
-    physical = searchsortedfirst(vector.run_ends, i)
+    physical = searchsortedfirst(vector.run_ends, i + vector.offset)
     physical <= length(vector.values) ||
         throw(ArgumentError("run-end encoded value has no matching physical run"))
     return @inbounds vector.values[physical]
@@ -662,6 +732,8 @@ struct ImportedStructVector{T} <: AbstractVector{T}
     columns::Vector{AbstractVector}
     validity::Vector{UInt8}
     len::Int
+    validity_offset::Int
+    row_offset::Int
 end
 
 function ImportedStructVector(
@@ -670,11 +742,20 @@ function ImportedStructVector(
     validity::Vector{UInt8},
     len::Int,
     nullable::Bool,
+    row_offset::Int=0,
+    validity_offset::Int=0,
 )
     field_types = Tuple(eltype.(columns))
     row_type = NamedTuple{Tuple(names),Tuple{field_types...}}
     T = nullable ? Union{Missing,row_type} : row_type
-    return ImportedStructVector{T}(names, columns, validity, len)
+    return ImportedStructVector{T}(
+        names,
+        columns,
+        validity,
+        len,
+        validity_offset,
+        row_offset,
+    )
 end
 
 Base.IndexStyle(::Type{<:ImportedStructVector}) = Base.IndexLinear()
@@ -682,8 +763,9 @@ Base.size(vector::ImportedStructVector) = (vector.len,)
 
 function Base.getindex(vector::ImportedStructVector, i::Int)
     @boundscheck checkbounds(vector, i)
-    _validity_bit(vector.validity, i) || return missing
-    values = Tuple(@inbounds column[i] for column in vector.columns)
+    _validity_bit(vector.validity, i, vector.validity_offset) || return missing
+    physical = i + vector.row_offset
+    values = Tuple(@inbounds column[physical] for column in vector.columns)
     return NamedTuple{Tuple(vector.names)}(values)
 end
 

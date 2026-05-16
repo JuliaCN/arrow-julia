@@ -314,6 +314,8 @@ and logical scalar columns such as decimals, dates, times, timestamps,
 durations, and intervals. Imported tables must be released explicitly with
 [`Arrow.CData.release!`](@ref). Logical extension reconstruction, C Stream,
 C Device, and PyCapsule import paths remain unsupported.
+Imported arrays honor non-zero `ArrowArray.offset` values for the supported
+layouts, including bit-level offsets for validity and boolean buffers.
 
 This producer surface supports primitive, boolean, UTF-8 string, binary, UTF-8
 view, binary view, list, fixed-size, map, dense/sparse union, run-end encoded,

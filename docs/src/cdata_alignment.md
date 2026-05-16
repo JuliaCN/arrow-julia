@@ -62,7 +62,7 @@ Status labels:
 | Dense and sparse union | Formats `+ud:<ids>` and `+us:<ids>` carry type IDs and optional dense offsets. | Dense and sparse union columns export declared UInt8 type IDs. | Imported union columns borrow type IDs, dense offsets, and child arrays. | Union tests. | Covered | None. |
 | Run-end encoded | Format `+r` uses `run_ends` and `values` children. | Run-end encoded columns export `+r`. | Imported REE columns borrow both child arrays. | REE tests. | Covered | None. |
 | Logical scalar storage | Decimal, date, time, timestamp, duration, and interval storage use C Data format strings over physical buffers. | Arrow.jl-surfaced decimal, date, time, timestamp, duration, year-month interval, and day-time interval storage exports. | The same surfaced logical scalar formats import over borrowed physical buffers. Month-day-nano interval is not currently surfaced. | Logical scalar tests and format mapping in `src/cdata/formats.jl`. | Partial | `CDATA-AUDIT-006`. |
-| Array offsets | Consumers may receive arrays with non-zero `ArrowArray.offset` when buffers are large enough for `length + offset`. | Export emits zero-offset arrays. | Import currently rejects non-zero offsets for top-level and child arrays. | `_assert_import_column_layout` and top-level offset guards. | Not implemented | `CDATA-AUDIT-007`. |
+| Array offsets | Consumers may receive arrays with non-zero `ArrowArray.offset` when buffers are large enough for `length + offset`. | Export emits zero-offset arrays. | Import honors non-zero offsets for supported top-level and child arrays, including bit-level validity and boolean buffers. | Offset-aware import tests in `test/cdata.jl`. | Covered | None. |
 | C Stream Interface | `ArrowArrayStream` is a pull-style stream of schemas and arrays using callbacks. | Not exported as C Stream. | Not imported as C Stream. | Out-of-scope docs boundary. | Out of scope | `CDATA-AUDIT-008`. |
 | C Device data interface | Device arrays and device streams carry memory-manager and device placement information. | Not exported as C Device. | Not imported as C Device. | Out-of-scope docs boundary. | Out of scope | `CDATA-AUDIT-009`. |
 | PyCapsule Interface | Python objects can expose Arrow C Data, Stream, and Device interfaces through capsule methods. | No PyCapsule producer. | No PyCapsule consumer. | Out-of-scope docs boundary. | Out of scope | `CDATA-AUDIT-010`. |
@@ -77,7 +77,7 @@ Status labels:
 | CDATA-AUDIT-004 | Nullable top-level struct import is rejected. | `importtable` requires top-level `array.null_count == 0`. | `src/cdata/import.jl`. | P2 | Open | Import either supports top-level struct validity or documents a stable reason to keep it rejected. |
 | CDATA-AUDIT-005 | Nested dictionary chains are rejected on import. | `_import_dictionary_column` rejects dictionary schemas or arrays that themselves carry dictionaries. | `src/cdata/import.jl`, imported vector wrappers. | P2 | Open | Nested dictionary values import correctly or remain explicitly documented as unsupported with a targeted negative test. |
 | CDATA-AUDIT-006 | Month-day-nano interval (`tin`) is not represented in the current C Data logical scalar mapping. | `src/cdata/formats.jl` maps `tiM` and `tiD`, but not `tin`. | Arrow logical scalar types and `src/cdata/formats.jl`. | P2 | Open | If Arrow.jl exposes month-day-nano interval storage, C Data export/import maps it and tests it; otherwise the docs keep it listed as not surfaced. |
-| CDATA-AUDIT-007 | Non-zero `ArrowArray.offset` import is rejected. | `_assert_import_column_layout` rejects non-zero child offsets, and `importtable` rejects non-zero top-level offset. | `src/cdata/import.jl` and imported vector wrappers. | P1 | Open | Import can borrow non-zero-offset arrays without misaddressing validity, offsets, values, or child buffers, with pointer and value tests. |
+| CDATA-AUDIT-007 | Non-zero `ArrowArray.offset` import was rejected. | Offset-aware import tests now cover top-level struct slicing plus primitive, boolean, UTF-8, list, dictionary, fixed-size, view, and run-end encoded child arrays. | `src/cdata/import.jl` and imported vector wrappers. | P1 | Closed | Landed when import borrowed non-zero-offset arrays without misaddressing validity, offsets, values, or child buffers. |
 | CDATA-AUDIT-008 | C Stream is not part of `Arrow.CData`. | C Stream uses `ArrowArrayStream`, not just base `ArrowSchema` / `ArrowArray`. | Future C stream module or explicit non-goal. | P3 | Deferred | A separate design decides whether Arrow.jl should expose `ArrowArrayStream`; until then docs keep it out of C Data support claims. |
 | CDATA-AUDIT-009 | C Device data is not part of `Arrow.CData`. | Device arrays add device and memory-manager semantics beyond host buffers. | Future device-interface module or explicit non-goal. | P3 | Deferred | A separate design decides whether Arrow.jl should expose device arrays/streams. |
 | CDATA-AUDIT-010 | PyCapsule producer/consumer methods are not implemented. | Arrow.jl currently exposes Julia FFI pointers, not Python object capsule protocols. | Python interop boundary, if adopted. | P3 | Deferred | A package-owned interop design defines capsule ownership, release behavior, and tests against Python consumers. |
@@ -86,10 +86,7 @@ Status labels:
 
 ## Follow-Up Order
 
-1. Close `CDATA-AUDIT-007` before broader third-party import claims; non-zero
-   offsets are part of the base array contract and affect most buffer-backed
-   imported vectors.
-2. Close `CDATA-AUDIT-001` and `CDATA-AUDIT-002` together if the next user
+1. Close `CDATA-AUDIT-001` and `CDATA-AUDIT-002` together if the next user
    surface needs extension-aware import; both depend on metadata access.
-3. Keep `CDATA-AUDIT-008`, `CDATA-AUDIT-009`, and `CDATA-AUDIT-010` outside the
+2. Keep `CDATA-AUDIT-008`, `CDATA-AUDIT-009`, and `CDATA-AUDIT-010` outside the
    current PR unless a separate interface design is accepted.
