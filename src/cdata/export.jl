@@ -32,8 +32,7 @@ function _schema_export(
     dictionary_ref = dictionary === nothing ? nothing : dictionary.ref
     dictionary_handle = dictionary === nothing ? nothing : dictionary.handle
     dictionary_ptr =
-        dictionary === nothing ?
-        Ptr{ArrowSchema}(C_NULL) :
+        dictionary === nothing ? Ptr{ArrowSchema}(C_NULL) :
         Base.unsafe_convert(Ptr{ArrowSchema}, dictionary.ref)
     handle = SchemaHandle(
         strings,
@@ -78,8 +77,7 @@ function _schema_export_for_column(name::Symbol, column)
         indices = getfield(col, :indices)
         encoding = getfield(col, :encoding)
         encoding_schema = _schema_export_for_column(Symbol(""), getfield(encoding, :data))
-        getfield(encoding, :isOrdered) &&
-            (flags |= ARROW_FLAG_DICTIONARY_ORDERED)
+        getfield(encoding, :isOrdered) && (flags |= ARROW_FLAG_DICTIONARY_ORDERED)
         return _schema_export(
             _format_for_storage_type(eltype(indices)),
             String(name);
@@ -129,9 +127,9 @@ function _schema_export_for_column(name::Symbol, column)
             children=SchemaExport[run_ends_schema, values_schema],
         )
     elseif col isa Union{DenseUnion,SparseUnion}
-        child_schemas =
-            SchemaExport[_schema_export_for_column(Symbol(""), child) for
-                         child in getfield(col, :data)]
+        child_schemas = SchemaExport[
+            _schema_export_for_column(Symbol(""), child) for child in getfield(col, :data)
+        ]
         return _schema_export(
             _union_format(col),
             String(name);
@@ -140,9 +138,10 @@ function _schema_export_for_column(name::Symbol, column)
             children=child_schemas,
         )
     elseif col isa Struct
-        child_schemas =
-            SchemaExport[_schema_export_for_column(field_name, child) for
-                         (field_name, child) in zip(_struct_field_names(col), getfield(col, :data))]
+        child_schemas = SchemaExport[
+            _schema_export_for_column(field_name, child) for
+            (field_name, child) in zip(_struct_field_names(col), getfield(col, :data))
+        ]
         return _schema_export(
             "+s",
             String(name);
@@ -188,9 +187,10 @@ function _schema_export_for_column(name::Symbol, column)
 end
 
 function _schema_export_for_table(table::Table)
-    child_schemas =
-        SchemaExport[_schema_export_for_column(name, column) for
-                     (name, column) in zip(names(table), columns(table))]
+    child_schemas = SchemaExport[
+        _schema_export_for_column(name, column) for
+        (name, column) in zip(names(table), columns(table))
+    ]
     return _schema_export("+s", ""; metadata=getmetadata(table), children=child_schemas)
 end
 
@@ -217,12 +217,11 @@ end
 
 function _list_data_pointer(column::List)
     data = getfield(column, :data)
-    data isa AbstractVector{UInt8} ||
-        throw(
-            ArgumentError(
-                "Arrow C Data export expected string/binary List data as UInt8 storage; got $(typeof(data))",
-            ),
-        )
+    data isa AbstractVector{UInt8} || throw(
+        ArgumentError(
+            "Arrow C Data export expected string/binary List data as UInt8 storage; got $(typeof(data))",
+        ),
+    )
     return _primitive_data_pointer(data)
 end
 
@@ -235,7 +234,12 @@ function _view_buffer_pointers(column::View, lengths::Vector{Int64})
         _validity_pointer(column),
         _primitive_data_pointer(getfield(column, :data)),
     ]
-    append!(buffers, Ptr{Cvoid}[_primitive_data_pointer(buffer) for buffer in getfield(column, :buffers)])
+    append!(
+        buffers,
+        Ptr{Cvoid}[
+            _primitive_data_pointer(buffer) for buffer in getfield(column, :buffers)
+        ],
+    )
     push!(buffers, _primitive_data_pointer(lengths))
     return buffers
 end
@@ -256,8 +260,7 @@ function _array_export(
     dictionary_ref = dictionary === nothing ? nothing : dictionary.ref
     dictionary_handle = dictionary === nothing ? nothing : dictionary.handle
     dictionary_ptr =
-        dictionary === nothing ?
-        Ptr{ArrowArray}(C_NULL) :
+        dictionary === nothing ? Ptr{ArrowArray}(C_NULL) :
         Base.unsafe_convert(Ptr{ArrowArray}, dictionary.ref)
     handle = ArrayHandle(
         source,
@@ -349,9 +352,9 @@ function _array_export_for_column(name::Symbol, column)
             _primitive_data_pointer(getfield(col, :typeIds)),
             _primitive_data_pointer(getfield(col, :offsets)),
         ]
-        child_arrays =
-            ArrayExport[_array_export_for_column(Symbol(""), child) for
-                        child in getfield(col, :data)]
+        child_arrays = ArrayExport[
+            _array_export_for_column(Symbol(""), child) for child in getfield(col, :data)
+        ]
         return _array_export(
             col,
             length(col),
@@ -361,9 +364,9 @@ function _array_export_for_column(name::Symbol, column)
         )
     elseif col isa SparseUnion
         buffers = Ptr{Cvoid}[_primitive_data_pointer(getfield(col, :typeIds))]
-        child_arrays =
-            ArrayExport[_array_export_for_column(Symbol(""), child) for
-                        child in getfield(col, :data)]
+        child_arrays = ArrayExport[
+            _array_export_for_column(Symbol(""), child) for child in getfield(col, :data)
+        ]
         return _array_export(
             col,
             length(col),
@@ -372,9 +375,10 @@ function _array_export_for_column(name::Symbol, column)
             children=child_arrays,
         )
     elseif col isa Struct
-        child_arrays =
-            ArrayExport[_array_export_for_column(field_name, child) for
-                        (field_name, child) in zip(_struct_field_names(col), getfield(col, :data))]
+        child_arrays = ArrayExport[
+            _array_export_for_column(field_name, child) for
+            (field_name, child) in zip(_struct_field_names(col), getfield(col, :data))
+        ]
         buffers = Ptr{Cvoid}[_validity_pointer(col)]
         return _array_export(
             col,
@@ -399,7 +403,10 @@ function _array_export_for_column(name::Symbol, column)
             children=ArrayExport[child_array],
         )
     elseif col isa Primitive
-        buffers = Ptr{Cvoid}[_validity_pointer(col), _primitive_data_pointer(getfield(col, :data))]
+        buffers = Ptr{Cvoid}[
+            _validity_pointer(col),
+            _primitive_data_pointer(getfield(col, :data)),
+        ]
         return _array_export(col, length(col), nullcount(col), buffers)
     elseif col isa BoolVector
         buffers = Ptr{Cvoid}[_validity_pointer(col), _bool_data_pointer(col)]
@@ -417,15 +424,17 @@ function _table_length(table::Table)
     isempty(cols) && return 0
     len = length(first(cols))
     for col in Iterators.drop(cols, 1)
-        length(col) == len || throw(ArgumentError("Arrow.Table columns have mismatched lengths"))
+        length(col) == len ||
+            throw(ArgumentError("Arrow.Table columns have mismatched lengths"))
     end
     return len
 end
 
 function _array_export_for_table(table::Table)
-    child_arrays =
-        ArrayExport[_array_export_for_column(name, column) for
-                    (name, column) in zip(names(table), columns(table))]
+    child_arrays = ArrayExport[
+        _array_export_for_column(name, column) for
+        (name, column) in zip(names(table), columns(table))
+    ]
     return _array_export(
         table,
         _table_length(table),
@@ -464,7 +473,11 @@ The caller provides non-null `ArrowSchema*` and `ArrowArray*` storage. Julia
 fills those base structs and retains producer-owned member memory through the
 returned `ExportedTable` owner until the base structs are released.
 """
-function exporttable!(schema_out::Ptr{ArrowSchema}, array_out::Ptr{ArrowArray}, table::Table)
+function exporttable!(
+    schema_out::Ptr{ArrowSchema},
+    array_out::Ptr{ArrowArray},
+    table::Table,
+)
     schema_out == C_NULL &&
         throw(ArgumentError("ArrowSchema output pointer must not be C_NULL"))
     array_out == C_NULL &&
@@ -521,7 +534,8 @@ callback.
 """
 function release!(exported::ExportedTable)
     arr = array(exported)
-    arr.release == C_NULL || ccall(arr.release, Cvoid, (Ptr{ArrowArray},), array_ptr(exported))
+    arr.release == C_NULL ||
+        ccall(arr.release, Cvoid, (Ptr{ArrowArray},), array_ptr(exported))
     sch = schema(exported)
     sch.release == C_NULL ||
         ccall(sch.release, Cvoid, (Ptr{ArrowSchema},), schema_ptr(exported))

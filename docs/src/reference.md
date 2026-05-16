@@ -35,6 +35,10 @@ Order   = [:type, :function]
 
 ## C Data Interface
 
+```@docs
+Arrow.CData
+```
+
 ```@autodocs
 Modules = [Arrow.CData]
 Order   = [:type, :function]

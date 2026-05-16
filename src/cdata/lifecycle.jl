@@ -22,7 +22,8 @@ function _schema_release_callback(schema_ptr::Ptr{ArrowSchema})
         child_ptr = unsafe_load(schema.children, i)
         child_ptr == C_NULL && continue
         child = unsafe_load(child_ptr)
-        child.release == C_NULL || ccall(child.release, Cvoid, (Ptr{ArrowSchema},), child_ptr)
+        child.release == C_NULL ||
+            ccall(child.release, Cvoid, (Ptr{ArrowSchema},), child_ptr)
     end
     if schema.dictionary != C_NULL
         dictionary = unsafe_load(schema.dictionary)
@@ -55,7 +56,8 @@ function _array_release_callback(array_ptr::Ptr{ArrowArray})
         child_ptr = unsafe_load(array.children, i)
         child_ptr == C_NULL && continue
         child = unsafe_load(child_ptr)
-        child.release == C_NULL || ccall(child.release, Cvoid, (Ptr{ArrowArray},), child_ptr)
+        child.release == C_NULL ||
+            ccall(child.release, Cvoid, (Ptr{ArrowArray},), child_ptr)
     end
     if array.dictionary != C_NULL
         dictionary = unsafe_load(array.dictionary)

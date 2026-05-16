@@ -138,9 +138,13 @@ Base.IndexStyle(::Type{<:ImportedStringViewVector}) = Base.IndexLinear()
 Base.IndexStyle(::Type{<:ImportedBinaryViewVector}) = Base.IndexLinear()
 Base.size(vector::Union{ImportedStringViewVector,ImportedBinaryViewVector}) = (vector.len,)
 
-@inline _view_inline_start(i::Integer) = (i - 1) * VIEW_ELEMENT_BYTES + VIEW_LENGTH_BYTES + 1
+@inline _view_inline_start(i::Integer) =
+    (i - 1) * VIEW_ELEMENT_BYTES + VIEW_LENGTH_BYTES + 1
 
-function _view_buffer_span(vector::Union{ImportedStringViewVector,ImportedBinaryViewVector}, i::Int)
+function _view_buffer_span(
+    vector::Union{ImportedStringViewVector,ImportedBinaryViewVector},
+    i::Int,
+)
     view = @inbounds vector.views[i]
     len = Int(view.length)
     if _viewisinline(len)
@@ -320,8 +324,7 @@ Borrowed variable-size list vector imported from Arrow C Data Interface
 offsets, optional validity, and child value buffers. Keep the owning
 [`ImportedTable`](@ref) live until done.
 """
-struct ImportedListVector{T,O<:Union{Int32,Int64},V<:AbstractVector} <:
-       AbstractVector{T}
+struct ImportedListVector{T,O<:Union{Int32,Int64},V<:AbstractVector} <: AbstractVector{T}
     offsets::Vector{O}
     values::V
     validity::Vector{UInt8}
@@ -433,8 +436,7 @@ Borrowed map vector imported from Arrow C Data Interface offsets and entries
 struct child arrays. Row access materializes a `Dict` from borrowed entries.
 Keep the owning [`ImportedTable`](@ref) live until done.
 """
-struct ImportedMapVector{T,O<:Union{Int32,Int64},E<:AbstractVector} <:
-       AbstractVector{T}
+struct ImportedMapVector{T,O<:Union{Int32,Int64},E<:AbstractVector} <: AbstractVector{T}
     offsets::Vector{O}
     entries::E
     validity::Vector{UInt8}
@@ -600,8 +602,12 @@ struct ImportedRunEndEncodedVector{T,R<:AbstractVector,V<:AbstractVector} <:
 end
 
 function _assert_run_end_type(::Type{T}) where {T}
-    T === Int16 || T === Int32 || T === Int64 ||
-        throw(ArgumentError("run-end encoded run_ends must use signed 16/32/64-bit integers"))
+    T === Int16 ||
+        T === Int32 ||
+        T === Int64 ||
+        throw(
+            ArgumentError("run-end encoded run_ends must use signed 16/32/64-bit integers"),
+        )
     return nothing
 end
 
@@ -718,6 +724,7 @@ function release!(table::ImportedTable)
     arr = array(table)
     arr.release == C_NULL || ccall(arr.release, Cvoid, (Ptr{ArrowArray},), array_ptr(table))
     sch = schema(table)
-    sch.release == C_NULL || ccall(sch.release, Cvoid, (Ptr{ArrowSchema},), schema_ptr(table))
+    sch.release == C_NULL ||
+        ccall(sch.release, Cvoid, (Ptr{ArrowSchema},), schema_ptr(table))
     return table
 end

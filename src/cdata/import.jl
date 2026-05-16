@@ -57,7 +57,12 @@ function _validity_bit(validity::Vector{UInt8}, i::Int)
     return (byte & mask) != 0
 end
 
-function _bitmap_vector(array::ArrowArray, name::Symbol, buffer_index::Integer, label::AbstractString)
+function _bitmap_vector(
+    array::ArrowArray,
+    name::Symbol,
+    buffer_index::Integer,
+    label::AbstractString,
+)
     array.buffers == C_NULL && throw(ArgumentError("column $name has C_NULL buffers"))
     nbytes = _validity_nbytes(array.length)
     nbytes == 0 && return UInt8[]
@@ -68,8 +73,10 @@ end
 
 function _import_null_column(array::ArrowArray, name::Symbol)
     _assert_import_column_layout(array, name)
-    array.n_children == 0 || throw(ArgumentError("null column $name must not expose children"))
-    array.n_buffers == 0 || throw(ArgumentError("null column $name must not expose buffers"))
+    array.n_children == 0 ||
+        throw(ArgumentError("null column $name must not expose children"))
+    array.n_buffers == 0 ||
+        throw(ArgumentError("null column $name must not expose buffers"))
     return fill(missing, Int(array.length))
 end
 
@@ -87,16 +94,19 @@ function _import_primitive_column(schema::ArrowSchema, array::ArrowArray, name::
     _assert_import_column_layout(array, name)
     array.n_buffers == 2 ||
         throw(ArgumentError("primitive column $name must expose two buffers"))
-    array.buffers == C_NULL && throw(ArgumentError("primitive column $name has C_NULL buffers"))
+    array.buffers == C_NULL &&
+        throw(ArgumentError("primitive column $name has C_NULL buffers"))
     data_ptr = unsafe_load(array.buffers, 2)
     T = _storage_type_for_format(_import_format(schema))
     nullable = _nullable_field(schema, array)
     validity = nullable ? _validity_vector(array, name) : UInt8[]
     array.length == 0 &&
         return nullable ? ImportedNullablePrimitiveVector(T[], validity, 0) : T[]
-    data_ptr == C_NULL && throw(ArgumentError("primitive column $name has C_NULL data buffer"))
+    data_ptr == C_NULL &&
+        throw(ArgumentError("primitive column $name has C_NULL data buffer"))
     data = unsafe_wrap(Vector{T}, Ptr{T}(data_ptr), Int(array.length); own=false)
-    return nullable ? ImportedNullablePrimitiveVector(data, validity, Int(array.length)) : data
+    return nullable ? ImportedNullablePrimitiveVector(data, validity, Int(array.length)) :
+           data
 end
 
 function _import_string_column(
@@ -114,15 +124,16 @@ function _import_string_column(
     offsets_ptr == C_NULL && throw(ArgumentError("UTF-8 column $name has C_NULL offsets"))
     offsets = unsafe_wrap(Vector{O}, Ptr{O}(offsets_ptr), Int(array.length) + 1; own=false)
     data_len = isempty(offsets) ? 0 : Int(offsets[end])
-    data_len > 0 && data_ptr == C_NULL &&
+    data_len > 0 &&
+        data_ptr == C_NULL &&
         throw(ArgumentError("UTF-8 column $name has C_NULL data buffer"))
     data =
-        data_len == 0 ?
-        UInt8[] :
+        data_len == 0 ? UInt8[] :
         unsafe_wrap(Vector{UInt8}, Ptr{UInt8}(data_ptr), data_len; own=false)
     values = ImportedStringVector(offsets, data, Int(array.length))
     nullable = _nullable_field(schema, array)
-    return nullable ? ImportedNullableStringVector(values, _validity_vector(array, name)) : values
+    return nullable ? ImportedNullableStringVector(values, _validity_vector(array, name)) :
+           values
 end
 
 function _import_binary_column(
@@ -134,17 +145,18 @@ function _import_binary_column(
     _assert_import_column_layout(array, name)
     array.n_buffers == 3 ||
         throw(ArgumentError("binary column $name must expose three buffers"))
-    array.buffers == C_NULL && throw(ArgumentError("binary column $name has C_NULL buffers"))
+    array.buffers == C_NULL &&
+        throw(ArgumentError("binary column $name has C_NULL buffers"))
     offsets_ptr = unsafe_load(array.buffers, 2)
     data_ptr = unsafe_load(array.buffers, 3)
     offsets_ptr == C_NULL && throw(ArgumentError("binary column $name has C_NULL offsets"))
     offsets = unsafe_wrap(Vector{O}, Ptr{O}(offsets_ptr), Int(array.length) + 1; own=false)
     data_len = isempty(offsets) ? 0 : Int(offsets[end])
-    data_len > 0 && data_ptr == C_NULL &&
+    data_len > 0 &&
+        data_ptr == C_NULL &&
         throw(ArgumentError("binary column $name has C_NULL data buffer"))
     data =
-        data_len == 0 ?
-        UInt8[] :
+        data_len == 0 ? UInt8[] :
         unsafe_wrap(Vector{UInt8}, Ptr{UInt8}(data_ptr), data_len; own=false)
     nullable = _nullable_field(schema, array)
     validity = nullable ? _validity_vector(array, name) : UInt8[]
@@ -172,8 +184,9 @@ function _assert_view_spans!(
             throw(ArgumentError("view column $name references missing variadic buffer"))
         offset = Int(view.offset)
         offset >= 0 || throw(ArgumentError("view column $name has negative data offset"))
-        offset + len <= length(buffers[buffer_index]) ||
-            throw(ArgumentError("view column $name references bytes outside variadic buffer"))
+        offset + len <= length(buffers[buffer_index]) || throw(
+            ArgumentError("view column $name references bytes outside variadic buffer"),
+        )
     end
     return nothing
 end
@@ -189,27 +202,37 @@ function _import_view_column(
     array.n_children == 0 ||
         throw(ArgumentError("view column $name must not expose child arrays"))
     _assert_import_column_layout(array, name)
-    array.n_buffers >= 3 ||
-        throw(ArgumentError("view column $name must expose validity, views, and lengths buffers"))
+    array.n_buffers >= 3 || throw(
+        ArgumentError("view column $name must expose validity, views, and lengths buffers"),
+    )
     array.buffers == C_NULL && throw(ArgumentError("view column $name has C_NULL buffers"))
     views_ptr = unsafe_load(array.buffers, 2)
-    array.length > 0 && views_ptr == C_NULL &&
+    array.length > 0 &&
+        views_ptr == C_NULL &&
         throw(ArgumentError("view column $name has C_NULL views buffer"))
     views =
-        array.length == 0 ?
-        ViewElement[] :
-        unsafe_wrap(Vector{ViewElement}, Ptr{ViewElement}(views_ptr), Int(array.length); own=false)
+        array.length == 0 ? ViewElement[] :
+        unsafe_wrap(
+            Vector{ViewElement},
+            Ptr{ViewElement}(views_ptr),
+            Int(array.length);
+            own=false,
+        )
     inline =
-        array.length == 0 ?
-        UInt8[] :
-        unsafe_wrap(Vector{UInt8}, Ptr{UInt8}(views_ptr), Int(array.length) * VIEW_ELEMENT_BYTES; own=false)
+        array.length == 0 ? UInt8[] :
+        unsafe_wrap(
+            Vector{UInt8},
+            Ptr{UInt8}(views_ptr),
+            Int(array.length) * VIEW_ELEMENT_BYTES;
+            own=false,
+        )
     n_variadic = Int(array.n_buffers) - 3
     lengths_ptr = unsafe_load(array.buffers, Int(array.n_buffers))
-    n_variadic > 0 && lengths_ptr == C_NULL &&
+    n_variadic > 0 &&
+        lengths_ptr == C_NULL &&
         throw(ArgumentError("view column $name has C_NULL variadic lengths buffer"))
     lengths =
-        n_variadic == 0 ?
-        Int64[] :
+        n_variadic == 0 ? Int64[] :
         unsafe_wrap(Vector{Int64}, Ptr{Int64}(lengths_ptr), n_variadic; own=false)
     buffers = Vector{UInt8}[]
     for buffer_index = 1:n_variadic
@@ -217,12 +240,12 @@ function _import_view_column(
         data_len = Int(@inbounds lengths[buffer_index])
         data_len >= 0 ||
             throw(ArgumentError("view column $name has negative variadic buffer length"))
-        data_len > 0 && data_ptr == C_NULL &&
+        data_len > 0 &&
+            data_ptr == C_NULL &&
             throw(ArgumentError("view column $name has C_NULL variadic data buffer"))
         push!(
             buffers,
-            data_len == 0 ?
-            UInt8[] :
+            data_len == 0 ? UInt8[] :
             unsafe_wrap(Vector{UInt8}, Ptr{UInt8}(data_ptr), data_len; own=false),
         )
     end
@@ -230,14 +253,31 @@ function _import_view_column(
     validity = nullable ? _validity_vector(array, name) : UInt8[]
     _assert_view_spans!(views, buffers, validity, name)
     if utf8
-        return ImportedStringViewVector(views, inline, buffers, lengths, validity, Int(array.length), nullable)
+        return ImportedStringViewVector(
+            views,
+            inline,
+            buffers,
+            lengths,
+            validity,
+            Int(array.length),
+            nullable,
+        )
     end
-    return ImportedBinaryViewVector(views, inline, buffers, lengths, validity, Int(array.length), nullable)
+    return ImportedBinaryViewVector(
+        views,
+        inline,
+        buffers,
+        lengths,
+        validity,
+        Int(array.length),
+        nullable,
+    )
 end
 
 function _fixed_size_from_format(format::AbstractString, prefix::AbstractString)
-    startswith(format, prefix) ||
-        throw(ArgumentError("Arrow C Data import does not support fixed-size format $format"))
+    startswith(format, prefix) || throw(
+        ArgumentError("Arrow C Data import does not support fixed-size format $format"),
+    )
     size_text = format[(lastindex(prefix) + 1):end]
     list_size = tryparse(Int, size_text)
     list_size === nothing &&
@@ -266,14 +306,19 @@ function _import_fixed_size_binary_column(
     data_ptr = unsafe_load(array.buffers, 2)
     nbytes = width * Int(array.length)
     data =
-        nbytes == 0 ?
-        UInt8[] :
+        nbytes == 0 ? UInt8[] :
         data_ptr == C_NULL ?
         throw(ArgumentError("fixed-size-binary column $name has C_NULL data buffer")) :
         unsafe_wrap(Vector{UInt8}, Ptr{UInt8}(data_ptr), nbytes; own=false)
     nullable = _nullable_field(schema, array)
     validity = nullable ? _validity_vector(array, name) : UInt8[]
-    return ImportedFixedSizeBinaryVector(Val(width), data, validity, Int(array.length), nullable)
+    return ImportedFixedSizeBinaryVector(
+        Val(width),
+        data,
+        validity,
+        Int(array.length),
+        nullable,
+    )
 end
 
 function _import_fixed_size_list_column(
@@ -296,7 +341,8 @@ function _import_fixed_size_list_column(
     array.buffers == C_NULL &&
         throw(ArgumentError("fixed-size-list column $name has C_NULL buffers"))
     list_size = _fixed_size_from_format(format, "+w:")
-    _, values = _import_column(unsafe_load(schema.children, 1), unsafe_load(array.children, 1))
+    _, values =
+        _import_column(unsafe_load(schema.children, 1), unsafe_load(array.children, 1))
     length(values) >= list_size * Int(array.length) ||
         throw(ArgumentError("fixed-size-list column $name child array is too short"))
     nullable = _nullable_field(schema, array)
@@ -315,21 +361,29 @@ function _import_dictionary_column(schema::ArrowSchema, array::ArrowArray, name:
         throw(ArgumentError("dictionary column $name has C_NULL dictionary schema"))
     array.dictionary == C_NULL &&
         throw(ArgumentError("dictionary column $name has C_NULL dictionary array"))
-    schema.n_children == 0 ||
-        throw(ArgumentError("Arrow C Data import does not yet support nested dictionary column $name"))
-    array.n_children == 0 ||
-        throw(ArgumentError("Arrow C Data import does not yet support nested dictionary array $name"))
+    schema.n_children == 0 || throw(
+        ArgumentError(
+            "Arrow C Data import does not yet support nested dictionary column $name",
+        ),
+    )
+    array.n_children == 0 || throw(
+        ArgumentError(
+            "Arrow C Data import does not yet support nested dictionary array $name",
+        ),
+    )
     _assert_import_column_layout(array, name)
     array.n_buffers == 2 ||
         throw(ArgumentError("dictionary column $name must expose two index buffers"))
-    array.buffers == C_NULL && throw(ArgumentError("dictionary column $name has C_NULL buffers"))
+    array.buffers == C_NULL &&
+        throw(ArgumentError("dictionary column $name has C_NULL buffers"))
 
     dict_schema = unsafe_load(schema.dictionary)
     dict_array = unsafe_load(array.dictionary)
     dict_schema.dictionary == C_NULL ||
         throw(ArgumentError("Arrow C Data import does not yet support nested dictionaries"))
-    dict_array.dictionary == C_NULL ||
-        throw(ArgumentError("Arrow C Data import does not yet support nested dictionary arrays"))
+    dict_array.dictionary == C_NULL || throw(
+        ArgumentError("Arrow C Data import does not yet support nested dictionary arrays"),
+    )
     _, dictionary = _import_column(schema.dictionary, array.dictionary)
 
     index_ptr = unsafe_load(array.buffers, 2)
@@ -341,7 +395,13 @@ function _import_dictionary_column(schema::ArrowSchema, array::ArrowArray, name:
     index_ptr == C_NULL &&
         throw(ArgumentError("dictionary column $name has C_NULL indices buffer"))
     indices = unsafe_wrap(Vector{I}, Ptr{I}(index_ptr), Int(array.length); own=false)
-    return ImportedDictionaryVector(indices, dictionary, validity, Int(array.length), nullable)
+    return ImportedDictionaryVector(
+        indices,
+        dictionary,
+        validity,
+        Int(array.length),
+        nullable,
+    )
 end
 
 function _list_offset_type_for_format(format::AbstractString)
@@ -401,8 +461,10 @@ function _import_list_column(
         throw(ArgumentError("list column $name must expose one child schema"))
     array.n_children == 1 ||
         throw(ArgumentError("list column $name must expose one child array"))
-    schema.children == C_NULL && throw(ArgumentError("list column $name has C_NULL children"))
-    array.children == C_NULL && throw(ArgumentError("list column $name has C_NULL child arrays"))
+    schema.children == C_NULL &&
+        throw(ArgumentError("list column $name has C_NULL children"))
+    array.children == C_NULL &&
+        throw(ArgumentError("list column $name has C_NULL child arrays"))
     _assert_import_column_layout(array, name)
     array.n_buffers == 2 ||
         throw(ArgumentError("list column $name must expose validity and offsets buffers"))
@@ -410,7 +472,8 @@ function _import_list_column(
     offsets_ptr = unsafe_load(array.buffers, 2)
     offsets_ptr == C_NULL && throw(ArgumentError("list column $name has C_NULL offsets"))
 
-    _, values = _import_column(unsafe_load(schema.children, 1), unsafe_load(array.children, 1))
+    _, values =
+        _import_column(unsafe_load(schema.children, 1), unsafe_load(array.children, 1))
     O = _list_offset_type_for_format(format)
     offsets = unsafe_wrap(Vector{O}, Ptr{O}(offsets_ptr), Int(array.length) + 1; own=false)
     _assert_list_offsets!(offsets, values, name)
@@ -429,34 +492,47 @@ function _import_list_view_column(
         throw(ArgumentError("list-view column $name must expose one child schema"))
     array.n_children == 1 ||
         throw(ArgumentError("list-view column $name must expose one child array"))
-    schema.children == C_NULL && throw(ArgumentError("list-view column $name has C_NULL children"))
+    schema.children == C_NULL &&
+        throw(ArgumentError("list-view column $name has C_NULL children"))
     array.children == C_NULL &&
         throw(ArgumentError("list-view column $name has C_NULL child arrays"))
     _assert_import_column_layout(array, name)
-    array.n_buffers == 3 ||
-        throw(ArgumentError("list-view column $name must expose validity, offsets, and sizes buffers"))
-    array.buffers == C_NULL && throw(ArgumentError("list-view column $name has C_NULL buffers"))
+    array.n_buffers == 3 || throw(
+        ArgumentError(
+            "list-view column $name must expose validity, offsets, and sizes buffers",
+        ),
+    )
+    array.buffers == C_NULL &&
+        throw(ArgumentError("list-view column $name has C_NULL buffers"))
     offsets_ptr = unsafe_load(array.buffers, 2)
     sizes_ptr = unsafe_load(array.buffers, 3)
-    array.length > 0 && offsets_ptr == C_NULL &&
+    array.length > 0 &&
+        offsets_ptr == C_NULL &&
         throw(ArgumentError("list-view column $name has C_NULL offsets"))
-    array.length > 0 && sizes_ptr == C_NULL &&
+    array.length > 0 &&
+        sizes_ptr == C_NULL &&
         throw(ArgumentError("list-view column $name has C_NULL sizes"))
 
-    _, values = _import_column(unsafe_load(schema.children, 1), unsafe_load(array.children, 1))
+    _, values =
+        _import_column(unsafe_load(schema.children, 1), unsafe_load(array.children, 1))
     O = _list_view_offset_type_for_format(format)
     offsets =
-        array.length == 0 ?
-        O[] :
+        array.length == 0 ? O[] :
         unsafe_wrap(Vector{O}, Ptr{O}(offsets_ptr), Int(array.length); own=false)
     sizes =
-        array.length == 0 ?
-        O[] :
+        array.length == 0 ? O[] :
         unsafe_wrap(Vector{O}, Ptr{O}(sizes_ptr), Int(array.length); own=false)
     _assert_list_view_spans!(offsets, sizes, values, name)
     nullable = _nullable_field(schema, array)
     validity = nullable ? _validity_vector(array, name) : UInt8[]
-    return ImportedListViewVector(offsets, sizes, values, validity, Int(array.length), nullable)
+    return ImportedListViewVector(
+        offsets,
+        sizes,
+        values,
+        validity,
+        Int(array.length),
+        nullable,
+    )
 end
 
 function _import_map_column(schema::ArrowSchema, array::ArrowArray, name::Symbol)
@@ -464,8 +540,10 @@ function _import_map_column(schema::ArrowSchema, array::ArrowArray, name::Symbol
         throw(ArgumentError("map column $name must expose one entries schema"))
     array.n_children == 1 ||
         throw(ArgumentError("map column $name must expose one entries array"))
-    schema.children == C_NULL && throw(ArgumentError("map column $name has C_NULL children"))
-    array.children == C_NULL && throw(ArgumentError("map column $name has C_NULL child arrays"))
+    schema.children == C_NULL &&
+        throw(ArgumentError("map column $name has C_NULL children"))
+    array.children == C_NULL &&
+        throw(ArgumentError("map column $name has C_NULL child arrays"))
     _assert_import_column_layout(array, name)
     array.n_buffers == 2 ||
         throw(ArgumentError("map column $name must expose validity and offsets buffers"))
@@ -473,9 +551,14 @@ function _import_map_column(schema::ArrowSchema, array::ArrowArray, name::Symbol
     offsets_ptr = unsafe_load(array.buffers, 2)
     offsets_ptr == C_NULL && throw(ArgumentError("map column $name has C_NULL offsets"))
 
-    _, entries = _import_column(unsafe_load(schema.children, 1), unsafe_load(array.children, 1))
-    offsets =
-        unsafe_wrap(Vector{Int32}, Ptr{Int32}(offsets_ptr), Int(array.length) + 1; own=false)
+    _, entries =
+        _import_column(unsafe_load(schema.children, 1), unsafe_load(array.children, 1))
+    offsets = unsafe_wrap(
+        Vector{Int32},
+        Ptr{Int32}(offsets_ptr),
+        Int(array.length) + 1;
+        own=false,
+    )
     _assert_list_offsets!(offsets, entries, name)
     nullable = _nullable_field(schema, array)
     validity = nullable ? _validity_vector(array, name) : UInt8[]
@@ -485,7 +568,8 @@ end
 function _parse_union_format(format::AbstractString)
     dense = startswith(format, "+ud:")
     sparse = startswith(format, "+us:")
-    dense || sparse ||
+    dense ||
+        sparse ||
         throw(ArgumentError("Arrow C Data import does not support union format $format"))
     id_text = format[5:end]
     isempty(id_text) &&
@@ -509,7 +593,12 @@ function _import_union_type_ids(array::ArrowArray, name::Symbol)
     type_ids_ptr = unsafe_load(array.buffers, 1)
     array.length == 0 && return UInt8[]
     type_ids_ptr == C_NULL && throw(ArgumentError("union column $name has C_NULL type ids"))
-    return unsafe_wrap(Vector{UInt8}, Ptr{UInt8}(type_ids_ptr), Int(array.length); own=false)
+    return unsafe_wrap(
+        Vector{UInt8},
+        Ptr{UInt8}(type_ids_ptr),
+        Int(array.length);
+        own=false,
+    )
 end
 
 function _assert_union_type_ids!(
@@ -519,12 +608,11 @@ function _assert_union_type_ids!(
 )
     declared = Set(declared_ids)
     for type_id in type_ids
-        type_id in declared ||
-            throw(
-                ArgumentError(
-                    "union column $name references undeclared type id $(Int(type_id))",
-                ),
-            )
+        type_id in declared || throw(
+            ArgumentError(
+                "union column $name references undeclared type id $(Int(type_id))",
+            ),
+        )
     end
     return nothing
 end
@@ -548,8 +636,9 @@ end
 
 function _assert_sparse_union_children!(children::Tuple, len::Int, name::Symbol)
     for child in children
-        length(child) == len ||
-            throw(ArgumentError("sparse union column $name child length must match row count"))
+        length(child) == len || throw(
+            ArgumentError("sparse union column $name child length must match row count"),
+        )
     end
     return nothing
 end
@@ -565,8 +654,10 @@ function _import_union_column(
         throw(ArgumentError("union column $name child schema count must match type ids"))
     array.n_children == length(declared_ids) ||
         throw(ArgumentError("union column $name child array count must match type ids"))
-    schema.children == C_NULL && throw(ArgumentError("union column $name has C_NULL children"))
-    array.children == C_NULL && throw(ArgumentError("union column $name has C_NULL child arrays"))
+    schema.children == C_NULL &&
+        throw(ArgumentError("union column $name has C_NULL children"))
+    array.children == C_NULL &&
+        throw(ArgumentError("union column $name has C_NULL child arrays"))
     _assert_import_column_layout(array, name)
     array.null_count == 0 ||
         throw(ArgumentError("union column $name must not expose parent nulls"))
@@ -586,12 +677,17 @@ function _import_union_column(
     _assert_union_type_ids!(type_ids, declared_ids, name)
     if dense
         offsets_ptr = unsafe_load(array.buffers, 2)
-        array.length > 0 && offsets_ptr == C_NULL &&
+        array.length > 0 &&
+            offsets_ptr == C_NULL &&
             throw(ArgumentError("dense union column $name has C_NULL offsets"))
         offsets =
-            array.length == 0 ?
-            Int32[] :
-            unsafe_wrap(Vector{Int32}, Ptr{Int32}(offsets_ptr), Int(array.length); own=false)
+            array.length == 0 ? Int32[] :
+            unsafe_wrap(
+                Vector{Int32},
+                Ptr{Int32}(offsets_ptr),
+                Int(array.length);
+                own=false,
+            )
         _assert_dense_union_offsets!(offsets, type_ids, children, declared_ids, name)
         return ImportedDenseUnionVector(
             type_ids,
@@ -623,14 +719,10 @@ function _import_run_end_encoded_column(
         throw(ArgumentError("run-end encoded column $name must not expose parent nulls"))
     array.n_buffers == 0 ||
         throw(ArgumentError("run-end encoded column $name must not expose parent buffers"))
-    run_ends_name, run_ends = _import_column(
-        unsafe_load(schema.children, 1),
-        unsafe_load(array.children, 1),
-    )
-    values_name, values = _import_column(
-        unsafe_load(schema.children, 2),
-        unsafe_load(array.children, 2),
-    )
+    run_ends_name, run_ends =
+        _import_column(unsafe_load(schema.children, 1), unsafe_load(array.children, 1))
+    values_name, values =
+        _import_column(unsafe_load(schema.children, 2), unsafe_load(array.children, 2))
     run_ends_name == :run_ends ||
         throw(ArgumentError("run-end encoded column $name first child must be run_ends"))
     values_name == :values ||
@@ -643,19 +735,20 @@ function _import_struct_column(schema::ArrowSchema, array::ArrowArray, name::Sym
         throw(ArgumentError("struct column $name schema/array child count mismatch"))
     array.n_buffers == 1 ||
         throw(ArgumentError("struct column $name must expose one validity buffer"))
-    array.buffers == C_NULL && throw(ArgumentError("struct column $name has C_NULL buffers"))
-    schema.n_children > 0 && schema.children == C_NULL &&
+    array.buffers == C_NULL &&
+        throw(ArgumentError("struct column $name has C_NULL buffers"))
+    schema.n_children > 0 &&
+        schema.children == C_NULL &&
         throw(ArgumentError("struct column $name has C_NULL children"))
-    array.n_children > 0 && array.children == C_NULL &&
+    array.n_children > 0 &&
+        array.children == C_NULL &&
         throw(ArgumentError("struct column $name has C_NULL child arrays"))
     _assert_import_column_layout(array, name)
     names = Symbol[]
     columns = AbstractVector[]
     for i = 1:schema.n_children
-        child_name, child = _import_column(
-            unsafe_load(schema.children, i),
-            unsafe_load(array.children, i),
-        )
+        child_name, child =
+            _import_column(unsafe_load(schema.children, i), unsafe_load(array.children, i))
         push!(names, child_name)
         push!(columns, child)
     end
@@ -714,32 +807,39 @@ columns with nullable field validity. Call [`Arrow.CData.release!`](@ref) on
 the imported table when done.
 """
 function importtable(schema_ptr::Ptr{ArrowSchema}, array_ptr::Ptr{ArrowArray})
-    schema_ptr == C_NULL && throw(ArgumentError("ArrowSchema input pointer must not be C_NULL"))
-    array_ptr == C_NULL && throw(ArgumentError("ArrowArray input pointer must not be C_NULL"))
+    schema_ptr == C_NULL &&
+        throw(ArgumentError("ArrowSchema input pointer must not be C_NULL"))
+    array_ptr == C_NULL &&
+        throw(ArgumentError("ArrowArray input pointer must not be C_NULL"))
     schema = unsafe_load(schema_ptr)
     array = unsafe_load(array_ptr)
     _assert_import_live(schema, array)
-    _import_format(schema) == "+s" ||
-        throw(ArgumentError("Arrow C Data import currently requires top-level struct format +s"))
+    _import_format(schema) == "+s" || throw(
+        ArgumentError("Arrow C Data import currently requires top-level struct format +s"),
+    )
     schema.n_children == array.n_children ||
         throw(ArgumentError("Arrow C Data import schema/array child count mismatch"))
-    array.offset == 0 ||
-        throw(ArgumentError("Arrow C Data import does not yet support non-zero top-level offset"))
-    array.null_count == 0 ||
-        throw(ArgumentError("Arrow C Data import does not yet support nullable top-level structs"))
+    array.offset == 0 || throw(
+        ArgumentError("Arrow C Data import does not yet support non-zero top-level offset"),
+    )
+    array.null_count == 0 || throw(
+        ArgumentError(
+            "Arrow C Data import does not yet support nullable top-level structs",
+        ),
+    )
     array.n_buffers == 1 ||
         throw(ArgumentError("top-level struct array must expose one buffer"))
-    schema.n_children > 0 && schema.children == C_NULL &&
+    schema.n_children > 0 &&
+        schema.children == C_NULL &&
         throw(ArgumentError("top-level struct schema has C_NULL children"))
-    array.n_children > 0 && array.children == C_NULL &&
+    array.n_children > 0 &&
+        array.children == C_NULL &&
         throw(ArgumentError("top-level struct array has C_NULL children"))
     names = Symbol[]
     imported_columns = AbstractVector[]
     for i = 1:schema.n_children
-        name, column = _import_column(
-            unsafe_load(schema.children, i),
-            unsafe_load(array.children, i),
-        )
+        name, column =
+            _import_column(unsafe_load(schema.children, i), unsafe_load(array.children, i))
         push!(names, name)
         push!(imported_columns, column)
     end

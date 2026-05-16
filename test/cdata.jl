@@ -92,8 +92,7 @@ function _run_cdata_embed_smoke(executable)
     lib_path_var = Sys.isapple() ? "DYLD_LIBRARY_PATH" : "LD_LIBRARY_PATH"
     existing = get(ENV, lib_path_var, "")
     lib_path = join(
-        isempty(existing) ?
-        (julia_lib, julia_private_lib) :
+        isempty(existing) ? (julia_lib, julia_private_lib) :
         (julia_lib, julia_private_lib, existing),
         Sys.iswindows() ? ";" : ":",
     )
@@ -162,8 +161,7 @@ end
               Ptr{Cvoid}(pointer(getfield(id_column, :data)))
         @test unsafe_load(score_array.buffers, 2) ==
               Ptr{Cvoid}(pointer(getfield(score_column, :data)))
-        @test unsafe_load(flag_array.buffers, 2) ==
-              Ptr{Cvoid}(
+        @test unsafe_load(flag_array.buffers, 2) == Ptr{Cvoid}(
             pointer(getfield(flag_column, :arrow), getfield(flag_column, :pos)),
         )
 
@@ -180,8 +178,7 @@ end
         maybe_array = _child_array(array, 1)
 
         @test _cstring(maybe_schema.format) == "l"
-        @test maybe_schema.flags & CData.ARROW_FLAG_NULLABLE ==
-              CData.ARROW_FLAG_NULLABLE
+        @test maybe_schema.flags & CData.ARROW_FLAG_NULLABLE == CData.ARROW_FLAG_NULLABLE
         @test maybe_array.length == 3
         @test maybe_array.null_count == 1
         @test unsafe_load(maybe_array.buffers, 1) != C_NULL
@@ -192,10 +189,7 @@ end
 
     @testset "exports string columns and schema metadata" begin
         source = Arrow.withmetadata(
-            (
-                name=["alpha", "beta", ""],
-                maybe=Union{Missing,String}["x", missing, "yz"],
-            );
+            (name=["alpha", "beta", ""], maybe=Union{Missing,String}["x", missing, "yz"]);
             metadata=Dict("dataset" => "strings"),
             colmetadata=Dict(
                 :name => Dict("role" => "label"),
@@ -219,8 +213,7 @@ end
         @test _cstring(maybe_schema.format) == "u"
         @test _metadata_dict(name_schema.metadata) == Dict("role" => "label")
         @test _metadata_dict(maybe_schema.metadata) == Dict("role" => "optional")
-        @test maybe_schema.flags & CData.ARROW_FLAG_NULLABLE ==
-              CData.ARROW_FLAG_NULLABLE
+        @test maybe_schema.flags & CData.ARROW_FLAG_NULLABLE == CData.ARROW_FLAG_NULLABLE
         @test name_array.n_buffers == 3
         @test maybe_array.n_buffers == 3
         @test unsafe_load(name_array.buffers, 1) == C_NULL
@@ -240,9 +233,7 @@ end
     end
 
     @testset "exports list columns with child arrays" begin
-        table = Arrow.Table(
-            Arrow.tobuffer((values=[[Int64(1), 2], [Int64(3)], Int64[]],)),
-        )
+        table = Arrow.Table(Arrow.tobuffer((values=[[Int64(1), 2], [Int64(3)], Int64[]],)))
         exported = CData.exporttable(table)
 
         schema = CData.schema(exported)
@@ -272,9 +263,8 @@ end
     end
 
     @testset "exports dictionary encoded columns" begin
-        table = Arrow.Table(
-            Arrow.tobuffer((color=["red", "blue", "red"],); dictencode=true),
-        )
+        table =
+            Arrow.Table(Arrow.tobuffer((color=["red", "blue", "red"],); dictencode=true))
         exported = CData.exporttable(table)
 
         schema = CData.schema(exported)
@@ -291,7 +281,8 @@ end
         @test dictionary_schema_ptr != C_NULL
         @test dictionary_array_ptr != C_NULL
         @test _cstring(dictionary_schema.format) == "u"
-        @test dictionary_array.length == length(getfield(getfield(color_column, :encoding), :data))
+        @test dictionary_array.length ==
+              length(getfield(getfield(color_column, :encoding), :data))
         @test color_array.n_buffers == 2
         @test unsafe_load(color_array.buffers, 1) == C_NULL
         @test unsafe_load(color_array.buffers, 2) ==
@@ -378,9 +369,7 @@ end
     end
 
     @testset "imports large UTF-8 and binary C Data columns" begin
-        large_table = Arrow.Table(
-            Arrow.tobuffer((name=["a", "bb", ""],); largelists=true),
-        )
+        large_table = Arrow.Table(Arrow.tobuffer((name=["a", "bb", ""],); largelists=true))
         large_exported = CData.exporttable(large_table)
         large_imported = CData.importtable(
             CData.schema_ptr(large_exported),
@@ -460,7 +449,9 @@ end
 
     @testset "imports boolean C Data columns" begin
         table = Arrow.Table(
-            Arrow.tobuffer((flag=Bool[true, false, true, true, false, false, true, false, true],)),
+            Arrow.tobuffer((
+                flag=Bool[true, false, true, true, false, false, true, false, true],
+            )),
         )
         exported = CData.exporttable(table)
         imported = CData.importtable(CData.schema_ptr(exported), CData.array_ptr(exported))
@@ -468,7 +459,8 @@ end
         flag = Tables.getcolumn(imported, :flag)
         flag_array = _child_array(CData.array(exported), 1)
         @test flag isa CData.ImportedBoolVector{Bool}
-        @test collect(flag) == Bool[true, false, true, true, false, false, true, false, true]
+        @test collect(flag) ==
+              Bool[true, false, true, true, false, false, true, false, true]
         @test pointer(flag.data) == Ptr{UInt8}(unsafe_load(flag_array.buffers, 2))
 
         CData.release!(imported)
@@ -476,9 +468,9 @@ end
         @test CData.isreleased(exported)
 
         nullable_table = Arrow.Table(
-            Arrow.tobuffer(
-                (flag=Union{Missing,Bool}[true, missing, false, true, missing],),
-            ),
+            Arrow.tobuffer((
+                flag=Union{Missing,Bool}[true, missing, false, true, missing],
+            ),),
         )
         nullable_exported = CData.exporttable(nullable_table)
         nullable_imported = CData.importtable(
@@ -492,7 +484,8 @@ end
             collect(maybe_flag),
             Union{Missing,Bool}[true, missing, false, true, missing],
         )
-        @test pointer(maybe_flag.data) == Ptr{UInt8}(unsafe_load(maybe_flag_array.buffers, 2))
+        @test pointer(maybe_flag.data) ==
+              Ptr{UInt8}(unsafe_load(maybe_flag_array.buffers, 2))
         @test pointer(maybe_flag.validity) ==
               Ptr{UInt8}(unsafe_load(maybe_flag_array.buffers, 1))
 
@@ -503,12 +496,10 @@ end
 
     @testset "imports nullable primitive and UTF-8 C Data tables" begin
         table = Arrow.Table(
-            Arrow.tobuffer(
-                (
-                    maybe=Union{Missing,Int32}[1, missing, 3],
-                    label=Union{Missing,String}["a", missing, "ccc"],
-                ),
-            ),
+            Arrow.tobuffer((
+                maybe=Union{Missing,Int32}[1, missing, 3],
+                label=Union{Missing,String}["a", missing, "ccc"],
+            ),),
         )
         exported = CData.exporttable(table)
         imported = CData.importtable(CData.schema_ptr(exported), CData.array_ptr(exported))
@@ -537,9 +528,8 @@ end
     end
 
     @testset "imports dictionary encoded C Data columns" begin
-        table = Arrow.Table(
-            Arrow.tobuffer((color=["red", "blue", "red"],); dictencode=true),
-        )
+        table =
+            Arrow.Table(Arrow.tobuffer((color=["red", "blue", "red"],); dictencode=true))
         exported = CData.exporttable(table)
         imported = CData.importtable(CData.schema_ptr(exported), CData.array_ptr(exported))
 
@@ -590,9 +580,7 @@ end
     end
 
     @testset "imports list C Data columns" begin
-        table = Arrow.Table(
-            Arrow.tobuffer((values=[Int64[1, 2], Int64[3], Int64[]],)),
-        )
+        table = Arrow.Table(Arrow.tobuffer((values=[Int64[1, 2], Int64[3], Int64[]],)))
         exported = CData.exporttable(table)
         imported = CData.importtable(CData.schema_ptr(exported), CData.array_ptr(exported))
 
@@ -610,9 +598,9 @@ end
         @test CData.isreleased(exported)
 
         nullable_table = Arrow.Table(
-            Arrow.tobuffer(
-                (values=Union{Missing,Vector{Int64}}[Int64[1, 2], missing, Int64[]],),
-            ),
+            Arrow.tobuffer((
+                values=Union{Missing,Vector{Int64}}[Int64[1, 2], missing, Int64[]],
+            ),),
         )
         nullable_exported = CData.exporttable(nullable_table)
         nullable_imported = CData.importtable(
@@ -634,9 +622,8 @@ end
         @test CData.isreleased(nullable_imported)
         @test CData.isreleased(nullable_exported)
 
-        large_table = Arrow.Table(
-            Arrow.tobuffer((values=[Int64[1], Int64[]],); largelists=true),
-        )
+        large_table =
+            Arrow.Table(Arrow.tobuffer((values=[Int64[1], Int64[]],); largelists=true))
         large_exported = CData.exporttable(large_table)
         large_imported = CData.importtable(
             CData.schema_ptr(large_exported),
@@ -672,20 +659,10 @@ end
             schema_out,
             array_out,
         ) == 0
-        @test ccall(
-            release_array,
-            Cint,
-            (Ptr{CData.ArrowArray},),
-            array_out,
-        ) == 0
+        @test ccall(release_array, Cint, (Ptr{CData.ArrowArray},), array_out) == 0
         @test CData.array(exported).release == C_NULL
         @test !CData.isreleased(exported)
-        @test ccall(
-            release_schema,
-            Cint,
-            (Ptr{CData.ArrowSchema},),
-            schema_out,
-        ) == 0
+        @test ccall(release_schema, Cint, (Ptr{CData.ArrowSchema},), schema_out) == 0
         @test CData.isreleased(exported)
         @test CData._retained_handle_count() == before
     end
@@ -718,12 +695,10 @@ end
     @testset "exports and imports nested struct columns" begin
         maybe_type = Union{Missing,NamedTuple{(:x, :label),Tuple{Int32,String}}}
         table = Arrow.Table(
-            Arrow.tobuffer(
-                (
-                    point=[(x=Int32(1), label="a"), (x=Int32(2), label="bb")],
-                    maybe=maybe_type[(x=Int32(3), label="ccc"), missing],
-                ),
-            ),
+            Arrow.tobuffer((
+                point=[(x=Int32(1), label="a"), (x=Int32(2), label="bb")],
+                maybe=maybe_type[(x=Int32(3), label="ccc"), missing],
+            ),),
         )
         exported = CData.exporttable(table)
         imported = CData.importtable(CData.schema_ptr(exported), CData.array_ptr(exported))
@@ -741,18 +716,14 @@ end
         @test point_schema.n_children == 2
         @test _cstring(_child_schema(point_schema, 1).name) == "x"
         @test _cstring(_child_schema(point_schema, 2).name) == "label"
-        @test maybe_schema.flags & CData.ARROW_FLAG_NULLABLE ==
-              CData.ARROW_FLAG_NULLABLE
+        @test maybe_schema.flags & CData.ARROW_FLAG_NULLABLE == CData.ARROW_FLAG_NULLABLE
 
         point = Tables.getcolumn(imported, :point)
         maybe = Tables.getcolumn(imported, :maybe)
         @test point isa CData.ImportedStructVector
         @test maybe isa CData.ImportedStructVector
         @test collect(point) == [(x=Int32(1), label="a"), (x=Int32(2), label="bb")]
-        @test isequal(
-            collect(maybe),
-            maybe_type[(x=Int32(3), label="ccc"), missing],
-        )
+        @test isequal(collect(maybe), maybe_type[(x=Int32(3), label="ccc"), missing])
         @test pointer(point.columns[1]) == Ptr{Int32}(unsafe_load(point_x_array.buffers, 2))
         @test pointer(point.columns[2].offsets) ==
               Ptr{Int32}(unsafe_load(point_label_array.buffers, 2))
@@ -765,19 +736,11 @@ end
 
     @testset "exports and imports fixed-size columns" begin
         table = Arrow.Table(
-            Arrow.tobuffer(
-                (
-                    bytes=NTuple{2,UInt8}[(0x01, 0x02), (0x03, 0x04)],
-                    fixed=NTuple{2,Int32}[
-                        (Int32(1), Int32(2)),
-                        (Int32(3), Int32(4)),
-                    ],
-                    maybe=Union{Missing,NTuple{2,Int32}}[
-                        (Int32(5), Int32(6)),
-                        missing,
-                    ],
-                ),
-            ),
+            Arrow.tobuffer((
+                bytes=NTuple{2,UInt8}[(0x01, 0x02), (0x03, 0x04)],
+                fixed=NTuple{2,Int32}[(Int32(1), Int32(2)), (Int32(3), Int32(4))],
+                maybe=Union{Missing,NTuple{2,Int32}}[(Int32(5), Int32(6)), missing],
+            ),),
         )
         exported = CData.exporttable(table)
         imported = CData.importtable(CData.schema_ptr(exported), CData.array_ptr(exported))
@@ -801,10 +764,7 @@ end
         @test fixed isa CData.ImportedFixedSizeListVector
         @test maybe isa CData.ImportedFixedSizeListVector
         @test collect(bytes) == NTuple{2,UInt8}[(0x01, 0x02), (0x03, 0x04)]
-        @test collect(fixed) == NTuple{2,Int32}[
-            (Int32(1), Int32(2)),
-            (Int32(3), Int32(4)),
-        ]
+        @test collect(fixed) == NTuple{2,Int32}[(Int32(1), Int32(2)), (Int32(3), Int32(4))]
         @test isequal(
             collect(maybe),
             Union{Missing,NTuple{2,Int32}}[(Int32(5), Int32(6)), missing],
@@ -824,10 +784,7 @@ end
         interval_type = Arrow.Interval{Arrow.Meta.IntervalUnit.YEAR_MONTH,Int32}
         dates = Date[Date(2020, 1, 1), Date(2020, 1, 2)]
         times = Time[Time(1, 2, 3), Time(4, 5, 6)]
-        datetimes = DateTime[
-            DateTime(2020, 1, 1, 1, 2, 3),
-            DateTime(2020, 1, 2, 4, 5, 6),
-        ]
+        datetimes = DateTime[DateTime(2020, 1, 1, 1, 2, 3), DateTime(2020, 1, 2, 4, 5, 6)]
         durations = Millisecond[Millisecond(5), Millisecond(10)]
         intervals = interval_type[interval_type(Int32(12)), interval_type(Int32(24))]
         decimals128 =
@@ -838,19 +795,17 @@ end
         ]
         maybe_dates = Union{Missing,Date}[Date(2021, 1, 1), missing]
         table = Arrow.Table(
-            Arrow.tobuffer(
-                (
-                    nulls=[missing, missing],
-                    date=dates,
-                    time=times,
-                    datetime=datetimes,
-                    duration=durations,
-                    interval=intervals,
-                    decimal128=decimals128,
-                    decimal256=decimals256,
-                    maybe_date=maybe_dates,
-                ),
-            ),
+            Arrow.tobuffer((
+                nulls=[missing, missing],
+                date=dates,
+                time=times,
+                datetime=datetimes,
+                duration=durations,
+                interval=intervals,
+                decimal128=decimals128,
+                decimal256=decimals256,
+                maybe_date=maybe_dates,
+            ),),
         )
         exported = CData.exporttable(table)
         imported = CData.importtable(CData.schema_ptr(exported), CData.array_ptr(exported))
@@ -908,8 +863,7 @@ end
                 missing,
             ],
         )
-        @test pointer(date) ==
-              Ptr{eltype(date)}(unsafe_load(date_array.buffers, 2))
+        @test pointer(date) == Ptr{eltype(date)}(unsafe_load(date_array.buffers, 2))
         @test pointer(decimal128) ==
               Ptr{decimal128_type}(unsafe_load(decimal128_array.buffers, 2))
         @test pointer(maybe_date.data) ==
@@ -924,20 +878,18 @@ end
 
     @testset "exports and imports map columns" begin
         table = Arrow.Table(
-            Arrow.tobuffer(
-                (
-                    map=Dict{String,Int32}[
-                        Dict("a" => Int32(1), "b" => Int32(2)),
-                        Dict("c" => Int32(3)),
-                        Dict{String,Int32}(),
-                    ],
-                    maybe=Union{Missing,Dict{String,Int32}}[
-                        Dict("z" => Int32(9)),
-                        missing,
-                        Dict{String,Int32}(),
-                    ],
-                ),
-            ),
+            Arrow.tobuffer((
+                map=Dict{String,Int32}[
+                    Dict("a" => Int32(1), "b" => Int32(2)),
+                    Dict("c" => Int32(3)),
+                    Dict{String,Int32}(),
+                ],
+                maybe=Union{Missing,Dict{String,Int32}}[
+                    Dict("z" => Int32(9)),
+                    missing,
+                    Dict{String,Int32}(),
+                ],
+            ),),
         )
         exported = CData.exporttable(table)
         imported = CData.importtable(CData.schema_ptr(exported), CData.array_ptr(exported))
@@ -979,7 +931,8 @@ end
         @test pointer(map.offsets) == Ptr{Int32}(unsafe_load(map_array.buffers, 2))
         @test pointer(map.entries.columns[1].offsets) ==
               Ptr{Int32}(unsafe_load(key_array.buffers, 2))
-        @test pointer(map.entries.columns[2]) == Ptr{Int32}(unsafe_load(value_array.buffers, 2))
+        @test pointer(map.entries.columns[2]) ==
+              Ptr{Int32}(unsafe_load(value_array.buffers, 2))
         @test pointer(maybe.validity) == Ptr{UInt8}(unsafe_load(maybe_array.buffers, 1))
 
         CData.release!(imported)
@@ -987,7 +940,10 @@ end
         @test CData.isreleased(exported)
 
         large_offsets = Arrow.Table(
-            Arrow.tobuffer((map=Dict{String,Int32}[Dict("large" => Int32(1))],); largelists=true),
+            Arrow.tobuffer(
+                (map=Dict{String,Int32}[Dict("large" => Int32(1))],);
+                largelists=true,
+            ),
         )
         @test_throws ArgumentError CData.exporttable(large_offsets)
     end
@@ -995,12 +951,10 @@ end
     @testset "exports and imports union columns" begin
         source = Union{Int64,Float64,Missing}[1, 2.0, missing, 3]
         table = Arrow.Table(
-            Arrow.tobuffer(
-                (
-                    dense=Arrow.DenseUnionVector(source),
-                    sparse=Arrow.SparseUnionVector(source),
-                ),
-            ),
+            Arrow.tobuffer((
+                dense=Arrow.DenseUnionVector(source),
+                sparse=Arrow.SparseUnionVector(source),
+            ),),
         )
         exported = CData.exporttable(table)
         imported = CData.importtable(CData.schema_ptr(exported), CData.array_ptr(exported))
@@ -1042,7 +996,8 @@ end
     end
 
     @testset "exports and imports run-end encoded columns" begin
-        table = Arrow.Table(joinpath(@__DIR__, "run_end_encoded_small.arrow"); convert=false)
+        table =
+            Arrow.Table(joinpath(@__DIR__, "run_end_encoded_small.arrow"); convert=false)
         exported = CData.exporttable(table)
         imported = CData.importtable(CData.schema_ptr(exported), CData.array_ptr(exported))
 
@@ -1065,7 +1020,8 @@ end
         @test x_array.n_children == 2
 
         x = Tables.getcolumn(imported, :x)
-        values = x.values isa CData.ImportedNullableStringVector ? x.values.values : x.values
+        values =
+            x.values isa CData.ImportedNullableStringVector ? x.values.values : x.values
         @test x isa CData.ImportedRunEndEncodedVector
         @test isequal(collect(x), Union{Missing,String}["a", "a", "b", "b", "b"])
         @test pointer(x.run_ends) == Ptr{Int16}(unsafe_load(run_ends_array.buffers, 2))
@@ -1093,10 +1049,12 @@ end
         @test reason_array.n_buffers == 4
         @test reason isa CData.ImportedStringViewVector
         @test isequal(collect(reason), collect(source_reason))
-        @test pointer(reason.views) == Ptr{Arrow.ViewElement}(unsafe_load(reason_array.buffers, 2))
+        @test pointer(reason.views) ==
+              Ptr{Arrow.ViewElement}(unsafe_load(reason_array.buffers, 2))
         @test pointer(reason.buffers[1]) == Ptr{UInt8}(unsafe_load(reason_array.buffers, 3))
         @test pointer(reason.lengths) == Ptr{Int64}(unsafe_load(reason_array.buffers, 4))
-        @test reason.lengths == Int64[length(buffer) for buffer in getfield(source_reason, :buffers)]
+        @test reason.lengths ==
+              Int64[length(buffer) for buffer in getfield(source_reason, :buffers)]
 
         CData.release!(imported)
         @test CData.isreleased(imported)
@@ -1134,7 +1092,8 @@ end
             [ismissing(value) ? missing : collect(value) for value in blob],
             [ismissing(value) ? missing : collect(value) for value in binary_source],
         )
-        @test pointer(blob.views) == Ptr{Arrow.ViewElement}(unsafe_load(blob_array.buffers, 2))
+        @test pointer(blob.views) ==
+              Ptr{Arrow.ViewElement}(unsafe_load(blob_array.buffers, 2))
         @test pointer(blob.buffers[1]) == Ptr{UInt8}(unsafe_load(blob_array.buffers, 3))
         @test pointer(blob.lengths) == Ptr{Int64}(unsafe_load(blob_array.buffers, 4))
 
@@ -1156,11 +1115,8 @@ end
                 flags=CData.ARROW_FLAG_NULLABLE,
                 children=CData.SchemaExport[item_schema],
             )
-            top_schema = CData._schema_export(
-                "+s",
-                "";
-                children=CData.SchemaExport[list_schema],
-            )
+            top_schema =
+                CData._schema_export("+s", ""; children=CData.SchemaExport[list_schema])
             item_array = CData._array_export(
                 values,
                 length(values),
@@ -1239,8 +1195,7 @@ end
         )
         @test pointer(large_values.offsets) ==
               Ptr{Int64}(unsafe_load(large_array.buffers, 2))
-        @test pointer(large_values.sizes) ==
-              Ptr{Int64}(unsafe_load(large_array.buffers, 3))
+        @test pointer(large_values.sizes) == Ptr{Int64}(unsafe_load(large_array.buffers, 3))
 
         CData.release!(large_imported)
         @test CData.isreleased(large_imported)

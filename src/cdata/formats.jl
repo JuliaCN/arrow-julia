@@ -59,14 +59,17 @@ end
 function _format_for_storage_type(::Type{Date{U,T}}) where {U,T}
     U == Meta.DateUnit.DAY && T === Int32 && return "tdD"
     U == Meta.DateUnit.MILLISECOND && T === Int64 && return "tdm"
-    throw(ArgumentError("Arrow C Data export does not support date storage type Date{$U,$T}"))
+    throw(
+        ArgumentError("Arrow C Data export does not support date storage type Date{$U,$T}"),
+    )
 end
 
 function _format_for_storage_type(::Type{Time{U,T}}) where {U,T}
     code = _time_unit_code(U)
     expected = (U == Meta.TimeUnit.SECOND || U == Meta.TimeUnit.MILLISECOND) ? Int32 : Int64
-    T === expected ||
-        throw(ArgumentError("Arrow C Data export does not support time storage type Time{$U,$T}"))
+    T === expected || throw(
+        ArgumentError("Arrow C Data export does not support time storage type Time{$U,$T}"),
+    )
     return "tt$code"
 end
 
@@ -90,7 +93,8 @@ end
 
 function _decimal_type_for_format(format::AbstractString)
     parts = split(format[3:end], ",")
-    length(parts) == 2 || length(parts) == 3 ||
+    length(parts) == 2 ||
+        length(parts) == 3 ||
         throw(ArgumentError("Arrow C Data import has invalid decimal format $format"))
     precision = tryparse(Int32, parts[1])
     scale = tryparse(Int32, parts[2])
@@ -102,8 +106,9 @@ function _decimal_type_for_format(format::AbstractString)
         128
     else
         parsed = tryparse(Int, parts[3])
-        parsed === nothing &&
-            throw(ArgumentError("Arrow C Data import has invalid decimal bitwidth in $format"))
+        parsed === nothing && throw(
+            ArgumentError("Arrow C Data import has invalid decimal bitwidth in $format"),
+        )
         parsed
     end
     bitwidth == 128 && return Decimal{precision,scale,Int128}
@@ -173,7 +178,9 @@ end
 function _assert_map_offsets_shape(column::Map)
     offsets = getfield(getfield(column, :offsets), :offsets)
     length(offsets) == length(column) + 1 && return nothing
-    throw(ArgumentError("Arrow C Data export expected map offsets length to match row count"))
+    throw(
+        ArgumentError("Arrow C Data export expected map offsets length to match row count"),
+    )
 end
 
 function _union_type_ids_for_parameters(::Type{UnionT{M,typeIds,U}}) where {M,typeIds,U}
@@ -212,8 +219,7 @@ end
 
 function _list_format(column::List)
     if liststringtype(column)
-        return _is_binary_list(column) ?
-               _offset_width_format(column, "z", "Z") :
+        return _is_binary_list(column) ? _offset_width_format(column, "z", "Z") :
                _offset_width_format(column, "u", "U")
     end
     return _offset_width_format(column, "+l", "+L")

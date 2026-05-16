@@ -37,7 +37,9 @@ function cdata_perf_table(rows::Int)
     flags = isodd.(ids)
     names = ["row_$(i)" for i = 1:rows]
     blobs = [codeunits("blob_$(i)") for i = 1:rows]
-    return Arrow.Table(Arrow.tobuffer((id=ids, score=scores, flag=flags, name=names, blob=blobs)))
+    return Arrow.Table(
+        Arrow.tobuffer((id=ids, score=scores, flag=flags, name=names, blob=blobs)),
+    )
 end
 
 function child_array(exported, index::Int)
@@ -88,8 +90,9 @@ function main()
 
     table, prepare_ms, prepare_alloc = measure(() -> cdata_perf_table(rows))
     exported, export_ms, export_alloc = measure(() -> CData.exporttable(table))
-    imported, import_ms, import_alloc =
-        measure(() -> CData.importtable(CData.schema_ptr(exported), CData.array_ptr(exported)))
+    imported, import_ms, import_alloc = measure(
+        () -> CData.importtable(CData.schema_ptr(exported), CData.array_ptr(exported)),
+    )
 
     assert_zero_copy(exported, imported)
 
