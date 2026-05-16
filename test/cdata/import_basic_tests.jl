@@ -240,9 +240,8 @@ end
 end
 
 function _nested_dictionary_export()
-    inner_table = Arrow.Table(
-        Arrow.tobuffer((color=["red", "blue", "red"],); dictencode=true),
-    )
+    inner_table =
+        Arrow.Table(Arrow.tobuffer((color=["red", "blue", "red"],); dictencode=true))
     inner = Tables.getcolumn(inner_table, :color)
     outer_indices = Int8[0, 2, 1, 0]
     outer_encoding =
