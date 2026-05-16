@@ -357,7 +357,7 @@ timestampAddTimezone(b::FlatBuffers.Builder, timezone::FlatBuffers.UOffsetT) =
     FlatBuffers.prependoffsetslot!(b, 1, timezone, 0)
 timestampEnd(b::FlatBuffers.Builder) = FlatBuffers.endobject!(b)
 
-@enumx IntervalUnit::Int16 YEAR_MONTH DAY_TIME
+@enumx IntervalUnit::Int16 YEAR_MONTH DAY_TIME MONTH_DAY_NANO
 
 struct Interval <: FlatBuffers.Table
     bytes::Vector{UInt8}

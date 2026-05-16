@@ -121,11 +121,17 @@ end
     decimal128_type = Arrow.Decimal{Int32(4),Int32(2),Int128}
     decimal256_type = Arrow.Decimal{Int32(6),Int32(3),Arrow.Int256}
     interval_type = Arrow.Interval{Arrow.Meta.IntervalUnit.YEAR_MONTH,Int32}
+    month_day_nano_type =
+        Arrow.Interval{Arrow.Meta.IntervalUnit.MONTH_DAY_NANO,Arrow.MonthDayNanoInterval}
     dates = Date[Date(2020, 1, 1), Date(2020, 1, 2)]
     times = Time[Time(1, 2, 3), Time(4, 5, 6)]
     datetimes = DateTime[DateTime(2020, 1, 1, 1, 2, 3), DateTime(2020, 1, 2, 4, 5, 6)]
     durations = Millisecond[Millisecond(5), Millisecond(10)]
     intervals = interval_type[interval_type(Int32(12)), interval_type(Int32(24))]
+    month_day_nanos = month_day_nano_type[
+        month_day_nano_type(Arrow.MonthDayNanoInterval(1, 2, 3)),
+        month_day_nano_type(Arrow.MonthDayNanoInterval(4, 5, 6)),
+    ]
     decimals128 =
         decimal128_type[decimal128_type(Int128(1234)), decimal128_type(Int128(-50))]
     decimals256 = decimal256_type[
@@ -141,6 +147,7 @@ end
             datetime=datetimes,
             duration=durations,
             interval=intervals,
+            month_day_nano=month_day_nanos,
             decimal128=decimals128,
             decimal256=decimals256,
             maybe_date=maybe_dates,
@@ -157,13 +164,15 @@ end
     datetime_schema = _child_schema(schema, 4)
     duration_schema = _child_schema(schema, 5)
     interval_schema = _child_schema(schema, 6)
-    decimal128_schema = _child_schema(schema, 7)
-    decimal256_schema = _child_schema(schema, 8)
-    maybe_date_schema = _child_schema(schema, 9)
+    month_day_nano_schema = _child_schema(schema, 7)
+    decimal128_schema = _child_schema(schema, 8)
+    decimal256_schema = _child_schema(schema, 9)
+    maybe_date_schema = _child_schema(schema, 10)
     nulls_array = _child_array(array, 1)
     date_array = _child_array(array, 2)
-    decimal128_array = _child_array(array, 7)
-    maybe_date_array = _child_array(array, 9)
+    month_day_nano_array = _child_array(array, 7)
+    decimal128_array = _child_array(array, 8)
+    maybe_date_array = _child_array(array, 10)
 
     @test _cstring(nulls_schema.format) == "n"
     @test _cstring(date_schema.format) == "tdD"
@@ -171,6 +180,7 @@ end
     @test _cstring(datetime_schema.format) == "tsm:"
     @test _cstring(duration_schema.format) == "tDm"
     @test _cstring(interval_schema.format) == "tiM"
+    @test _cstring(month_day_nano_schema.format) == "tin"
     @test _cstring(decimal128_schema.format) == "d:4,2"
     @test _cstring(decimal256_schema.format) == "d:6,3,256"
     @test maybe_date_schema.flags & CData.ARROW_FLAG_NULLABLE == CData.ARROW_FLAG_NULLABLE
@@ -182,6 +192,7 @@ end
     datetime = Tables.getcolumn(imported, :datetime)
     duration = Tables.getcolumn(imported, :duration)
     interval = Tables.getcolumn(imported, :interval)
+    month_day_nano = Tables.getcolumn(imported, :month_day_nano)
     decimal128 = Tables.getcolumn(imported, :decimal128)
     decimal256 = Tables.getcolumn(imported, :decimal256)
     maybe_date = Tables.getcolumn(imported, :maybe_date)
@@ -192,6 +203,7 @@ end
     @test collect(datetime) == Arrow.ArrowTypes.toarrow.(datetimes)
     @test collect(duration) == Arrow.ArrowTypes.toarrow.(durations)
     @test collect(interval) == intervals
+    @test collect(month_day_nano) == month_day_nanos
     @test collect(decimal128) == decimals128
     @test collect(decimal256) == decimals256
     @test isequal(
@@ -204,6 +216,8 @@ end
     @test pointer(date) == Ptr{eltype(date)}(unsafe_load(date_array.buffers, 2))
     @test pointer(decimal128) ==
           Ptr{decimal128_type}(unsafe_load(decimal128_array.buffers, 2))
+    @test pointer(month_day_nano) ==
+          Ptr{month_day_nano_type}(unsafe_load(month_day_nano_array.buffers, 2))
     @test pointer(maybe_date.data) ==
           Ptr{eltype(maybe_date.data)}(unsafe_load(maybe_date_array.buffers, 2))
     @test pointer(maybe_date.validity) ==

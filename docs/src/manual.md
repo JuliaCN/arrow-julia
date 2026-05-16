@@ -311,7 +311,8 @@ child arrays, map columns over entries structs, dense and sparse union columns
 over imported child arrays, run-end encoded columns over imported `run_ends`
 and `values` children, struct columns over imported child arrays, null columns,
 and logical scalar columns such as decimals, dates, times, timestamps,
-durations, and intervals. Imported tables must be released explicitly with
+durations, year-month intervals, day-time intervals, and month-day-nano
+intervals. Imported tables must be released explicitly with
 [`Arrow.CData.release!`](@ref). C Data import preserves
 `ARROW:extension:name` and `ARROW:extension:metadata` field metadata as a raw
 storage fallback; it does not reconstruct Julia extension wrapper values.

@@ -48,6 +48,7 @@ import ..Arrow:
     Map,
     Meta,
     MetadataVector,
+    MonthDayNanoInterval,
     NullVector,
     Primitive,
     RunEndEncoded,

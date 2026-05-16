@@ -84,6 +84,9 @@ end
 function _format_for_storage_type(::Type{Interval{U,T}}) where {U,T}
     U == Meta.IntervalUnit.YEAR_MONTH && T === Int32 && return "tiM"
     U == Meta.IntervalUnit.DAY_TIME && T === Int64 && return "tiD"
+    if U == Meta.IntervalUnit.MONTH_DAY_NANO && T === MonthDayNanoInterval
+        return "tin"
+    end
     throw(
         ArgumentError(
             "Arrow C Data export does not support interval storage type Interval{$U,$T}",
@@ -150,6 +153,9 @@ function _storage_type_for_format(format::AbstractString)
     format == "tDn" && return Duration{Meta.TimeUnit.NANOSECOND}
     format == "tiM" && return Interval{Meta.IntervalUnit.YEAR_MONTH,Int32}
     format == "tiD" && return Interval{Meta.IntervalUnit.DAY_TIME,Int64}
+    if format == "tin"
+        return Interval{Meta.IntervalUnit.MONTH_DAY_NANO,MonthDayNanoInterval}
+    end
     startswith(format, "d:") && return _decimal_type_for_format(format)
     throw(ArgumentError("Arrow C Data import does not support format $format"))
 end

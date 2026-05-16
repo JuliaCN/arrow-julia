@@ -707,17 +707,53 @@ Base.eltype(::Type{ToTimestamp{A,TZ}}) where {A,TZ} =
 Base.getindex(x::ToTimestamp{A,TZ}, i::Integer) where {A,TZ} =
     convert(Timestamp{Meta.TimeUnit.MILLISECOND,TZ}, getindex(x.data, i))
 
+struct MonthDayNanoInterval
+    months::Int32
+    days::Int32
+    nanoseconds::Int64
+end
+
+MonthDayNanoInterval(months::Integer, days::Integer, nanoseconds::Integer) =
+    MonthDayNanoInterval(Int32(months), Int32(days), Int64(nanoseconds))
+
+Base.zero(::Type{MonthDayNanoInterval}) = MonthDayNanoInterval(0, 0, 0)
+==(a::MonthDayNanoInterval, b::MonthDayNanoInterval) =
+    a.months == b.months && a.days == b.days && a.nanoseconds == b.nanoseconds
+Base.isequal(a::MonthDayNanoInterval, b::MonthDayNanoInterval) =
+    isequal(a.months, b.months) &&
+    isequal(a.days, b.days) &&
+    isequal(a.nanoseconds, b.nanoseconds)
+
+function Base.write(io::IO, x::MonthDayNanoInterval)
+    written = Base.write(io, x.months)
+    written += Base.write(io, x.days)
+    written += Base.write(io, x.nanoseconds)
+    return written
+end
+
 struct Interval{U,T} <: ArrowTimeType
     x::T
 end
 
-Base.zero(::Type{Interval{U,T}}) where {U,T} = Interval{U,T}(T(0))
+Base.zero(::Type{Interval{U,T}}) where {U,T} = Interval{U,T}(zero(T))
 
-bitwidth(x::Meta.IntervalUnit.T) = x == Meta.IntervalUnit.YEAR_MONTH ? Int32 : Int64
+function bitwidth(x::Meta.IntervalUnit.T)
+    x == Meta.IntervalUnit.YEAR_MONTH && return Int32
+    x == Meta.IntervalUnit.DAY_TIME && return Int64
+    x == Meta.IntervalUnit.MONTH_DAY_NANO && return MonthDayNanoInterval
+    throw(ArgumentError("Arrow interval unit $x is not supported"))
+end
+
 Interval{Meta.IntervalUnit.YEAR_MONTH}(x) =
     Interval{Meta.IntervalUnit.YEAR_MONTH,Int32}(Int32(x))
 Interval{Meta.IntervalUnit.DAY_TIME}(x) =
     Interval{Meta.IntervalUnit.DAY_TIME,Int64}(Int64(x))
+Interval{Meta.IntervalUnit.MONTH_DAY_NANO}(x::MonthDayNanoInterval) =
+    Interval{Meta.IntervalUnit.MONTH_DAY_NANO,MonthDayNanoInterval}(x)
+Interval{Meta.IntervalUnit.MONTH_DAY_NANO}(months, days, nanoseconds) =
+    Interval{Meta.IntervalUnit.MONTH_DAY_NANO}(
+        MonthDayNanoInterval(months, days, nanoseconds),
+    )
 
 function juliaeltype(f::Meta.Field, x::Meta.Interval, convert)
     return Interval{x.unit,bitwidth(x.unit)}
