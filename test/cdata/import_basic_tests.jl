@@ -239,6 +239,36 @@ end
     @test CData.isreleased(exported)
 end
 
+function _nested_dictionary_export()
+    inner_table = Arrow.Table(
+        Arrow.tobuffer((color=["red", "blue", "red"],); dictencode=true),
+    )
+    inner = Tables.getcolumn(inner_table, :color)
+    outer_indices = Int8[0, 2, 1, 0]
+    outer_encoding =
+        Arrow.DictEncoding{eltype(inner),Int8,typeof(inner)}(42, inner, false, nothing)
+    outer = Arrow.DictEncoded(
+        UInt8[],
+        Arrow.ValidityBitmap(fill(true, length(outer_indices))),
+        outer_indices,
+        outer_encoding,
+        nothing,
+    )
+    top_schema = CData._schema_export(
+        "+s",
+        "";
+        children=CData.SchemaExport[CData._schema_export_for_column(:color, outer)],
+    )
+    top_array = CData._array_export(
+        (inner_table, outer),
+        length(outer),
+        0,
+        Ptr{Cvoid}[C_NULL];
+        children=CData.ArrayExport[CData._array_export_for_column(:color, outer)],
+    )
+    return CData.ExportedTable(top_schema, top_array)
+end
+
 @testset "imports dictionary encoded C Data columns" begin
     table = Arrow.Table(Arrow.tobuffer((color=["red", "blue", "red"],); dictencode=true))
     exported = CData.exporttable(table)
@@ -288,6 +318,33 @@ end
     CData.release!(nullable_imported)
     @test CData.isreleased(nullable_imported)
     @test CData.isreleased(nullable_exported)
+
+    nested_exported = _nested_dictionary_export()
+    nested_imported = CData.importtable(
+        CData.schema_ptr(nested_exported),
+        CData.array_ptr(nested_exported),
+    )
+
+    nested_color = Tables.getcolumn(nested_imported, :color)
+    nested_color_array = _child_array(CData.array(nested_exported), 1)
+    nested_dictionary_array = unsafe_load(nested_color_array.dictionary)
+    value_dictionary_array = unsafe_load(nested_dictionary_array.dictionary)
+    @test nested_color isa CData.ImportedDictionaryVector
+    @test nested_color.dictionary isa CData.ImportedDictionaryVector
+    @test eltype(nested_color) == String
+    @test collect(nested_color) == ["red", "red", "blue", "red"]
+    @test Ptr{Cvoid}(pointer(nested_color.indices)) ==
+          unsafe_load(nested_color_array.buffers, 2)
+    @test Ptr{Cvoid}(pointer(nested_color.dictionary.indices)) ==
+          unsafe_load(nested_dictionary_array.buffers, 2)
+    @test pointer(nested_color.dictionary.dictionary.offsets) ==
+          Ptr{Int32}(unsafe_load(value_dictionary_array.buffers, 2))
+    @test pointer(nested_color.dictionary.dictionary.data) ==
+          Ptr{UInt8}(unsafe_load(value_dictionary_array.buffers, 3))
+
+    CData.release!(nested_imported)
+    @test CData.isreleased(nested_imported)
+    @test CData.isreleased(nested_exported)
 end
 
 @testset "imports list C Data columns" begin

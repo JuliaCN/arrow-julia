@@ -421,13 +421,6 @@ function _import_dictionary_column(schema::ArrowSchema, array::ArrowArray, name:
     array.buffers == C_NULL &&
         throw(ArgumentError("dictionary column $name has C_NULL buffers"))
 
-    dict_schema = unsafe_load(schema.dictionary)
-    dict_array = unsafe_load(array.dictionary)
-    dict_schema.dictionary == C_NULL ||
-        throw(ArgumentError("Arrow C Data import does not yet support nested dictionaries"))
-    dict_array.dictionary == C_NULL || throw(
-        ArgumentError("Arrow C Data import does not yet support nested dictionary arrays"),
-    )
     _, dictionary = _import_column(schema.dictionary, array.dictionary)
 
     index_ptr = unsafe_load(array.buffers, 2)
