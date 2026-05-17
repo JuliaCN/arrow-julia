@@ -100,6 +100,8 @@ end
         sourcejson = joinpath(arrowjsondir, "primitive-empty.json")
         mktempdir() do dir
             arrowfile = joinpath(dir, "primitive.arrow")
+            streamfile = joinpath(dir, "primitive.stream")
+            convertedfile = joinpath(dir, "primitive-converted.arrow")
             generatedjson = joinpath(dir, "primitive-roundtrip.json")
             options = parseintegrationargs([
                 "--integration",
@@ -116,6 +118,28 @@ end
             runcommand(sourcejson, arrowfile, "VALIDATE", false)
             runcommand(generatedjson, arrowfile, "ARROW_TO_JSON", false)
             runcommand(generatedjson, arrowfile, "VALIDATE", false)
+            streamoptions = parseintegrationargs([
+                "--integration",
+                "--input=$arrowfile",
+                "--output",
+                streamfile,
+                "--mode=file-to-stream",
+            ])
+            @test streamoptions.mode == "FILE_TO_STREAM"
+            @test streamoptions.inputname == arrowfile
+            @test streamoptions.outputname == streamfile
+            runcommand(streamoptions)
+            runcommand(sourcejson, streamfile, "VALIDATE", false)
+            fileoptions = parseintegrationargs([
+                "--integration",
+                "--input",
+                streamfile,
+                "--output=$convertedfile",
+                "--mode=stream-to-file",
+            ])
+            @test fileoptions.mode == "STREAM_TO_FILE"
+            runcommand(fileoptions)
+            runcommand(sourcejson, convertedfile, "VALIDATE", false)
         end
         @test_throws ErrorException parseintegrationargs(["--json"])
         @test_throws ErrorException parseintegrationargs(["--mode=UNKNOWN"])
