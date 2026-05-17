@@ -125,6 +125,23 @@ function purehttp2_extension_test_large_transport_concurrent_soak(;
         isnothing(doget_metric) && return metrics
         push!(metrics, doget_metric)
 
+        doput_metric = flight_live_transport_concurrent_benchmark(
+            Arrow.Flight.Protocol,
+            purehttp2_extension_perf_transport(
+                max_active_requests=max(concurrent_clients, 4),
+                request_capacity=max(concurrent_clients * 2, 4),
+                response_capacity=max(concurrent_clients * 2, 4),
+            );
+            batch_count=batch_count,
+            rows_per_batch=rows_per_batch,
+            payload_bytes=payload_bytes,
+            operation=:doput,
+            concurrent_clients=concurrent_clients,
+            requests_per_client=requests_per_client,
+        )
+        isnothing(doput_metric) && return metrics
+        push!(metrics, doput_metric)
+
         doexchange_metric = flight_live_transport_concurrent_benchmark(
             Arrow.Flight.Protocol,
             purehttp2_extension_perf_transport(
@@ -143,18 +160,22 @@ function purehttp2_extension_test_large_transport_concurrent_soak(;
         push!(metrics, doexchange_metric)
     end
 
-    @test length(metrics) == 2 * rounds
+    @test length(metrics) == 3 * rounds
     doget_metrics = filter(metric -> metric.operation == :doget_concurrent, metrics)
+    doput_metrics = filter(metric -> metric.operation == :doput_concurrent, metrics)
     doexchange_metrics =
         filter(metric -> metric.operation == :doexchange_concurrent, metrics)
     @test length(doget_metrics) == rounds
+    @test length(doput_metrics) == rounds
     @test length(doexchange_metrics) == rounds
     expected_total_requests = concurrent_clients * requests_per_client
     expected_doget_total_bytes =
         PUREHTTP2_EXTENSION_LARGE_TRANSPORT_BYTES * expected_total_requests
+    expected_doput_request_bytes =
+        PUREHTTP2_EXTENSION_LARGE_TRANSPORT_BYTES * expected_total_requests
     expected_doexchange_total_bytes =
         PUREHTTP2_EXTENSION_EXCHANGE_TRANSPORT_BYTES * expected_total_requests
-    for operation_metrics in (doget_metrics, doexchange_metrics)
+    for operation_metrics in (doget_metrics, doput_metrics, doexchange_metrics)
         @test all(metric.backend == :grpcserver for metric in operation_metrics)
         @test all(
             metric.total_requests == expected_total_requests for metric in operation_metrics
@@ -186,11 +207,16 @@ function purehttp2_extension_test_large_transport_concurrent_soak(;
     end
     @test all(metric.total_bytes >= expected_doget_total_bytes for metric in doget_metrics)
     @test all(
+        metric.request_bytes >= expected_doput_request_bytes for metric in doput_metrics
+    )
+    @test all(metric.response_bytes > 0 for metric in doput_metrics)
+    @test all(
         metric.total_bytes >= expected_doexchange_total_bytes for
         metric in doexchange_metrics
     )
     flight_live_transport_print_metrics(stdout, metrics)
     flight_live_transport_print_concurrent_summary(stdout, doget_metrics)
+    flight_live_transport_print_concurrent_summary(stdout, doput_metrics)
     flight_live_transport_print_concurrent_summary(stdout, doexchange_metrics)
     return metrics
 end
