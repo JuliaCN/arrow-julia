@@ -56,6 +56,15 @@ function purehttp2_extension_test_large_transport_performance(;
         payload_bytes=payload_bytes,
         operations=(:doget,),
     )
+    doput_metrics = flight_live_transport_benchmark(
+        Arrow.Flight.Protocol,
+        purehttp2_extension_perf_transport();
+        iterations=iterations,
+        batch_count=batch_count,
+        rows_per_batch=rows_per_batch,
+        payload_bytes=payload_bytes,
+        operations=(:doput,),
+    )
     doexchange_metrics = flight_live_transport_benchmark(
         Arrow.Flight.Protocol,
         purehttp2_extension_perf_transport();
@@ -65,14 +74,16 @@ function purehttp2_extension_test_large_transport_performance(;
         payload_bytes=exchange_payload_bytes,
         operations=(:doexchange,),
     )
-    metrics = vcat(doget_metrics, doexchange_metrics)
+    metrics = vcat(doget_metrics, doput_metrics, doexchange_metrics)
     isempty(metrics) && return metrics
-    @test length(metrics) == 2
+    @test length(metrics) == 3
     @test all(metric.backend == :grpcserver for metric in metrics)
-    @test Set(metric.operation for metric in metrics) == Set([:doget, :doexchange])
+    @test Set(metric.operation for metric in metrics) == Set([:doget, :doput, :doexchange])
     doget_metric = flight_live_transport_metric(metrics, :grpcserver, :doget)
+    doput_metric = flight_live_transport_metric(metrics, :grpcserver, :doput)
     doexchange_metric = flight_live_transport_metric(metrics, :grpcserver, :doexchange)
     @test doget_metric.total_bytes >= PUREHTTP2_EXTENSION_LARGE_TRANSPORT_BYTES
+    @test doput_metric.request_bytes >= PUREHTTP2_EXTENSION_LARGE_TRANSPORT_BYTES
     @test doexchange_metric.total_bytes >= PUREHTTP2_EXTENSION_EXCHANGE_TRANSPORT_BYTES
     @test all(metric.request_bytes >= 0 for metric in metrics)
     @test all(metric.response_bytes > 0 for metric in metrics)
