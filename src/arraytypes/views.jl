@@ -133,3 +133,52 @@ end
 # @propagate_inbounds function Base.setindex!(l::List{T}, v, i::Integer) where {T}
 
 # end
+
+arrowvector(x::View, i, nl, fi, de, ded, meta; kw...) = x
+
+function compress(Z::Meta.CompressionType.T, comp, x::View{T}) where {T}
+    len = length(x)
+    nc = nullcount(x)
+    validity = compress(Z, comp, x.validity)
+    views = compress(Z, comp, x.data)
+    buffers = CompressedBuffer[validity, views]
+    append!(buffers, (compress(Z, comp, buffer) for buffer in x.buffers))
+    return Compressed{Z,typeof(x)}(x, buffers, len, nc, Compressed[])
+end
+
+function makenodesbuffers!(col::View, fieldnodes, fieldbuffers, bufferoffset, alignment)
+    len = length(col)
+    nc = nullcount(col)
+    push!(fieldnodes, FieldNode(len, nc))
+    @debug "made field node: nodeidx = $(length(fieldnodes)), col = $(typeof(col)), len = $(fieldnodes[end].length), nc = $(fieldnodes[end].null_count)"
+    blen = nc == 0 ? 0 : bitpackedbytes(len, alignment)
+    push!(fieldbuffers, Buffer(bufferoffset, blen))
+    @debug "made field buffer: bufferidx = $(length(fieldbuffers)), offset = $(fieldbuffers[end].offset), len = $(fieldbuffers[end].length), padded = $(padding(fieldbuffers[end].length, alignment))"
+    bufferoffset += blen
+    blen = VIEW_ELEMENT_BYTES * len
+    push!(fieldbuffers, Buffer(bufferoffset, blen))
+    @debug "made field buffer: bufferidx = $(length(fieldbuffers)), offset = $(fieldbuffers[end].offset), len = $(fieldbuffers[end].length), padded = $(padding(fieldbuffers[end].length, alignment))"
+    bufferoffset += padding(blen, alignment)
+    for buffer in col.buffers
+        blen = length(buffer)
+        push!(fieldbuffers, Buffer(bufferoffset, blen))
+        @debug "made field buffer: bufferidx = $(length(fieldbuffers)), offset = $(fieldbuffers[end].offset), len = $(fieldbuffers[end].length), padded = $(padding(fieldbuffers[end].length, alignment))"
+        bufferoffset += padding(blen, alignment)
+    end
+    return bufferoffset
+end
+
+function writebuffer(io, col::View, alignment)
+    @debug "writebuffer: col = $(typeof(col))"
+    @debug col
+    writebitmap(io, col, alignment)
+    n = writearray(io, ViewElement, col.data)
+    @debug "writing array: col = $(typeof(col.data)), n = $n, padded = $(padding(n, alignment))"
+    writezeros(io, paddinglength(n, alignment))
+    for buffer in col.buffers
+        n = Base.write(io, buffer)
+        @debug "writing variadic view buffer: n = $n, padded = $(padding(n, alignment))"
+        writezeros(io, paddinglength(n, alignment))
+    end
+    return
+end

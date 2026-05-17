@@ -381,6 +381,15 @@ function _metadata_equal(expected::Metadata, actual)
     return _metadata_dict(expected) == _metadata_dict(actual)
 end
 
+function _validity_bitmap(fielddata)
+    fielddata.VALIDITY === nothing &&
+        return Arrow.ValidityBitmap(fill(true, fielddata.count))
+    validity = Union{Missing,Base.Bool}[
+        value == 0 ? missing : true for value in fielddata.VALIDITY
+    ]
+    return Arrow.ValidityBitmap(validity)
+end
+
 mutable struct DictEncoding
     id::Int64
     indexType::Type
@@ -688,6 +697,10 @@ Tables.columnnames(x::DataFile) = map(x -> Symbol(x.name), x.schema.fields)
 
 function Tables.getcolumn(x::DataFile, i::Base.Int)
     field = x.schema.fields[i]
+    if length(x.batches) == 1
+        physical = _physical_column(field, x.batches[1].columns[i], x.dictionaries)
+        physical === nothing || return physical
+    end
     type = juliatype(field)
     column = ChainedVector(
         ArrowArray{type}[
@@ -729,6 +742,123 @@ function _hexbytes(hex::AbstractString)
 end
 
 _hexstring(bytes) = uppercase(bytes2hex(collect(UInt8, bytes)))
+
+function _int32_from_prefix(prefix::Union{Nothing,String})
+    bytes = zeros(UInt8, 4)
+    if prefix !== nothing
+        prefix_bytes = _hexbytes(prefix)
+        copyto!(bytes, 1, prefix_bytes, 1, min(4, length(prefix_bytes)))
+    end
+    return reinterpret(Int32, bytes)[1]
+end
+
+_inline_view_bytes(::Utf8View, view::ViewData) = collect(UInt8, codeunits(view.INLINED))
+_inline_view_bytes(::BinaryView, view::ViewData) = _hexbytes(view.INLINED)
+
+function _view_elements(type::Union{Utf8View,BinaryView}, fielddata::FieldData)
+    views = Arrow.ViewElement[]
+    for view in fielddata.VIEWS
+        prefix = view.INLINED === nothing ? _int32_from_prefix(view.PREFIX_HEX) : Int32(0)
+        push!(
+            views,
+            Arrow.ViewElement(
+                Int32(view.SIZE),
+                prefix,
+                Int32(something(view.BUFFER_INDEX, 0)),
+                Int32(something(view.OFFSET, 0)),
+            ),
+        )
+    end
+    inline = reinterpret(UInt8, views)
+    for (index, view) in enumerate(fielddata.VIEWS)
+        view.INLINED === nothing && continue
+        bytes = _inline_view_bytes(type, view)
+        first = ((index - 1) * Arrow.VIEW_ELEMENT_BYTES) + Arrow.VIEW_LENGTH_BYTES + 1
+        copyto!(inline, first, bytes, 1, length(bytes))
+    end
+    return views, collect(inline)
+end
+
+function _view_buffers(fielddata::FieldData)
+    fielddata.VARIADIC_DATA_BUFFERS === nothing && return Vector{UInt8}[]
+    return [_hexbytes(buffer) for buffer in fielddata.VARIADIC_DATA_BUFFERS]
+end
+
+function _native_view(field::Field, fielddata::FieldData)
+    views, inline = _view_elements(field.type, fielddata)
+    buffers = _view_buffers(fielddata)
+    validity = _validity_bitmap(fielddata)
+    if field.type isa Utf8View
+        Arrow._assert_utf8_view_spans(
+            views,
+            inline,
+            buffers,
+            validity,
+            fielddata.count,
+            "UTF-8 view",
+        )
+        T = field.nullable ? Union{Missing,String} : String
+    else
+        Arrow._assert_view_spans(
+            views,
+            inline,
+            buffers,
+            validity,
+            fielddata.count,
+            "binary view",
+        )
+        T =
+            field.nullable ? Union{Missing,Base.CodeUnits{UInt8,String}} :
+            Base.CodeUnits{UInt8,String}
+    end
+    return Arrow.View{T}(
+        UInt8[],
+        validity,
+        views,
+        inline,
+        buffers,
+        fielddata.count,
+        _metadata_dict(field.metadata),
+    )
+end
+
+function _native_arrowvector(field::Field, fielddata::FieldData, dictionaries)
+    return Arrow.toarrowvector(ArrowArray(field, fielddata, dictionaries))
+end
+
+function _native_list_view(field::Field, fielddata::FieldData, dictionaries)
+    O = field.type isa LargeListView ? Int64 : Int32
+    offsets = O[_offsetvalue(value) for value in fielddata.OFFSET]
+    sizes = O[_offsetvalue(value) for value in fielddata.SIZE]
+    data = _native_arrowvector(field.children[1], fielddata.children[1], dictionaries)
+    return Arrow.ListView(
+        offsets,
+        sizes,
+        data;
+        validity=_validity_bitmap(fielddata),
+        metadata=_metadata_dict(field.metadata),
+    )
+end
+
+function _native_run_end_encoded(field::Field, fielddata::FieldData, dictionaries)
+    run_ends = _native_arrowvector(field.children[1], fielddata.children[1], dictionaries)
+    values = _native_arrowvector(field.children[2], fielddata.children[2], dictionaries)
+    return Arrow.RunEndEncoded(
+        run_ends,
+        values,
+        fielddata.count,
+        _metadata_dict(field.metadata),
+    )
+end
+
+function _physical_column(field::Field, fielddata::FieldData, dictionaries)
+    field.type isa Union{Utf8View,BinaryView} && return _native_view(field, fielddata)
+    field.type isa Union{ListView,LargeListView} &&
+        return _native_list_view(field, fielddata, dictionaries)
+    field.type isa RunEndEncoded &&
+        return _native_run_end_encoded(field, fielddata, dictionaries)
+    return nothing
+end
 
 function _utf8viewvalue(view::ViewData, buffers::Union{Nothing,Vector{String}})
     view.INLINED !== nothing && return view.INLINED

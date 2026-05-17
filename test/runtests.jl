@@ -95,6 +95,49 @@ end
         end
     end # @testset "arrow json integration tests"
 
+    @testset "integration JSON preserves physical layouts" begin
+        arrowjsondir = joinpath(dirname(pathof(Arrow)), "../test/arrowjson")
+        modern = ArrowJSON.parsefile(joinpath(arrowjsondir, "modern-layouts.json"))
+        modernbytes = take!(Arrow.tobuffer(modern))
+        modernstream = Arrow.Stream(modernbytes; convert=false)
+        Tables.schema(modernstream)
+        modernfields = Dict(
+            String(field.name) => field for field in getfield(modernstream, :schema).fields
+        )
+        @test modernfields["utf8_view_nullable"].type isa Arrow.Meta.Utf8View
+        @test modernfields["binary_view_nullable"].type isa Arrow.Meta.BinaryView
+        @test modernfields["list_view_nullable"].type isa Arrow.Meta.ListView
+        @test modernfields["large_list_view_nullable"].type isa Arrow.Meta.LargeListView
+        moderntable = Arrow.Table(modernbytes; convert=false)
+        @test Tables.getcolumn(moderntable, :utf8_view_nullable) isa Arrow.View
+        @test Tables.getcolumn(moderntable, :binary_view_nullable) isa Arrow.View
+        @test Tables.getcolumn(moderntable, :list_view_nullable) isa Arrow.ListView
+        @test Tables.getcolumn(moderntable, :large_list_view_nullable) isa Arrow.ListView
+        for codec in (:lz4, :zstd)
+            compressedbytes = take!(Arrow.tobuffer(modern; compress=codec))
+            compressedstream = Arrow.Stream(compressedbytes; convert=false)
+            Tables.schema(compressedstream)
+            compressedfields = Dict(
+                String(field.name) => field for
+                field in getfield(compressedstream, :schema).fields
+            )
+            @test compressedfields["utf8_view_nullable"].type isa Arrow.Meta.Utf8View
+            @test compressedfields["binary_view_nullable"].type isa Arrow.Meta.BinaryView
+            @test compressedfields["list_view_nullable"].type isa Arrow.Meta.ListView
+            @test compressedfields["large_list_view_nullable"].type isa
+                  Arrow.Meta.LargeListView
+            @test isequal(modern, Arrow.Table(compressedbytes; convert=false))
+        end
+
+        ree = ArrowJSON.parsefile(joinpath(arrowjsondir, "run-end-encoded.json"))
+        reebytes = take!(Arrow.tobuffer(ree))
+        reestream = Arrow.Stream(reebytes; convert=false)
+        Tables.schema(reestream)
+        @test only(getfield(reestream, :schema).fields).type isa Arrow.Meta.RunEndEncoded
+        reetable = Arrow.Table(reebytes; convert=false)
+        @test Tables.getcolumn(reetable, :run_end_encoded_nullable) isa Arrow.RunEndEncoded
+    end
+
     @testset "abstract path" begin
         # Make a custom path type that simulates how AWSS3.jl's S3Path works
         struct CustomPath <: AbstractPath

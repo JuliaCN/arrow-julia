@@ -751,6 +751,21 @@ function makerecordbatchmsg(
     return makemessage(b, Meta.RecordBatch, recordbatch, columns, bodylen)
 end
 
+_appendvariadicbuffercounts!(counts::Vector{Int32}, col) = counts
+
+function _appendvariadicbuffercounts!(counts::Vector{Int32}, col::View)
+    push!(counts, Int32(length(col.buffers)))
+    return counts
+end
+
+function _appendvariadicbuffercounts!(counts::Vector{Int32}, col::Compressed)
+    _appendvariadicbuffercounts!(counts, col.data)
+    for child in col.children
+        _appendvariadicbuffercounts!(counts, child)
+    end
+    return counts
+end
+
 function makerecordbatch(
     b,
     sch::Tables.Schema{names,types},
@@ -762,11 +777,13 @@ function makerecordbatch(
     compress = nothing
     fieldnodes = FieldNode[]
     fieldbuffers = Buffer[]
+    variadicbuffercounts = Int32[]
     bufferoffset = 0
     for col in Tables.Columns(columns)
         if col isa Compressed
             compress = compressiontype(col)
         end
+        _appendvariadicbuffercounts!(variadicbuffercounts, col)
         bufferoffset =
             makenodesbuffers!(col, fieldnodes, fieldbuffers, bufferoffset, alignment)
     end
@@ -800,6 +817,18 @@ function makerecordbatch(
         compression = FlatBuffers.UOffsetT(0)
     end
 
+    # write variadic buffer counts
+    if !isempty(variadicbuffercounts)
+        VBC = length(variadicbuffercounts)
+        Meta.recordBatchStartVariadicBufferCountsVector(b, VBC)
+        for count in Iterators.reverse(variadicbuffercounts)
+            FlatBuffers.prepend!(b, count)
+        end
+        variadicbuffers = FlatBuffers.endvector!(b, VBC)
+    else
+        variadicbuffers = FlatBuffers.UOffsetT(0)
+    end
+
     # write record batch object
     @debug "built record batch message: nrows = $nrows, nodes = $fieldnodes, buffers = $fieldbuffers, compress = $compress, bodylen = $bodylen"
     Meta.recordBatchStart(b)
@@ -807,6 +836,7 @@ function makerecordbatch(
     Meta.recordBatchAddNodes(b, nodes)
     Meta.recordBatchAddBuffers(b, buffers)
     Meta.recordBatchAddCompression(b, compression)
+    Meta.recordBatchAddVariadicBufferCounts(b, variadicbuffers)
     return Meta.recordBatchEnd(b), bodylen
 end
 

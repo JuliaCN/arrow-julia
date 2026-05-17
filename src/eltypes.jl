@@ -521,6 +521,17 @@ juliaeltype(
     convert,
 ) = Base.CodeUnits
 
+function arrowtype(b, x::View{T}) where {T}
+    S = Base.nonmissingtype(T)
+    if S <: Base.CodeUnits
+        Meta.binaryViewStart(b)
+        return Meta.BinaryView, Meta.binaryViewEnd(b), nothing
+    else
+        Meta.utf8ViewStart(b)
+        return Meta.Utf8View, Meta.utf8ViewEnd(b), nothing
+    end
+end
+
 juliaeltype(f::Meta.Field, x::Meta.FixedSizeBinary, convert) =
     NTuple{Int(x.byteWidth),UInt8}
 

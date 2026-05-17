@@ -107,7 +107,7 @@ function Base.getproperty(x::RecordBatch, field::Symbol)
     return nothing
 end
 
-recordBatchStart(b::FlatBuffers.Builder) = FlatBuffers.startobject!(b, 4)
+recordBatchStart(b::FlatBuffers.Builder) = FlatBuffers.startobject!(b, 5)
 recordBatchAddLength(b::FlatBuffers.Builder, length::Int64) =
     FlatBuffers.prependslot!(b, 0, length, 0)
 recordBatchAddNodes(b::FlatBuffers.Builder, nodes::FlatBuffers.UOffsetT) =
@@ -120,6 +120,10 @@ recordBatchStartBuffersVector(b::FlatBuffers.Builder, numelems) =
     FlatBuffers.startvector!(b, 16, numelems, 8)
 recordBatchAddCompression(b::FlatBuffers.Builder, c::FlatBuffers.UOffsetT) =
     FlatBuffers.prependoffsetslot!(b, 3, c, 0)
+recordBatchAddVariadicBufferCounts(b::FlatBuffers.Builder, counts::FlatBuffers.UOffsetT) =
+    FlatBuffers.prependoffsetslot!(b, 4, counts, 0)
+recordBatchStartVariadicBufferCountsVector(b::FlatBuffers.Builder, numelems) =
+    FlatBuffers.startvector!(b, 4, numelems, 4)
 recordBatchEnd(b::FlatBuffers.Builder) = FlatBuffers.endobject!(b)
 
 struct DictionaryBatch <: FlatBuffers.Table
