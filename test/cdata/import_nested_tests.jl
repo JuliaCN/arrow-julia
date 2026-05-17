@@ -521,11 +521,15 @@ end
 end
 
 @testset "imports list-view C Data columns" begin
-    function list_view_export(::Type{O}, format::AbstractString) where {O}
+    function list_view_export(
+        ::Type{O},
+        format::AbstractString;
+        offsets=O[0, 7, 3, 0],
+        sizes=O[3, 0, 4, 0],
+        validity=UInt8[0x0d],
+        null_count=1,
+    ) where {O}
         values = Int32[12, -7, 25, 0, -127, 127, 50]
-        offsets = O[0, 7, 3, 0]
-        sizes = O[3, 0, 4, 0]
-        validity = UInt8[0x0d]
         item_schema = CData._schema_export("i", "item")
         list_schema = CData._schema_export(
             format,
@@ -544,7 +548,7 @@ end
         list_array = CData._array_export(
             (validity, offsets, sizes, values),
             length(offsets),
-            1,
+            null_count,
             Ptr{Cvoid}[
                 Ptr{Cvoid}(pointer(validity)),
                 Ptr{Cvoid}(pointer(offsets)),
@@ -560,6 +564,18 @@ end
             children=CData.ArrayExport[list_array],
         )
         return CData.ExportedTable(top_schema, top_array), values
+    end
+
+    function expect_list_view_import_error(exported, err)
+        try
+            @test_throws ArgumentError(err) CData.importtable(
+                CData.schema_ptr(exported),
+                CData.array_ptr(exported),
+            )
+        finally
+            CData.release!(exported)
+        end
+        @test CData.isreleased(exported)
     end
 
     exported, values = list_view_export(Int32, "+vl")
@@ -616,4 +632,43 @@ end
     @test CData.isreleased(large_imported)
     @test CData.isreleased(large_exported)
     @test values == Int32[12, -7, 25, 0, -127, 127, 50]
+
+    negative_offset, _ = list_view_export(
+        Int32,
+        "+vl";
+        offsets=Int32[-1],
+        sizes=Int32[1],
+        validity=UInt8[0x01],
+        null_count=0,
+    )
+    expect_list_view_import_error(
+        negative_offset,
+        "list-view column values has negative offset",
+    )
+
+    negative_size, _ = list_view_export(
+        Int32,
+        "+vl";
+        offsets=Int32[0],
+        sizes=Int32[-1],
+        validity=UInt8[0x01],
+        null_count=0,
+    )
+    expect_list_view_import_error(
+        negative_size,
+        "list-view column values has negative size",
+    )
+
+    overflowing_span, _ = list_view_export(
+        Int32,
+        "+vl";
+        offsets=Int32[5],
+        sizes=Int32[3],
+        validity=UInt8[0x01],
+        null_count=0,
+    )
+    expect_list_view_import_error(
+        overflowing_span,
+        "list-view column values span exceeds child value length",
+    )
 end
