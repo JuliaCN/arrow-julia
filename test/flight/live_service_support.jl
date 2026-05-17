@@ -435,6 +435,123 @@ print(json.dumps({
 }))
 """
 
+const FLIGHT_LIVE_PYARROW_CONCURRENT_DOEXCHANGE_BENCHMARK = raw"""
+import json
+import pyarrow as pa
+import pyarrow.flight as fl
+import sys
+import time
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier, Event
+
+host = sys.argv[1]
+port = int(sys.argv[2])
+concurrent_clients = int(sys.argv[3])
+requests_per_client = int(sys.argv[4])
+batch_count = int(sys.argv[5])
+rows_per_batch = int(sys.argv[6])
+expected_rows = int(sys.argv[7])
+expected_payload = sys.argv[8]
+lookahead_bytes = int(sys.argv[9])
+path = sys.argv[10:]
+
+descriptor = fl.FlightDescriptor.for_path(*path)
+schema = pa.schema([
+    pa.field("id", pa.int64()),
+    pa.field("payload", pa.string()),
+])
+ready_barrier = Barrier(concurrent_clients + 1)
+start_event = Event()
+
+def make_client():
+    return fl.FlightClient(
+        f"grpc://{host}:{port}",
+        generic_options=[
+            ("grpc.http2.lookahead_bytes", lookahead_bytes),
+            ("grpc.http2.bdp_probe", 1),
+        ],
+    )
+
+def close_client(client):
+    close = getattr(client, "close", None)
+    if close is not None:
+        close()
+
+def make_batches():
+    batches = []
+    next_id = 1
+    for batch_index in range(batch_count):
+        ids = list(range(next_id, next_id + rows_per_batch))
+        next_id += rows_per_batch
+        batch = pa.record_batch(
+            [
+                pa.array(ids, type=pa.int64()),
+                pa.array([expected_payload] * rows_per_batch, type=pa.string()),
+            ],
+            schema=schema,
+        )
+        batches.append((batch, f"perf:{batch_index + 1}".encode("utf-8")))
+    return batches
+
+def write_batches(writer, batches):
+    for batch, metadata in batches:
+        writer.write_with_metadata(batch, metadata)
+
+def run_exchange(client):
+    writer, reader = client.do_exchange(descriptor)
+    try:
+        writer.begin(schema)
+        write_batches(writer, make_batches())
+        writer.done_writing()
+        table = reader.read_all()
+    finally:
+        writer.close()
+    assert table.num_rows == expected_rows
+    payload_index = table.schema.get_field_index("payload")
+    assert table.column(payload_index)[0].as_py() == expected_payload
+
+def run_client(_: int) -> list[int]:
+    client = make_client()
+    try:
+        ready_barrier.wait()
+        start_event.wait()
+
+        samples = []
+        for _ in range(requests_per_client):
+            started = time.perf_counter_ns()
+            run_exchange(client)
+            finished = time.perf_counter_ns()
+            samples.append(finished - started)
+        return samples
+    finally:
+        close_client(client)
+
+with ThreadPoolExecutor(max_workers=concurrent_clients) as executor:
+    futures = [executor.submit(run_client, worker) for worker in range(concurrent_clients)]
+    ready_barrier.wait()
+    started = time.perf_counter_ns()
+    start_event.set()
+    worker_samples = [future.result() for future in futures]
+    finished = time.perf_counter_ns()
+
+samples = sorted(sample for worker in worker_samples for sample in worker)
+def percentile_index(count: int, numerator: int, denominator: int) -> int:
+    if count <= 1:
+        return 0
+    return min(count - 1, max(0, (count * numerator + denominator - 1) // denominator - 1))
+
+print(json.dumps({
+    "concurrent_clients": concurrent_clients,
+    "requests_per_client": requests_per_client,
+    "total_requests": len(samples),
+    "wall_ns": finished - started,
+    "request_median_ns": samples[(len(samples) - 1) // 2],
+    "request_p95_ns": samples[percentile_index(len(samples), 95, 100)],
+    "request_p99_ns": samples[percentile_index(len(samples), 99, 100)],
+    "request_max_ns": max(samples),
+}))
+"""
+
 function flight_live_fixture(protocol)
     descriptor_type = protocol.var"FlightDescriptor.DescriptorType"
     handshake_token = b"native"
@@ -1199,6 +1316,87 @@ function flight_live_pyarrow_concurrent_doget_metric(
     )
 end
 
+function flight_live_pyarrow_concurrent_doexchange(
+    host::AbstractString,
+    port::Integer,
+    fixture;
+    concurrent_clients::Integer,
+    requests_per_client::Integer,
+)
+    python = FlightTestSupport.pyarrow_flight_python()
+    isnothing(python) && return nothing
+    output = _flight_live_readchomp_with_timeout(
+        Cmd([
+            python,
+            "-c",
+            FLIGHT_LIVE_PYARROW_CONCURRENT_DOEXCHANGE_BENCHMARK,
+            host,
+            string(port),
+            string(concurrent_clients),
+            string(requests_per_client),
+            string(length(fixture.batches)),
+            string(length(first(fixture.batches).id)),
+            string(fixture.total_records),
+            fixture.payload_value,
+            string(_flight_live_pyarrow_lookahead_bytes()),
+            fixture.descriptor.path...,
+        ]);
+        timeout_sec=_flight_live_command_timeout_sec(),
+        label="pyarrow Flight concurrent DoExchange benchmark",
+    )
+    return JSON3.read(output)
+end
+
+function flight_live_pyarrow_concurrent_doexchange_metric(
+    host::AbstractString,
+    port::Integer,
+    fixture;
+    backend::Symbol,
+    concurrent_clients::Integer,
+    requests_per_client::Integer,
+)
+    result = flight_live_pyarrow_concurrent_doexchange(
+        host,
+        port,
+        fixture;
+        concurrent_clients=concurrent_clients,
+        requests_per_client=requests_per_client,
+    )
+    isnothing(result) && return nothing
+    total_requests = Int(result["total_requests"])
+    wall_ns = Int(result["wall_ns"])
+    request_bytes = fixture.message_bytes * total_requests
+    response_bytes = fixture.message_bytes * total_requests
+    total_bytes = request_bytes + response_bytes
+    request_median_ns = Int(result["request_median_ns"])
+    request_p95_ns = Int(result["request_p95_ns"])
+    request_p99_ns = Int(result["request_p99_ns"])
+    request_max_ns = Int(result["request_max_ns"])
+    return (
+        backend=backend,
+        operation=:doexchange_concurrent,
+        iterations=total_requests,
+        request_bytes=request_bytes,
+        response_bytes=response_bytes,
+        total_bytes=total_bytes,
+        samples_ns=[wall_ns],
+        median_ns=wall_ns,
+        median_ms=wall_ns / 1.0e6,
+        throughput_mib_per_sec=(total_bytes / max(wall_ns, 1) * 1.0e9) / 1024.0^2,
+        concurrent_clients=Int(result["concurrent_clients"]),
+        requests_per_client=Int(result["requests_per_client"]),
+        total_requests=total_requests,
+        request_median_ns=request_median_ns,
+        request_median_ms=request_median_ns / 1.0e6,
+        request_p95_ns=request_p95_ns,
+        request_p95_ms=request_p95_ns / 1.0e6,
+        request_p99_ns=request_p99_ns,
+        request_p99_ms=request_p99_ns / 1.0e6,
+        request_max_ns=request_max_ns,
+        request_max_ms=request_max_ns / 1.0e6,
+    )
+end
+
 function _flight_live_transport_measure(
     backend::Symbol,
     operation::Symbol;
@@ -1307,6 +1505,7 @@ function flight_live_transport_concurrent_benchmark(
     batch_count::Integer=2,
     rows_per_batch::Integer=256,
     payload_bytes::Integer=4_096,
+    operation::Symbol=:doget,
     concurrent_clients::Integer=_flight_live_pyarrow_concurrent_clients(),
     requests_per_client::Integer=_flight_live_pyarrow_requests_per_client(),
 )
@@ -1321,14 +1520,26 @@ function flight_live_transport_concurrent_benchmark(
     try
         transport.wait_for_server(server)
         host, port = transport.endpoint(server)
-        return flight_live_pyarrow_concurrent_doget_metric(
-            host,
-            port,
-            fixture;
-            backend=transport.backend,
-            concurrent_clients=concurrent_clients,
-            requests_per_client=requests_per_client,
-        )
+        if operation == :doget
+            return flight_live_pyarrow_concurrent_doget_metric(
+                host,
+                port,
+                fixture;
+                backend=transport.backend,
+                concurrent_clients=concurrent_clients,
+                requests_per_client=requests_per_client,
+            )
+        elseif operation == :doexchange
+            return flight_live_pyarrow_concurrent_doexchange_metric(
+                host,
+                port,
+                fixture;
+                backend=transport.backend,
+                concurrent_clients=concurrent_clients,
+                requests_per_client=requests_per_client,
+            )
+        end
+        throw(ArgumentError("unsupported concurrent Flight operation: $(operation)"))
     finally
         transport.stop_server(server)
     end
@@ -1356,6 +1567,9 @@ end
 
 function flight_live_transport_print_concurrent_summary(io::IO, metrics)
     isempty(metrics) && return nothing
+    operation = metrics[1].operation
+    all(metric.operation == operation for metric in metrics) ||
+        throw(ArgumentError("concurrent summary metrics must use one operation"))
     throughputs = [metric.throughput_mib_per_sec for metric in metrics]
     request_latencies = [metric.request_median_ms for metric in metrics]
     request_p95_latencies = [metric.request_p95_ms for metric in metrics]
@@ -1363,7 +1577,7 @@ function flight_live_transport_print_concurrent_summary(io::IO, metrics)
     wall_latencies = [metric.median_ms for metric in metrics]
     println(
         io,
-        "doget_concurrent soak: rounds=$(length(metrics)) " *
+        "$(operation) soak: rounds=$(length(metrics)) " *
         "concurrent_clients=$(metrics[1].concurrent_clients) " *
         "requests_per_client=$(metrics[1].requests_per_client) " *
         "wall_ms_range=$(round(minimum(wall_latencies); digits=2))-$(round(maximum(wall_latencies); digits=2)) " *

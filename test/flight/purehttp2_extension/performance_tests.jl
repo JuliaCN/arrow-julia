@@ -100,6 +100,7 @@ function purehttp2_extension_test_large_transport_concurrent_soak(;
     batch_count::Integer=2,
     rows_per_batch::Integer=256,
     payload_bytes::Integer=4_096,
+    exchange_payload_bytes::Integer=1_024,
 )
     rounds > 0 || throw(ArgumentError("rounds must be positive"))
     concurrent_clients > 0 || throw(ArgumentError("concurrent_clients must be positive"))
@@ -107,7 +108,7 @@ function purehttp2_extension_test_large_transport_concurrent_soak(;
 
     metrics = NamedTuple[]
     for _ = 1:rounds
-        metric = flight_live_transport_concurrent_benchmark(
+        doget_metric = flight_live_transport_concurrent_benchmark(
             Arrow.Flight.Protocol,
             purehttp2_extension_perf_transport(
                 max_active_requests=max(concurrent_clients, 4),
@@ -117,31 +118,79 @@ function purehttp2_extension_test_large_transport_concurrent_soak(;
             batch_count=batch_count,
             rows_per_batch=rows_per_batch,
             payload_bytes=payload_bytes,
+            operation=:doget,
             concurrent_clients=concurrent_clients,
             requests_per_client=requests_per_client,
         )
-        isnothing(metric) && return metrics
-        push!(metrics, metric)
+        isnothing(doget_metric) && return metrics
+        push!(metrics, doget_metric)
+
+        doexchange_metric = flight_live_transport_concurrent_benchmark(
+            Arrow.Flight.Protocol,
+            purehttp2_extension_perf_transport(
+                max_active_requests=max(concurrent_clients, 4),
+                request_capacity=max(concurrent_clients * 2, 4),
+                response_capacity=max(concurrent_clients * 2, 4),
+            );
+            batch_count=batch_count,
+            rows_per_batch=rows_per_batch,
+            payload_bytes=exchange_payload_bytes,
+            operation=:doexchange,
+            concurrent_clients=concurrent_clients,
+            requests_per_client=requests_per_client,
+        )
+        isnothing(doexchange_metric) && return metrics
+        push!(metrics, doexchange_metric)
     end
 
-    @test length(metrics) == rounds
+    @test length(metrics) == 2 * rounds
+    doget_metrics = filter(metric -> metric.operation == :doget_concurrent, metrics)
+    doexchange_metrics =
+        filter(metric -> metric.operation == :doexchange_concurrent, metrics)
+    @test length(doget_metrics) == rounds
+    @test length(doexchange_metrics) == rounds
     expected_total_requests = concurrent_clients * requests_per_client
-    expected_total_bytes =
+    expected_doget_total_bytes =
         PUREHTTP2_EXTENSION_LARGE_TRANSPORT_BYTES * expected_total_requests
-    @test all(metric.backend == :grpcserver for metric in metrics)
-    @test all(metric.operation == :doget_concurrent for metric in metrics)
-    @test all(metric.total_requests == expected_total_requests for metric in metrics)
-    @test all(metric.concurrent_clients == concurrent_clients for metric in metrics)
-    @test all(metric.requests_per_client == requests_per_client for metric in metrics)
-    @test all(metric.total_bytes >= expected_total_bytes for metric in metrics)
-    @test all(metric.median_ns > 0 for metric in metrics)
-    @test all(metric.request_median_ns > 0 for metric in metrics)
-    @test all(metric.request_p95_ns >= metric.request_median_ns for metric in metrics)
-    @test all(metric.request_p99_ns >= metric.request_p95_ns for metric in metrics)
-    @test all(metric.request_max_ns >= metric.request_p99_ns for metric in metrics)
-    @test all(metric.request_max_ns >= metric.request_median_ns for metric in metrics)
-    @test all(metric.throughput_mib_per_sec > 0 for metric in metrics)
+    expected_doexchange_total_bytes =
+        PUREHTTP2_EXTENSION_EXCHANGE_TRANSPORT_BYTES * expected_total_requests
+    for operation_metrics in (doget_metrics, doexchange_metrics)
+        @test all(metric.backend == :grpcserver for metric in operation_metrics)
+        @test all(
+            metric.total_requests == expected_total_requests for metric in operation_metrics
+        )
+        @test all(
+            metric.concurrent_clients == concurrent_clients for metric in operation_metrics
+        )
+        @test all(
+            metric.requests_per_client == requests_per_client for
+            metric in operation_metrics
+        )
+        @test all(metric.median_ns > 0 for metric in operation_metrics)
+        @test all(metric.request_median_ns > 0 for metric in operation_metrics)
+        @test all(
+            metric.request_p95_ns >= metric.request_median_ns for
+            metric in operation_metrics
+        )
+        @test all(
+            metric.request_p99_ns >= metric.request_p95_ns for metric in operation_metrics
+        )
+        @test all(
+            metric.request_max_ns >= metric.request_p99_ns for metric in operation_metrics
+        )
+        @test all(
+            metric.request_max_ns >= metric.request_median_ns for
+            metric in operation_metrics
+        )
+        @test all(metric.throughput_mib_per_sec > 0 for metric in operation_metrics)
+    end
+    @test all(metric.total_bytes >= expected_doget_total_bytes for metric in doget_metrics)
+    @test all(
+        metric.total_bytes >= expected_doexchange_total_bytes for
+        metric in doexchange_metrics
+    )
     flight_live_transport_print_metrics(stdout, metrics)
-    flight_live_transport_print_concurrent_summary(stdout, metrics)
+    flight_live_transport_print_concurrent_summary(stdout, doget_metrics)
+    flight_live_transport_print_concurrent_summary(stdout, doexchange_metrics)
     return metrics
 end
