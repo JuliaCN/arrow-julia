@@ -39,8 +39,9 @@ lead to unsafe indexing or misleading semantic interpretation:
   required, non-negative spans, and child/data bounds before materialization;
 - IPC Utf8, LargeUtf8, and Utf8View string values validate UTF-8 bytes for
   non-null slots before exposing Julia strings;
-- canonical extension metadata is parsed and validated for the supported
-  canonical extension names before Arrow.jl returns converted semantic values;
+- canonical extension metadata and storage contracts are parsed and validated
+  for the supported canonical extension names before Arrow.jl returns
+  converted semantic values;
 - C Data import validates base struct shape, child counts, buffers, release
   callbacks, non-zero offsets, nested dictionaries, view buffers, list-view
   spans, and run-end encoded children inside the documented same-process
@@ -50,6 +51,6 @@ lead to unsafe indexing or misleading semantic interpretation:
 
 These checks are not a complete malicious-input certification. The remaining
 tracked work is to add a larger regression corpus for malformed IPC files,
-malformed extension metadata combinations, and C Data soundness cases, then
-decide whether Arrow.jl should expose a public validation API separate from
-normal read paths.
+C Data soundness cases, and future official extension combinations, then decide
+whether Arrow.jl should expose a public validation API separate from normal read
+paths.

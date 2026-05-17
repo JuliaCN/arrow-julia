@@ -130,6 +130,98 @@ end
 @inline _isbinarystoragetype(x) =
     x isa Union{Meta.Binary,Meta.LargeBinary,Meta.BinaryView,Meta.FixedSizeBinary}
 
+@inline _isutf8storagetype(x) = x isa Union{Meta.Utf8,Meta.LargeUtf8,Meta.Utf8View}
+
+@inline _isintstoragetype(x, bitwidth::Integer, signed::Bool) =
+    x isa Meta.Int && x.bitWidth == bitwidth && x.is_signed == signed
+
+@inline _isfixedsizebinary(x, bytewidth::Integer) =
+    x isa Meta.FixedSizeBinary && x.byteWidth == bytewidth
+
+function _validateemptymetadata(sym::Symbol, metadata::String)
+    isempty(metadata) || _canonicalextensionerror(sym, "metadata must be the empty string")
+    return nothing
+end
+
+function _validateuuid(field::Meta.Field, metadata::String)
+    _validateemptymetadata(ArrowTypes.UUIDSYMBOL, metadata)
+    _isfixedsizebinary(field.type, 16) || _canonicalextensionerror(
+        ArrowTypes.UUIDSYMBOL,
+        "storage must be FixedSizeBinary(16)",
+    )
+    return nothing
+end
+
+function _validatejsonextension(field::Meta.Field, metadata::String)
+    if !isempty(metadata)
+        _parsecanonicalmetadata(JSON_SYMBOL, metadata)
+    end
+    _isutf8storagetype(field.type) || _canonicalextensionerror(
+        JSON_SYMBOL,
+        "storage must be Utf8, LargeUtf8, or Utf8View",
+    )
+    return nothing
+end
+
+function _validatebool8(field::Meta.Field, metadata::String)
+    _validateemptymetadata(BOOL8_SYMBOL, metadata)
+    _isintstoragetype(field.type, 8, true) ||
+        _canonicalextensionerror(BOOL8_SYMBOL, "storage must be signed Int8")
+    return nothing
+end
+
+function _validateopaque(field::Meta.Field, metadata::String)
+    meta = _parsecanonicalmetadata(OPAQUE_SYMBOL, metadata; required=true)
+    _jsonhaskey(meta, "type_name") ||
+        _canonicalextensionerror(OPAQUE_SYMBOL, "\"type_name\" is required")
+    _jsonhaskey(meta, "vendor_name") ||
+        _canonicalextensionerror(OPAQUE_SYMBOL, "\"vendor_name\" is required")
+    _jsonget(meta, "type_name") isa AbstractString ||
+        _canonicalextensionerror(OPAQUE_SYMBOL, "\"type_name\" must be a string")
+    _jsonget(meta, "vendor_name") isa AbstractString ||
+        _canonicalextensionerror(OPAQUE_SYMBOL, "\"vendor_name\" must be a string")
+    field
+    return nothing
+end
+
+function _validatetimestampwithoffset(field::Meta.Field, metadata::String)
+    _validateemptymetadata(TIMESTAMP_WITH_OFFSET_SYMBOL, metadata)
+    field.type isa Meta.Struct ||
+        _canonicalextensionerror(TIMESTAMP_WITH_OFFSET_SYMBOL, "storage must be a Struct")
+    children = collect(_fieldchildren(field))
+    length(children) == 2 || _canonicalextensionerror(
+        TIMESTAMP_WITH_OFFSET_SYMBOL,
+        "storage must contain exactly \"timestamp\" and \"offset_minutes\" fields",
+    )
+    timestamp_field, offset_field = children
+    timestamp_field.name == "timestamp" || _canonicalextensionerror(
+        TIMESTAMP_WITH_OFFSET_SYMBOL,
+        "first child field must be named \"timestamp\"",
+    )
+    offset_field.name == "offset_minutes" || _canonicalextensionerror(
+        TIMESTAMP_WITH_OFFSET_SYMBOL,
+        "second child field must be named \"offset_minutes\"",
+    )
+    !timestamp_field.nullable && !offset_field.nullable || _canonicalextensionerror(
+        TIMESTAMP_WITH_OFFSET_SYMBOL,
+        "child fields must be non-nullable",
+    )
+    timestamp_type = timestamp_field.type
+    timestamp_type isa Meta.Timestamp || _canonicalextensionerror(
+        TIMESTAMP_WITH_OFFSET_SYMBOL,
+        "\"timestamp\" field must use Timestamp storage",
+    )
+    timestamp_type.timezone == "UTC" || _canonicalextensionerror(
+        TIMESTAMP_WITH_OFFSET_SYMBOL,
+        "\"timestamp\" field timezone must be UTC",
+    )
+    _isintstoragetype(offset_field.type, 16, true) || _canonicalextensionerror(
+        TIMESTAMP_WITH_OFFSET_SYMBOL,
+        "\"offset_minutes\" field must use signed Int16 storage",
+    )
+    return nothing
+end
+
 function _validateparquetvariant(field::Meta.Field, metadata::String)
     isempty(metadata) || _canonicalextensionerror(
         PARQUET_VARIANT_SYMBOL,

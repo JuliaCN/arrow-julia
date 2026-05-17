@@ -1142,6 +1142,18 @@ end
         end
 
         @testset "# 98" begin
+            function assert_canonical_extension_error(f::Function, needle::AbstractString)
+                err = try
+                    f()
+                    nothing
+                catch e
+                    e
+                end
+                @test err !== nothing
+                @test occursin(needle, sprint(showerror, err))
+                return
+            end
+
             t = (
                 a=[Nanosecond(0), Nanosecond(1)],
                 b=[uuid4(), uuid4()],
@@ -1171,6 +1183,29 @@ end
                 UUID("550e8400-e29b-41d4-a716-446655440000"),
                 UUID("550e8400-e29b-41d4-a716-446655440001"),
             ]
+
+            invalid_uuid_metadata = Arrow.tobuffer(
+                legacy;
+                colmetadata=Dict(
+                    :b => Dict(
+                        "ARROW:extension:name" => "arrow.uuid",
+                        "ARROW:extension:metadata" => "{}",
+                    ),
+                ),
+            )
+            assert_canonical_extension_error(
+                () -> Arrow.Table(invalid_uuid_metadata),
+                "invalid canonical arrow.uuid extension",
+            )
+
+            invalid_uuid_storage = Arrow.tobuffer(
+                (b=["550e8400-e29b-41d4-a716-446655440000"],);
+                colmetadata=Dict(:b => Dict("ARROW:extension:name" => "arrow.uuid")),
+            )
+            assert_canonical_extension_error(
+                () -> Arrow.Table(invalid_uuid_storage),
+                "storage must be FixedSizeBinary(16)",
+            )
 
             toffset = (
                 b=OffsetArray(
@@ -1355,6 +1390,18 @@ end
         end
 
         @testset "canonical timestamp_with_offset" begin
+            function assert_canonical_extension_error(f::Function, needle::AbstractString)
+                err = try
+                    f()
+                    nothing
+                catch e
+                    e
+                end
+                @test err !== nothing
+                @test occursin(needle, sprint(showerror, err))
+                return
+            end
+
             values =
                 Union{Missing,Arrow.TimestampWithOffset{Arrow.Meta.TimeUnit.MILLISECOND}}[
                     Arrow.TimestampWithOffset(
@@ -1418,6 +1465,38 @@ end
                     ),
                 ],
             )
+
+            timestamp_storage = [(
+                timestamp=Arrow.Timestamp{Arrow.Meta.TimeUnit.MILLISECOND,:UTC}(
+                    1577836800000,
+                ),
+                offset_minutes=Int16(330),
+            ),]
+            invalid_timestamp_metadata = Arrow.tobuffer(
+                (col=timestamp_storage,);
+                colmetadata=Dict(
+                    :col => Dict(
+                        "ARROW:extension:name" => "arrow.timestamp_with_offset",
+                        "ARROW:extension:metadata" => "{}",
+                    ),
+                ),
+            )
+            assert_canonical_extension_error(
+                () -> Arrow.Table(invalid_timestamp_metadata),
+                "invalid canonical arrow.timestamp_with_offset extension",
+            )
+
+            invalid_timestamp_storage = Arrow.tobuffer(
+                (col=[(timestamp=Int64(0), offset_minutes=Int16(0))],);
+                colmetadata=Dict(
+                    :col =>
+                        Dict("ARROW:extension:name" => "arrow.timestamp_with_offset"),
+                ),
+            )
+            assert_canonical_extension_error(
+                () -> Arrow.Table(invalid_timestamp_storage),
+                "\"timestamp\" field must use Timestamp storage",
+            )
         end
 
         @testset "Run-End Encoded read support" begin
@@ -1444,6 +1523,18 @@ end
         end
 
         @testset "canonical bool8/json/opaque" begin
+            function assert_canonical_extension_error(f::Function, needle::AbstractString)
+                err = try
+                    f()
+                    nothing
+                catch e
+                    e
+                end
+                @test err !== nothing
+                @test occursin(needle, sprint(showerror, err))
+                return
+            end
+
             bools =
                 Union{Missing,Arrow.Bool8}[Arrow.Bool8(true), missing, Arrow.Bool8(false)]
             @test ArrowTypes.JuliaType(Val(Symbol("arrow.bool8")), Int8, "") == Arrow.Bool8
@@ -1475,6 +1566,21 @@ end
                 Union{Missing,String}["{\"a\":1}", missing, "[1,2,3]"],
             )
 
+            json_object_metadata = Arrow.Table(
+                Arrow.tobuffer(
+                    (col=["{\"ok\":true}"],);
+                    colmetadata=Dict(
+                        :col => Dict(
+                            "ARROW:extension:name" => "arrow.json",
+                            "ARROW:extension:metadata" => "{}",
+                        ),
+                    ),
+                ),
+            )
+            @test eltype(json_object_metadata.col) == Arrow.JSONText{String}
+            @test Arrow.getmetadata(json_object_metadata.col)["ARROW:extension:metadata"] ==
+                  "{}"
+
             opaque_meta = Arrow.opaquemetadata("pkg.Type", "vendor.example")
             @test ArrowTypes.JuliaType(Val(Symbol("arrow.opaque")), String, opaque_meta) ==
                   String
@@ -1494,6 +1600,79 @@ end
             @test Arrow.getmetadata(opaque_tt.col)["ARROW:extension:name"] == "arrow.opaque"
             @test Arrow.getmetadata(opaque_tt.col)["ARROW:extension:metadata"] ==
                   opaque_meta
+
+            opaque_extra_metadata = Arrow.Table(
+                Arrow.tobuffer(
+                    (col=["a"],);
+                    colmetadata=Dict(
+                        :col => Dict(
+                            "ARROW:extension:name" => "arrow.opaque",
+                            "ARROW:extension:metadata" => "{\"type_name\":\"pkg.Type\",\"vendor_name\":\"vendor.example\",\"extra\":true}",
+                        ),
+                    ),
+                ),
+            )
+            @test copy(opaque_extra_metadata.col) == ["a"]
+
+            invalid_bool8_metadata = Arrow.tobuffer(
+                (col=Int8[1, 0],);
+                colmetadata=Dict(
+                    :col => Dict(
+                        "ARROW:extension:name" => "arrow.bool8",
+                        "ARROW:extension:metadata" => "{}",
+                    ),
+                ),
+            )
+            assert_canonical_extension_error(
+                () -> Arrow.Table(invalid_bool8_metadata),
+                "invalid canonical arrow.bool8 extension",
+            )
+
+            invalid_bool8_storage = Arrow.tobuffer(
+                (col=Int16[1, 0],);
+                colmetadata=Dict(:col => Dict("ARROW:extension:name" => "arrow.bool8")),
+            )
+            assert_canonical_extension_error(
+                () -> Arrow.Table(invalid_bool8_storage),
+                "storage must be signed Int8",
+            )
+
+            invalid_json_metadata = Arrow.tobuffer(
+                (col=["{}"],);
+                colmetadata=Dict(
+                    :col => Dict(
+                        "ARROW:extension:name" => "arrow.json",
+                        "ARROW:extension:metadata" => "[]",
+                    ),
+                ),
+            )
+            assert_canonical_extension_error(
+                () -> Arrow.Table(invalid_json_metadata),
+                "metadata must be a JSON object",
+            )
+
+            invalid_json_storage = Arrow.tobuffer(
+                (col=Int32[1],);
+                colmetadata=Dict(:col => Dict("ARROW:extension:name" => "arrow.json")),
+            )
+            assert_canonical_extension_error(
+                () -> Arrow.Table(invalid_json_storage),
+                "storage must be Utf8, LargeUtf8, or Utf8View",
+            )
+
+            invalid_opaque_metadata = Arrow.tobuffer(
+                (col=["a"],);
+                colmetadata=Dict(
+                    :col => Dict(
+                        "ARROW:extension:name" => "arrow.opaque",
+                        "ARROW:extension:metadata" => "{\"type_name\":\"pkg.Type\"}",
+                    ),
+                ),
+            )
+            assert_canonical_extension_error(
+                () -> Arrow.Table(invalid_opaque_metadata),
+                "\"vendor_name\" is required",
+            )
         end
 
         @testset "canonical advanced passthrough" begin
