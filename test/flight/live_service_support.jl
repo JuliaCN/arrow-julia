@@ -255,6 +255,59 @@ assert table.schema.metadata[b"dataset"] == b"native"
 assert table.schema.field("name").metadata[b"lang"] == b"en"
 """
 
+const FLIGHT_LIVE_PYTHON_POLL_SMOKE = raw"""
+import base64
+import pathlib
+import sys
+import tempfile
+
+import grpc
+import grpc_tools
+from grpc_tools import protoc
+
+proto_root = pathlib.Path(sys.argv[1])
+grpc_tools_proto = pathlib.Path(grpc_tools.__file__).resolve().parent / "_proto"
+host = sys.argv[2]
+port = int(sys.argv[3])
+username = sys.argv[4]
+password = sys.argv[5]
+path = sys.argv[6:]
+
+out = pathlib.Path(tempfile.mkdtemp(prefix="flight_poll_client_proto_"))
+result = protoc.main([
+    "grpc_tools.protoc",
+    f"-I{proto_root}",
+    f"-I{grpc_tools_proto}",
+    f"--python_out={out}",
+    f"--grpc_python_out={out}",
+    str(proto_root / "Flight.proto"),
+])
+if result != 0:
+    raise RuntimeError(f"protoc failed with exit code {result}")
+sys.path.insert(0, str(out))
+
+import Flight_pb2 as pb2
+import Flight_pb2_grpc as pb2_grpc
+
+channel = grpc.insecure_channel(f"{host}:{port}")
+stub = pb2_grpc.FlightServiceStub(channel)
+basic_auth = base64.b64encode(f"{username}:{password}".encode("utf-8"))
+metadata = (("authorization", "Basic " + basic_auth.decode("ascii")),)
+
+descriptor = pb2.FlightDescriptor(type=pb2.FlightDescriptor.PATH, path=path)
+first = stub.PollFlightInfo(descriptor, metadata=metadata, timeout=30)
+assert round(first.progress, 6) == 0.5
+assert tuple(first.info.flight_descriptor.path) == tuple(path)
+assert tuple(first.flight_descriptor.path) == tuple(path + ["retry"])
+assert first.info.total_records == 3
+
+second = stub.PollFlightInfo(first.flight_descriptor, metadata=metadata, timeout=30)
+assert round(second.progress, 6) == 1.0
+assert not second.HasField("flight_descriptor")
+assert tuple(second.info.flight_descriptor.path) == tuple(path)
+assert second.info.total_records == 3
+"""
+
 const FLIGHT_LIVE_PYARROW_DOGET_BENCHMARK = raw"""
 import pyarrow.flight as fl
 import sys
@@ -1024,6 +1077,29 @@ function flight_live_pyarrow_readonly_smoke(host::AbstractString, port::Integer,
             fixture.handshake_username,
             fixture.handshake_password,
             fixture.descriptor.path...,
+        ]),
+    )
+    return true
+end
+
+function flight_live_python_poll_smoke(host::AbstractString, port::Integer, fixture)
+    python = FlightTestSupport.pyarrow_flight_python(
+        required_modules=FlightTestSupport.POLL_FLIGHT_REQUIRED_MODULES,
+    )
+    isnothing(python) && return false
+    proto_root =
+        normpath(joinpath(FlightTestSupport.TEST_ROOT, "..", "src", "flight", "proto"))
+    run(
+        Cmd([
+            python,
+            "-c",
+            FLIGHT_LIVE_PYTHON_POLL_SMOKE,
+            proto_root,
+            host,
+            string(port),
+            fixture.handshake_username,
+            fixture.handshake_password,
+            fixture.poll_descriptor.path...,
         ]),
     )
     return true

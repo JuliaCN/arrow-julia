@@ -415,10 +415,11 @@ loaded so the optional extension can bridge `Flight.Service` into the latest
 extension can provide `Arrow.Flight.nghttp2_flight_server(...)`. The current
 nghttp2 backend proves unary plus buffered server-streaming methods with
 trailer-borne `grpc-status`, while request-streaming `Handshake`, `DoPut`, and
-`DoExchange` remain unsupported there. The matching `pyarrow.flight` smoke coverage
-against that live Julia server currently spans all of those except
-`PollFlightInfo`, because the Python client surface used in the test
-environment does not expose a poll API. A separate focused runner,
+`DoExchange` remain unsupported there. The matching Python smoke coverage
+against that live Julia server spans those methods, including a low-level
+generated-stub `PollFlightInfo` proof because the `pyarrow.flight` client
+surface used in the test environment does not expose a high-level poll API. A
+separate focused runner,
 `test/flight_purehttp2_perf.jl`, now measures large-response end-to-end
 `DoGet` performance on that same package-owned listener through a reusable
 backend-factory seam, and it can replay concurrent soak rounds via
