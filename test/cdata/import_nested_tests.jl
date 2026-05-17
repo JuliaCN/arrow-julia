@@ -435,6 +435,50 @@ end
     @test CData.isreleased(imported)
     @test CData.isreleased(exported)
 
+    function malformed_utf8_view_export(; nullable::Bool=false)
+        views = Arrow.ViewElement[Arrow.ViewElement(Int32(1), Int32(0), Int32(0), Int32(0))]
+        reinterpret(UInt8, views)[Arrow.VIEW_LENGTH_BYTES + 1] = 0xff
+        validity = nullable ? UInt8[0x00] : UInt8[]
+        view_schema = CData._schema_export(
+            "vu",
+            "reason";
+            flags=nullable ? CData.ARROW_FLAG_NULLABLE : Int64(0),
+        )
+        top_schema =
+            CData._schema_export("+s", ""; children=CData.SchemaExport[view_schema])
+        buffers = Ptr{Cvoid}[
+            nullable ? Ptr{Cvoid}(pointer(validity)) : C_NULL,
+            Ptr{Cvoid}(pointer(views)),
+            C_NULL,
+        ]
+        view_array = CData._array_export((views, validity), 1, nullable ? 1 : 0, buffers)
+        top_array = CData._array_export(
+            (views, validity),
+            1,
+            0,
+            Ptr{Cvoid}[C_NULL];
+            children=CData.ArrayExport[view_array],
+        )
+        return CData.ExportedTable(top_schema, top_array)
+    end
+
+    invalid_view = malformed_utf8_view_export()
+    @test_throws ArgumentError(
+        "UTF-8 view column reason value at index 1 is not valid UTF-8",
+    ) CData.importtable(CData.schema_ptr(invalid_view), CData.array_ptr(invalid_view))
+    CData.release!(invalid_view)
+    @test CData.isreleased(invalid_view)
+
+    null_invalid_view = malformed_utf8_view_export(; nullable=true)
+    imported_null_invalid_view = CData.importtable(
+        CData.schema_ptr(null_invalid_view),
+        CData.array_ptr(null_invalid_view),
+    )
+    @test isequal(collect(Tables.getcolumn(imported_null_invalid_view, :reason)), [missing])
+    CData.release!(imported_null_invalid_view)
+    @test CData.isreleased(imported_null_invalid_view)
+    @test CData.isreleased(null_invalid_view)
+
     binary_source = Arrow.View{Union{Missing,Base.CodeUnits}}(
         getfield(source_reason, :arrow),
         getfield(source_reason, :validity),

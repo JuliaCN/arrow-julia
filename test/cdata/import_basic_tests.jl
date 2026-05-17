@@ -180,6 +180,94 @@ end
     @test CData.isreleased(nullable_binary_exported)
 end
 
+function _variable_width_export(
+    format::AbstractString,
+    name::Symbol,
+    offsets::Vector{O},
+    data::Vector{UInt8};
+    validity::Vector{UInt8}=UInt8[],
+    null_count::Integer=0,
+    nullable::Bool=false,
+) where {O<:Union{Int32,Int64}}
+    field_schema = CData._schema_export(
+        format,
+        String(name);
+        flags=nullable ? CData.ARROW_FLAG_NULLABLE : Int64(0),
+    )
+    top_schema = CData._schema_export("+s", ""; children=CData.SchemaExport[field_schema])
+    buffers = Ptr{Cvoid}[
+        isempty(validity) ? C_NULL : Ptr{Cvoid}(pointer(validity)),
+        Ptr{Cvoid}(pointer(offsets)),
+        isempty(data) ? C_NULL : Ptr{Cvoid}(pointer(data)),
+    ]
+    field_array = CData._array_export(
+        (offsets, data, validity),
+        length(offsets) - 1,
+        null_count,
+        buffers,
+    )
+    top_array = CData._array_export(
+        (offsets, data, validity),
+        length(offsets) - 1,
+        0,
+        Ptr{Cvoid}[C_NULL];
+        children=CData.ArrayExport[field_array],
+    )
+    return CData.ExportedTable(top_schema, top_array)
+end
+
+@testset "rejects malformed variable-width C Data imports" begin
+    bad_utf8_offsets = _variable_width_export("u", :name, Int32[0, 2, 1], UInt8[0x61, 0x62])
+    @test_throws ArgumentError("UTF-8 column name offsets must be nondecreasing") CData.importtable(
+        CData.schema_ptr(bad_utf8_offsets),
+        CData.array_ptr(bad_utf8_offsets),
+    )
+    CData.release!(bad_utf8_offsets)
+    @test CData.isreleased(bad_utf8_offsets)
+
+    bad_binary_offsets = _variable_width_export("Z", :blob, Int64[-1, 1], UInt8[0x61])
+    @test_throws ArgumentError("binary column blob has negative offset") CData.importtable(
+        CData.schema_ptr(bad_binary_offsets),
+        CData.array_ptr(bad_binary_offsets),
+    )
+    CData.release!(bad_binary_offsets)
+    @test CData.isreleased(bad_binary_offsets)
+
+    invalid_utf8 = _variable_width_export("u", :name, Int32[0, 1], UInt8[0xff])
+    @test_throws ArgumentError("UTF-8 column name value at index 1 is not valid UTF-8") CData.importtable(
+        CData.schema_ptr(invalid_utf8),
+        CData.array_ptr(invalid_utf8),
+    )
+    CData.release!(invalid_utf8)
+    @test CData.isreleased(invalid_utf8)
+
+    invalid_large_utf8 = _variable_width_export("U", :name, Int64[0, 1], UInt8[0xff])
+    @test_throws ArgumentError("UTF-8 column name value at index 1 is not valid UTF-8") CData.importtable(
+        CData.schema_ptr(invalid_large_utf8),
+        CData.array_ptr(invalid_large_utf8),
+    )
+    CData.release!(invalid_large_utf8)
+    @test CData.isreleased(invalid_large_utf8)
+
+    null_invalid_utf8 = _variable_width_export(
+        "u",
+        :name,
+        Int32[0, 1],
+        UInt8[0xff];
+        validity=UInt8[0x00],
+        null_count=1,
+        nullable=true,
+    )
+    imported_null_invalid = CData.importtable(
+        CData.schema_ptr(null_invalid_utf8),
+        CData.array_ptr(null_invalid_utf8),
+    )
+    @test isequal(collect(Tables.getcolumn(imported_null_invalid, :name)), [missing])
+    CData.release!(imported_null_invalid)
+    @test CData.isreleased(imported_null_invalid)
+    @test CData.isreleased(null_invalid_utf8)
+end
+
 @testset "imports boolean C Data columns" begin
     table = Arrow.Table(
         Arrow.tobuffer((

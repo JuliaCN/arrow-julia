@@ -90,6 +90,38 @@ function _bitmap_vector(
     return unsafe_wrap(Vector{UInt8}, Ptr{UInt8}(data_ptr), nbytes; own=false)
 end
 
+function _assert_binary_like_offsets!(offsets::Vector, name::Symbol, label::AbstractString)
+    isempty(offsets) && throw(ArgumentError("$label column $name has empty offsets"))
+    previous = Int(first(offsets))
+    previous >= 0 || throw(ArgumentError("$label column $name has negative offset"))
+    for offset in Iterators.drop(offsets, 1)
+        current = Int(offset)
+        current >= previous ||
+            throw(ArgumentError("$label column $name offsets must be nondecreasing"))
+        previous = current
+    end
+    return previous
+end
+
+function _assert_utf8_spans!(
+    offsets::Vector,
+    data::Vector{UInt8},
+    validity::Vector{UInt8},
+    len::Integer,
+    name::Symbol,
+    validity_offset::Int,
+)
+    for i = 1:Int(len)
+        _validity_bit(validity, i, validity_offset) || continue
+        start = Int(@inbounds offsets[i]) + 1
+        stop = Int(@inbounds offsets[i + 1])
+        stop < start && continue
+        isvalid(String, @view data[start:stop]) ||
+            throw(ArgumentError("UTF-8 column $name value at index $i is not valid UTF-8"))
+    end
+    return nothing
+end
+
 function _import_null_column(array::ArrowArray, name::Symbol)
     _assert_import_column_layout(array, name)
     array.n_children == 0 ||
@@ -153,7 +185,7 @@ function _import_string_column(
     offsets_ptr == C_NULL && throw(ArgumentError("UTF-8 column $name has C_NULL offsets"))
     offset = _logical_offset(array)
     offsets = _wrap_buffer(O, offsets_ptr, _logical_length(array) + 1, offset)
-    data_len = isempty(offsets) ? 0 : Int(offsets[end])
+    data_len = _assert_binary_like_offsets!(offsets, name, "UTF-8")
     data_len > 0 &&
         data_ptr == C_NULL &&
         throw(ArgumentError("UTF-8 column $name has C_NULL data buffer"))
@@ -162,9 +194,9 @@ function _import_string_column(
         unsafe_wrap(Vector{UInt8}, Ptr{UInt8}(data_ptr), data_len; own=false)
     values = ImportedStringVector(offsets, data, Int(array.length))
     nullable = _nullable_field(schema, array)
-    return nullable ?
-           ImportedNullableStringVector(values, _validity_vector(array, name), offset) :
-           values
+    validity = nullable ? _validity_vector(array, name) : UInt8[]
+    _assert_utf8_spans!(offsets, data, validity, _logical_length(array), name, offset)
+    return nullable ? ImportedNullableStringVector(values, validity, offset) : values
 end
 
 function _import_binary_column(
@@ -183,7 +215,7 @@ function _import_binary_column(
     offsets_ptr == C_NULL && throw(ArgumentError("binary column $name has C_NULL offsets"))
     offset = _logical_offset(array)
     offsets = _wrap_buffer(O, offsets_ptr, _logical_length(array) + 1, offset)
-    data_len = isempty(offsets) ? 0 : Int(offsets[end])
+    data_len = _assert_binary_like_offsets!(offsets, name, "binary")
     data_len > 0 &&
         data_ptr == C_NULL &&
         throw(ArgumentError("binary column $name has C_NULL data buffer"))
@@ -226,6 +258,34 @@ function _assert_view_spans!(
         offset >= 0 || throw(ArgumentError("view column $name has negative data offset"))
         offset + len <= length(buffers[buffer_index]) || throw(
             ArgumentError("view column $name references bytes outside variadic buffer"),
+        )
+    end
+    return nothing
+end
+
+function _assert_utf8_view_spans!(
+    views::Vector{ViewElement},
+    inline::Vector{UInt8},
+    buffers::Vector{Vector{UInt8}},
+    validity::Vector{UInt8},
+    name::Symbol,
+    validity_offset::Int,
+)
+    for i in eachindex(views)
+        _validity_bit(validity, i, validity_offset) || continue
+        view = @inbounds views[i]
+        len = Int(view.length)
+        len == 0 && continue
+        valid = if _viewisinline(len)
+            start = _view_inline_start(i)
+            isvalid(String, @view inline[start:(start + len - 1)])
+        else
+            buffer = @inbounds buffers[Int(view.bufindex) + 1]
+            start = Int(view.offset) + 1
+            isvalid(String, @view buffer[start:(start + len - 1)])
+        end
+        valid || throw(
+            ArgumentError("UTF-8 view column $name value at index $i is not valid UTF-8"),
         )
     end
     return nothing
@@ -288,6 +348,7 @@ function _import_view_column(
     validity = nullable ? _validity_vector(array, name) : UInt8[]
     _assert_view_spans!(views, buffers, validity, name, offset)
     if utf8
+        _assert_utf8_view_spans!(views, inline, buffers, validity, name, offset)
         return ImportedStringViewVector(
             views,
             inline,
