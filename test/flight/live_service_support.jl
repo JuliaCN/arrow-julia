@@ -210,6 +210,77 @@ samples.sort()
 print(samples[(len(samples) - 1) // 2])
 """
 
+const FLIGHT_LIVE_PYARROW_DOEXCHANGE_BENCHMARK = raw"""
+import pyarrow as pa
+import pyarrow.flight as fl
+import sys
+import time
+
+host = sys.argv[1]
+port = int(sys.argv[2])
+iterations = int(sys.argv[3])
+batch_count = int(sys.argv[4])
+rows_per_batch = int(sys.argv[5])
+expected_rows = int(sys.argv[6])
+expected_payload = sys.argv[7]
+lookahead_bytes = int(sys.argv[8])
+path = sys.argv[9:]
+
+client = fl.FlightClient(
+    f"grpc://{host}:{port}",
+    generic_options=[
+        ("grpc.http2.lookahead_bytes", lookahead_bytes),
+        ("grpc.http2.bdp_probe", 1),
+    ],
+)
+descriptor = fl.FlightDescriptor.for_path(*path)
+schema = pa.schema([
+    pa.field("id", pa.int64()),
+    pa.field("payload", pa.string()),
+])
+
+def make_batches():
+    batches = []
+    next_id = 1
+    for batch_index in range(batch_count):
+        ids = list(range(next_id, next_id + rows_per_batch))
+        next_id += rows_per_batch
+        batch = pa.record_batch(
+            [
+                pa.array(ids, type=pa.int64()),
+                pa.array([expected_payload] * rows_per_batch, type=pa.string()),
+            ],
+            schema=schema,
+        )
+        batches.append((batch, f"perf:{batch_index + 1}".encode("utf-8")))
+    return batches
+
+def write_batches(writer, batches):
+    for batch, metadata in batches:
+        writer.write_with_metadata(batch, metadata)
+
+def run_doexchange():
+    writer, reader = client.do_exchange(descriptor)
+    writer.begin(schema)
+    write_batches(writer, make_batches())
+    writer.done_writing()
+    table = reader.read_all()
+    writer.close()
+    assert table.num_rows == expected_rows
+    payload_index = table.schema.get_field_index("payload")
+    assert table.column(payload_index)[0].as_py() == expected_payload
+
+samples = []
+for _ in range(iterations):
+    started = time.perf_counter_ns()
+    run_doexchange()
+    finished = time.perf_counter_ns()
+    samples.append(finished - started)
+
+samples.sort()
+print(samples[(len(samples) - 1) // 2])
+"""
+
 const FLIGHT_LIVE_PYARROW_CONCURRENT_DOGET_BENCHMARK = raw"""
 import json
 import pyarrow.flight as fl
@@ -877,6 +948,53 @@ function flight_live_pyarrow_doget_metric(
     )
 end
 
+function flight_live_pyarrow_doexchange_metric(
+    host::AbstractString,
+    port::Integer,
+    fixture;
+    backend::Symbol,
+    iterations::Integer,
+)
+    python = FlightTestSupport.pyarrow_flight_python()
+    isnothing(python) && return nothing
+    median_ns = parse(
+        Int,
+        _flight_live_readchomp_with_timeout(
+            Cmd([
+                python,
+                "-c",
+                FLIGHT_LIVE_PYARROW_DOEXCHANGE_BENCHMARK,
+                host,
+                string(port),
+                string(iterations),
+                string(length(fixture.batches)),
+                string(length(first(fixture.batches).id)),
+                string(fixture.total_records),
+                fixture.payload_value,
+                string(_flight_live_pyarrow_lookahead_bytes()),
+                fixture.descriptor.path...,
+            ]);
+            timeout_sec=_flight_live_command_timeout_sec(),
+            label="pyarrow Flight DoExchange benchmark",
+        ),
+    )
+    request_bytes = fixture.message_bytes
+    response_bytes = fixture.message_bytes
+    total_bytes = request_bytes + response_bytes
+    return (
+        backend=backend,
+        operation=:doexchange,
+        iterations=iterations,
+        request_bytes=request_bytes,
+        response_bytes=response_bytes,
+        total_bytes=total_bytes,
+        samples_ns=[median_ns],
+        median_ns=median_ns,
+        median_ms=median_ns / 1.0e6,
+        throughput_mib_per_sec=(total_bytes / max(median_ns, 1) * 1.0e9) / 1024.0^2,
+    )
+end
+
 function flight_live_pyarrow_concurrent_doget(
     host::AbstractString,
     port::Integer,
@@ -1022,10 +1140,24 @@ function flight_live_transport_benchmark(
                 push!(metrics, doget_metric)
             end
         end
-        if :doput in operations || :doexchange in operations
+        if :doexchange in operations
+            doexchange_metric = flight_live_pyarrow_doexchange_metric(
+                host,
+                port,
+                fixture;
+                backend=transport.backend,
+                iterations=iterations,
+            )
+            if isnothing(doexchange_metric)
+                @test true
+            else
+                push!(metrics, doexchange_metric)
+            end
+        end
+        if :doput in operations
             println(
                 stdout,
-                "deferred_large_upload_ops=[:doput,:doexchange] reason=\"Python-client transport benchmark only measures large DoGet on this seam\"",
+                "deferred_large_upload_ops=[:doput] reason=\"gRPCServer-owned large DoPut upload remains unstable on the external PyArrow benchmark seam\"",
             )
         end
         return metrics

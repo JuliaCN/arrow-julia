@@ -16,6 +16,7 @@
 # under the License.
 
 const PUREHTTP2_EXTENSION_LARGE_TRANSPORT_BYTES = 2 * 1024 * 1024
+const PUREHTTP2_EXTENSION_EXCHANGE_TRANSPORT_BYTES = 512 * 1024
 
 function purehttp2_extension_perf_transport(;
     max_active_requests::Integer=4,
@@ -44,8 +45,9 @@ function purehttp2_extension_test_large_transport_performance(;
     batch_count::Integer=2,
     rows_per_batch::Integer=256,
     payload_bytes::Integer=4_096,
+    exchange_payload_bytes::Integer=1_024,
 )
-    metrics = flight_live_transport_benchmark(
+    doget_metrics = flight_live_transport_benchmark(
         Arrow.Flight.Protocol,
         purehttp2_extension_perf_transport();
         iterations=iterations,
@@ -54,20 +56,29 @@ function purehttp2_extension_test_large_transport_performance(;
         payload_bytes=payload_bytes,
         operations=(:doget,),
     )
-    isempty(metrics) && return metrics
-    @test length(metrics) == 1
-    @test all(metric.backend == :grpcserver for metric in metrics)
-    @test all(
-        metric.total_bytes >= PUREHTTP2_EXTENSION_LARGE_TRANSPORT_BYTES for
-        metric in metrics
+    doexchange_metrics = flight_live_transport_benchmark(
+        Arrow.Flight.Protocol,
+        purehttp2_extension_perf_transport();
+        iterations=iterations,
+        batch_count=batch_count,
+        rows_per_batch=rows_per_batch,
+        payload_bytes=exchange_payload_bytes,
+        operations=(:doexchange,),
     )
+    metrics = vcat(doget_metrics, doexchange_metrics)
+    isempty(metrics) && return metrics
+    @test length(metrics) == 2
+    @test all(metric.backend == :grpcserver for metric in metrics)
+    @test Set(metric.operation for metric in metrics) == Set([:doget, :doexchange])
+    doget_metric = flight_live_transport_metric(metrics, :grpcserver, :doget)
+    doexchange_metric = flight_live_transport_metric(metrics, :grpcserver, :doexchange)
+    @test doget_metric.total_bytes >= PUREHTTP2_EXTENSION_LARGE_TRANSPORT_BYTES
+    @test doexchange_metric.total_bytes >= PUREHTTP2_EXTENSION_EXCHANGE_TRANSPORT_BYTES
+    @test all(metric.request_bytes >= 0 for metric in metrics)
+    @test all(metric.response_bytes > 0 for metric in metrics)
     @test all(metric.median_ns > 0 for metric in metrics)
     @test all(metric.throughput_mib_per_sec > 0 for metric in metrics)
     flight_live_transport_print_metrics(stdout, metrics)
-    println(
-        stdout,
-        "deferred_large_upload_ops=[:doput,:doexchange] reason=\"gRPCServer-owned large client-streaming uploads are not yet proven on this benchmark seam\"",
-    )
     return metrics
 end
 
