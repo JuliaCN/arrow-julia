@@ -39,14 +39,28 @@ function flight_server_core_test_dispatch(fixture)
     ) == :doget_ok
     @test length(collect(get_response)) == 1
 
-    actions_response = Channel{fixture.protocol.ActionType}(1)
+    actions_response = Channel{fixture.protocol.ActionType}(2)
     @test Arrow.Flight.dispatch(
         fixture.implemented,
         fixture.context,
         "ListActions",
         actions_response,
     ) == :listactions_ok
-    @test length(collect(actions_response)) == 1
+    @test length(collect(actions_response)) == 2
+
+    action_response = Channel{fixture.protocol.Result}(1)
+    @test Arrow.Flight.dispatch(
+        fixture.implemented,
+        fixture.context,
+        "DoAction",
+        Arrow.Flight.cancelflightinfoaction(dispatch_info),
+        action_response,
+    ) == :doaction_ok
+    action_results = collect(action_response)
+    @test length(action_results) == 1
+    @test Arrow.Flight.cancelflightinfostatus(action_results[1]) ==
+          fixture.protocol.CancelStatus.CANCEL_STATUS_CANCELLED
+
     @test_throws ArgumentError Arrow.Flight.dispatch(
         fixture.implemented,
         fixture.context,

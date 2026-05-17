@@ -78,8 +78,9 @@ function flight_server_core_test_transport_adapters(fixture)
             action -> push!(actions, action),
         ),
     )
-    @test length(actions) == 1
+    @test length(actions) == 2
     @test getfield(actions[1], Symbol("#type")) == "ping"
+    @test getfield(actions[2], Symbol("#type")) == "CancelFlightInfo"
 
     bidi_service = Arrow.Flight.Service(
         doexchange=(ctx, request, response) -> begin

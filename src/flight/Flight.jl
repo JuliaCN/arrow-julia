@@ -28,6 +28,7 @@ include("exports.jl")
 include("protocol.jl")
 include("descriptors.jl")
 include("shared.jl")
+include("actions.jl")
 include("server.jl")
 include("convert.jl")
 

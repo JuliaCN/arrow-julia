@@ -32,4 +32,46 @@ function flight_test_generated_protocol_formatter_surface()
     @test occursin("where {T<:var\"SetSessionOptionsResult.Error\"}", source)
     @test !occursin("import gRPCClient", source)
     @test !occursin("# gRPCClient.jl BEGIN", source)
+
+    protocol = Arrow.Flight.Protocol
+    descriptor_type = protocol.var"FlightDescriptor.DescriptorType"
+    descriptor =
+        protocol.FlightDescriptor(descriptor_type.PATH, UInt8[], ["cancel", "query"])
+    info = protocol.FlightInfo(
+        UInt8[0x01],
+        descriptor,
+        protocol.FlightEndpoint[],
+        3,
+        9,
+        false,
+        UInt8[],
+    )
+
+    action_type = Arrow.Flight.cancelflightinfoactiontype()
+    @test getfield(action_type, Symbol("#type")) == "CancelFlightInfo"
+    @test occursin("Cancel", action_type.description)
+
+    action = Arrow.Flight.cancelflightinfoaction(info)
+    @test getfield(action, Symbol("#type")) == "CancelFlightInfo"
+    @test !isempty(action.body)
+
+    request = Arrow.Flight.cancelflightinforequest(action)
+    @test request.info.total_records == 3
+    @test request.info.total_bytes == 9
+    @test request.info.flight_descriptor.path == ["cancel", "query"]
+
+    wrapped_request = protocol.CancelFlightInfoRequest(info)
+    wrapped_action = Arrow.Flight.cancelflightinfoaction(wrapped_request)
+    @test Arrow.Flight.cancelflightinforequest(wrapped_action).info.total_records == 3
+
+    @test_throws ArgumentError Arrow.Flight.cancelflightinforequest(
+        protocol.Action("OtherAction", action.body),
+    )
+
+    result =
+        Arrow.Flight.cancelflightinforesult(protocol.CancelStatus.CANCEL_STATUS_CANCELLED)
+    decoded_result = Arrow.Flight.cancelflightinforesult(result)
+    @test decoded_result.status == protocol.CancelStatus.CANCEL_STATUS_CANCELLED
+    @test Arrow.Flight.cancelflightinfostatus(result) ==
+          protocol.CancelStatus.CANCEL_STATUS_CANCELLED
 end

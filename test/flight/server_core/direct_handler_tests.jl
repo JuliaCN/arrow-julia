@@ -37,14 +37,27 @@ function flight_server_core_test_direct_handlers(fixture)
     ) == :doget_ok
     @test length(collect(get_response)) == 1
 
-    actions_response = Channel{fixture.protocol.ActionType}(1)
+    actions_response = Channel{fixture.protocol.ActionType}(2)
     @test Arrow.Flight.listactions(
         fixture.implemented,
         fixture.context,
         actions_response,
     ) == :listactions_ok
     actions = collect(actions_response)
-    @test length(actions) == 1
+    @test length(actions) == 2
     @test getfield(actions[1], Symbol("#type")) == "ping"
     @test actions[1].description == "Ping action"
+    @test getfield(actions[2], Symbol("#type")) == "CancelFlightInfo"
+
+    action_response = Channel{fixture.protocol.Result}(1)
+    @test Arrow.Flight.doaction(
+        fixture.implemented,
+        fixture.context,
+        Arrow.Flight.cancelflightinfoaction(info),
+        action_response,
+    ) == :doaction_ok
+    action_results = collect(action_response)
+    @test length(action_results) == 1
+    @test Arrow.Flight.cancelflightinfostatus(action_results[1]) ==
+          fixture.protocol.CancelStatus.CANCEL_STATUS_CANCELLED
 end

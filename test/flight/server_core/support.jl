@@ -51,8 +51,22 @@ function flight_server_core_fixture()
         listactions=(ctx, response) -> begin
             @test ctx === context
             put!(response, protocol.ActionType("ping", "Ping action"))
+            put!(response, Arrow.Flight.cancelflightinfoactiontype())
             close(response)
             return :listactions_ok
+        end,
+        doaction=(ctx, action, response) -> begin
+            @test ctx === context
+            request = Arrow.Flight.cancelflightinforequest(action)
+            @test request.info.flight_descriptor.path == descriptor.path
+            put!(
+                response,
+                Arrow.Flight.cancelflightinforesult(
+                    protocol.CancelStatus.CANCEL_STATUS_CANCELLED,
+                ),
+            )
+            close(response)
+            return :doaction_ok
         end,
     )
     sample_table = Arrow.withmetadata(
