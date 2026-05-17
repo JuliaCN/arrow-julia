@@ -34,9 +34,11 @@ lead to unsafe indexing or misleading semantic interpretation:
 
 - unsupported Tensor and SparseTensor IPC message headers are recognized and
   rejected explicitly;
-- variable-size List, LargeList, Binary, Utf8, Map, and ListView IPC layouts
-  validate offset counts, monotonicity, non-negative spans, and child/data
-  bounds before materialization;
+- variable-size List, LargeList, Binary, Utf8, Map, ListView, BinaryView, and
+  Utf8View IPC layouts validate offset or view span counts, monotonicity where
+  required, non-negative spans, and child/data bounds before materialization;
+- IPC Utf8, LargeUtf8, and Utf8View string values validate UTF-8 bytes for
+  non-null slots before exposing Julia strings;
 - canonical extension metadata is parsed and validated for the supported
   canonical extension names before Arrow.jl returns converted semantic values;
 - C Data import validates base struct shape, child counts, buffers, release
@@ -48,6 +50,6 @@ lead to unsafe indexing or misleading semantic interpretation:
 
 These checks are not a complete malicious-input certification. The remaining
 tracked work is to add a larger regression corpus for malformed IPC files,
-invalid UTF-8 payloads, malformed extension metadata combinations, and C Data
-soundness cases, then decide whether Arrow.jl should expose a public validation
-API separate from normal read paths.
+malformed extension metadata combinations, and C Data soundness cases, then
+decide whether Arrow.jl should expose a public validation API separate from
+normal read paths.

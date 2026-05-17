@@ -1077,6 +1077,9 @@ function build(
         end
     end
     _assert_offsets_spans(offsets.offsets, len, length(A), "variable-size array")
+    if L isa Meta.Utf8 || L isa Meta.LargeUtf8
+        _assert_utf8_spans(offsets.offsets, A, validity, len, "UTF-8")
+    end
     return List{T,OT,typeof(A)}(bytes, validity, offsets, A, len, meta),
     nodeidx,
     bufferidx,
@@ -1186,6 +1189,11 @@ function build(
     varbufferidx += 1
     len = rb.nodes[nodeidx].length
     nodeidx += 1
+    if L isa Meta.Utf8View
+        _assert_utf8_view_spans(views, inline, buffers, validity, len, "UTF-8 view")
+    else
+        _assert_view_spans(views, inline, buffers, validity, len, "binary view")
+    end
     meta = buildmetadata(f.custom_metadata)
     T = juliaeltype(f, meta, convert)
     return View{T}(batch.bytes, validity, views, inline, buffers, len, meta),

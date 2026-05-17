@@ -655,6 +655,125 @@ end
                 "offset 3 exceeds child/data length 1",
             )
 
+            invalid_utf8 = Arrow.List{String,Int32,Vector{UInt8}}(
+                UInt8[],
+                Arrow.ValidityBitmap(fill(true, 1)),
+                Arrow.Offsets(UInt8[], Int32[0, 1]),
+                UInt8[0xff],
+                1,
+                nothing,
+            )
+            assert_argument_error(
+                () -> Arrow.Table(
+                    Arrow.tobuffer(
+                        native_arrow_vector_table(:values, invalid_utf8);
+                        ntasks=0,
+                    );
+                    convert=false,
+                ),
+                "UTF-8 value at index 1 is not valid UTF-8",
+            )
+
+            invalid_large_utf8 = Arrow.List{String,Int64,Vector{UInt8}}(
+                UInt8[],
+                Arrow.ValidityBitmap(fill(true, 1)),
+                Arrow.Offsets(UInt8[], Int64[0, 1]),
+                UInt8[0xff],
+                1,
+                nothing,
+            )
+            assert_argument_error(
+                () -> Arrow.Table(
+                    Arrow.tobuffer(
+                        native_arrow_vector_table(:values, invalid_large_utf8);
+                        ntasks=0,
+                    );
+                    convert=false,
+                ),
+                "UTF-8 value at index 1 is not valid UTF-8",
+            )
+
+            null_invalid_utf8 = Arrow.List{Union{Missing,String},Int32,Vector{UInt8}}(
+                UInt8[],
+                Arrow.ValidityBitmap(Union{Missing,String}[missing]),
+                Arrow.Offsets(UInt8[], Int32[0, 1]),
+                UInt8[0xff],
+                1,
+                nothing,
+            )
+            null_invalid_table = Arrow.Table(
+                Arrow.tobuffer(
+                    native_arrow_vector_table(:values, null_invalid_utf8);
+                    ntasks=0,
+                );
+                convert=false,
+            )
+            @test ismissing(Tables.getcolumn(null_invalid_table, :values)[1])
+
+            invalid_binary = Arrow.List{Base.CodeUnits{UInt8,String},Int32,Vector{UInt8}}(
+                UInt8[],
+                Arrow.ValidityBitmap(fill(true, 1)),
+                Arrow.Offsets(UInt8[], Int32[0, 1]),
+                UInt8[0xff],
+                1,
+                nothing,
+            )
+            binary_table = Arrow.Table(
+                Arrow.tobuffer(
+                    native_arrow_vector_table(:values, invalid_binary);
+                    ntasks=0,
+                );
+                convert=false,
+            )
+            @test collect(Tables.getcolumn(binary_table, :values)[1]) == UInt8[0xff]
+
+            invalid_inline_view = Arrow.ViewElement[Arrow.ViewElement(
+                Int32(1),
+                Int32(0xff),
+                Int32(0),
+                Int32(0),
+            ),]
+            inline_bytes = collect(reinterpret(UInt8, invalid_inline_view))
+            @test_throws ArgumentError("UTF-8 view value at index 1 is not valid UTF-8") Arrow._assert_utf8_view_spans(
+                invalid_inline_view,
+                inline_bytes,
+                Vector{UInt8}[],
+                Arrow.ValidityBitmap(fill(true, 1)),
+                1,
+                "UTF-8 view",
+            )
+            @test Arrow._assert_utf8_view_spans(
+                invalid_inline_view,
+                inline_bytes,
+                Vector{UInt8}[],
+                Arrow.ValidityBitmap(Union{Missing,String}[missing]),
+                1,
+                "UTF-8 view",
+            ) === nothing
+
+            invalid_external_view = Arrow.ViewElement[Arrow.ViewElement(
+                Int32(Arrow.VIEW_INLINE_BYTES + 1),
+                Int32(0),
+                Int32(0),
+                Int32(0),
+            ),]
+            @test_throws ArgumentError("binary view references missing variadic buffer") Arrow._assert_view_spans(
+                invalid_external_view,
+                UInt8[],
+                Vector{UInt8}[],
+                Arrow.ValidityBitmap(fill(true, 1)),
+                1,
+                "binary view",
+            )
+            @test_throws ArgumentError("UTF-8 view value at index 1 is not valid UTF-8") Arrow._assert_utf8_view_spans(
+                invalid_external_view,
+                UInt8[],
+                [vcat(UInt8[0xff], fill(UInt8(0x61), Arrow.VIEW_INLINE_BYTES))],
+                Arrow.ValidityBitmap(fill(true, 1)),
+                1,
+                "UTF-8 view",
+            )
+
             list_view = Arrow.ListView{AbstractVector{Int32},Int32,typeof(item)}(
                 UInt8[],
                 UInt8[],

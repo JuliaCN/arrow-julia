@@ -32,6 +32,56 @@ const VIEW_INLINE_BYTES = VIEW_ELEMENT_BYTES - VIEW_LENGTH_BYTES
 @inline _viewinlineslice(inline::Vector{UInt8}, i::Integer, length::Integer) =
     @view inline[_viewinlinestart(i):_viewinlineend(i, length)]
 
+function _assert_view_spans(views, inline, buffers, validity, len, label)
+    logical_len = Int(len)
+    length(views) == logical_len || throw(
+        ArgumentError(
+            "$label views length $(length(views)) does not match logical length $logical_len",
+        ),
+    )
+    for i = 1:logical_len
+        @inbounds validity[i] || continue
+        view = @inbounds views[i]
+        value_len = Int(view.length)
+        value_len >= 0 || throw(ArgumentError("$label has negative value length"))
+        if _viewisinline(value_len)
+            _viewinlineend(i, value_len) <= length(inline) ||
+                throw(ArgumentError("$label inline value exceeds views buffer length"))
+            continue
+        end
+        buffer_index = Int(view.bufindex) + 1
+        1 <= buffer_index <= length(buffers) ||
+            throw(ArgumentError("$label references missing variadic buffer"))
+        offset = Int(view.offset)
+        offset >= 0 || throw(ArgumentError("$label has negative data offset"))
+        buffer = @inbounds buffers[buffer_index]
+        offset + value_len <= length(buffer) ||
+            throw(ArgumentError("$label references bytes outside variadic buffer"))
+    end
+    return nothing
+end
+
+function _assert_utf8_view_spans(views, inline, buffers, validity, len, label)
+    _assert_view_spans(views, inline, buffers, validity, len, label)
+    logical_len = Int(len)
+    for i = 1:logical_len
+        @inbounds validity[i] || continue
+        view = @inbounds views[i]
+        value_len = Int(view.length)
+        value_len == 0 && continue
+        valid = if _viewisinline(value_len)
+            isvalid(String, @view inline[_viewinlinestart(i):_viewinlineend(i, value_len)])
+        else
+            buffer = @inbounds buffers[Int(view.bufindex) + 1]
+            start = Int(view.offset) + 1
+            stop = start + value_len - 1
+            isvalid(String, @view buffer[start:stop])
+        end
+        valid || throw(ArgumentError("$label value at index $i is not valid UTF-8"))
+    end
+    return nothing
+end
+
 """
     Arrow.View
 

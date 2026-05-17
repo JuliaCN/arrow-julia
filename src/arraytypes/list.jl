@@ -55,6 +55,19 @@ function _assert_offsets_spans(offsets::Vector{O}, len, data_length, label) wher
     return nothing
 end
 
+function _assert_utf8_spans(offsets::Vector{O}, data, validity, len, label) where {O}
+    logical_len = Int(len)
+    for i = 1:logical_len
+        @inbounds validity[i] || continue
+        start = Int(@inbounds offsets[i]) + 1
+        stop = Int(@inbounds offsets[i + 1])
+        stop < start && continue
+        isvalid(String, @view data[start:stop]) ||
+            throw(ArgumentError("$label value at index $i is not valid UTF-8"))
+    end
+    return nothing
+end
+
 """
     Arrow.List
 
