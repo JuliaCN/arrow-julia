@@ -1251,6 +1251,7 @@ function build(
     nodeidx += 1
     A, nodeidx, bufferidx, varbufferidx =
         build(f.children[1], batch, rb, de, nodeidx, bufferidx, varbufferidx, convert)
+    _assert_offsets_spans(offsets.offsets, length(validity), length(A), "map")
     meta = buildmetadata(f.custom_metadata)
     T = juliaeltype(f, meta, convert)
     return Map{T,OT,typeof(A)}(validity, offsets, A, len, meta),

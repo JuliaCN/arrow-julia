@@ -306,11 +306,21 @@ end
     @test CData.isreleased(imported)
     @test CData.isreleased(exported)
 
+    map_column = Tables.getcolumn(table, :map)
+    entries = getfield(map_column, :data)
+    large_map = Arrow.Map{eltype(map_column),Int64,typeof(entries)}(
+        Arrow.ValidityBitmap(fill(true, 1)),
+        Arrow.Offsets(UInt8[], Int64[0, 1]),
+        entries,
+        1,
+        nothing,
+    )
     large_offsets = Arrow.Table(
-        Arrow.tobuffer(
-            (map=Dict{String,Int32}[Dict("large" => Int32(1))],);
-            largelists=true,
-        ),
+        Symbol[:map],
+        Type[eltype(large_map)],
+        AbstractVector[large_map],
+        Dict{Symbol,AbstractVector}(:map => large_map),
+        Ref{Arrow.Meta.Schema}(),
     )
     @test_throws ArgumentError CData.exporttable(large_offsets)
 end

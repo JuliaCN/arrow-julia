@@ -672,6 +672,70 @@ end
                 ),
                 "list-view span exceeds child value length",
             )
+
+            source_map = Tables.getcolumn(
+                Arrow.Table(
+                    Arrow.tobuffer((
+                        values=Dict{String,Int32}[
+                            Dict("a" => Int32(1)),
+                            Dict("b" => Int32(2)),
+                        ],
+                    )),
+                ),
+                :values,
+            )
+            map_entries = getfield(source_map, :data)
+            map_validity = Arrow.ValidityBitmap(fill(true, 2))
+            descending_map = Arrow.Map{Dict{String,Int32},Int32,typeof(map_entries)}(
+                map_validity,
+                Arrow.Offsets(UInt8[], Int32[0, 2, 1]),
+                map_entries,
+                2,
+                nothing,
+            )
+            assert_argument_error(
+                () -> Arrow.Table(
+                    Arrow.tobuffer(
+                        native_arrow_vector_table(:values, descending_map);
+                        ntasks=0,
+                    );
+                    convert=false,
+                ),
+                "map offsets must be monotonically increasing",
+            )
+
+            @test_throws ArgumentError(
+                "map offsets length 2 does not match logical length 2",
+            ) Arrow._assert_offsets_spans(Int32[0, 1], 2, length(map_entries), "map")
+
+            overflowing_map = Arrow.Map{Dict{String,Int32},Int32,typeof(map_entries)}(
+                map_validity,
+                Arrow.Offsets(UInt8[], Int32[0, 1, 3]),
+                map_entries,
+                2,
+                nothing,
+            )
+            assert_argument_error(
+                () -> Arrow.Table(
+                    Arrow.tobuffer(
+                        native_arrow_vector_table(:values, overflowing_map);
+                        ntasks=0,
+                    );
+                    convert=false,
+                ),
+                "map offset 3 exceeds child/data length 2",
+            )
+
+            assert_argument_error(
+                () -> Arrow.Table(
+                    Arrow.tobuffer(
+                        (values=Dict{String,Int32}[Dict("large" => Int32(1))],);
+                        largelists=true,
+                    );
+                    convert=false,
+                ),
+                "map offsets length 4 does not match logical length 1",
+            )
         end
 
         @testset "View buffer count inference" begin

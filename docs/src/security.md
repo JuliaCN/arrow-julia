@@ -34,7 +34,7 @@ lead to unsafe indexing or misleading semantic interpretation:
 
 - unsupported Tensor and SparseTensor IPC message headers are recognized and
   rejected explicitly;
-- variable-size List, LargeList, Binary, Utf8, and ListView IPC layouts
+- variable-size List, LargeList, Binary, Utf8, Map, and ListView IPC layouts
   validate offset counts, monotonicity, non-negative spans, and child/data
   bounds before materialization;
 - canonical extension metadata is parsed and validated for the supported
