@@ -277,6 +277,26 @@ Arrow.jl now treats `Arrow.Flight` as a protocol-plus-server package surface.
 Package-owned interop and performance proofs run through external Python
 clients instead of an in-package Julia Flight gRPC client runtime.
 
+### IPC Performance Receipt
+
+The focused IPC performance receipt is `test/ipc_performance_report.jl`. It
+generates a representative primitive, boolean, UTF-8, and binary table, warms
+the runtime path, then reports Arrow IPC stream and file write timings,
+metadata-read timings, scan timings, allocations, byte sizes, throughput, row
+counts, and checksums. Metadata-read and scan timings are intentionally
+separate: constructing `Arrow.Table` or `Arrow.Stream` is a lightweight
+metadata-wrapping path, while the scan receipt proves the columns can be
+visited and checked without changing the IPC support claim into a full
+application benchmark.
+
+```julia
+julia --project=test test/ipc_performance_report.jl
+```
+
+Set `ARROW_IPC_REPORT_ROWS` to change the row count. Optional
+`ARROW_IPC_MAX_*` environment variables can enforce local timing or allocation
+limits, but the default CI receipt keeps wall-clock timing informational.
+
 ### C Data Interface
 
 Arrow.jl provides a first in-process producer surface for the Apache Arrow C

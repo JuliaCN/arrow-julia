@@ -56,6 +56,7 @@ Current write-path notes:
   * `Arrow.tobuffer(Tables.partitioner(...))` also includes a targeted direct multi-record-batch path for single-column top-level strings and single-column non-missing binary/code-units columns
   * `Arrow.write(io, Tables.partitioner(...))` now reuses that same targeted direct multi-record-batch path instead of always going through the legacy `Writer` orchestration
   * multi-column partitions, dictionary-encoded top-level columns, map-heavy inputs, and missing-binary partitions retain the existing writer path
+  * `test/ipc_performance_report.jl` reports warmed IPC stream/file write, metadata-read, and scan timings plus allocation receipts for the core IPC path
 
 ## Format Support
 
