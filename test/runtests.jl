@@ -95,6 +95,32 @@ end
         end
     end # @testset "arrow json integration tests"
 
+    @testset "Archery-style integration CLI" begin
+        arrowjsondir = joinpath(dirname(pathof(Arrow)), "../test/arrowjson")
+        sourcejson = joinpath(arrowjsondir, "primitive-empty.json")
+        mktempdir() do dir
+            arrowfile = joinpath(dir, "primitive.arrow")
+            generatedjson = joinpath(dir, "primitive-roundtrip.json")
+            options = parseintegrationargs([
+                "--integration",
+                "--json=$sourcejson",
+                "--arrow",
+                arrowfile,
+                "--mode=json-to-arrow",
+            ])
+            @test options.integration
+            @test options.jsonname == sourcejson
+            @test options.arrowname == arrowfile
+            @test options.mode == "JSON_TO_ARROW"
+            runcommand(options)
+            runcommand(sourcejson, arrowfile, "VALIDATE", false)
+            runcommand(generatedjson, arrowfile, "ARROW_TO_JSON", false)
+            runcommand(generatedjson, arrowfile, "VALIDATE", false)
+        end
+        @test_throws ErrorException parseintegrationargs(["--json"])
+        @test_throws ErrorException parseintegrationargs(["--mode=UNKNOWN"])
+    end
+
     @testset "integration JSON preserves physical layouts" begin
         arrowjsondir = joinpath(dirname(pathof(Arrow)), "../test/arrowjson")
         modern = ArrowJSON.parsefile(joinpath(arrowjsondir, "modern-layouts.json"))

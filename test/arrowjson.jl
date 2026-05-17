@@ -272,8 +272,8 @@ struct Binary <: Type
     name::String
 end
 
-Type(::Base.Type{Vector{UInt8}}) = Binary("binary")
-children(::Base.Type{Vector{UInt8}}) = Field[]
+Type(::Base.Type{<:AbstractVector{UInt8}}) = Binary("binary")
+children(::Base.Type{<:AbstractVector{UInt8}}) = Field[]
 StructTypes.StructType(::Base.Type{Binary}) = StructTypes.Struct()
 juliatype(f, x::Binary) = Vector{UInt8}
 
@@ -511,12 +511,12 @@ function FieldData(nm, ::Base.Type{T}, col, dictencodings) where {T}
         # VALIDITY
         VALIDITY = Int8[!ismissing(x) for x in col]
         # OFFSET
-        if S <: Vector{UInt8}
+        if S <: AbstractString
+            DATA = [ismissing(x) ? "" : String(x) for x in col]
+        elseif S <: AbstractVector{UInt8}
             DATA = [ismissing(x) ? "" : _hexstring(x) for x in col]
-        elseif S <: Vector || S == String
-            lenfun =
-                S == String ? x -> ismissing(x) ? 0 : sizeof(x) :
-                x -> ismissing(x) ? 0 : length(x)
+        elseif S <: Vector
+            lenfun = x -> ismissing(x) ? 0 : length(x)
             tot = sum(lenfun, col)
             if tot > 2147483647
                 OFFSET = String[String(lenfun(x)) for x in col]
@@ -601,7 +601,7 @@ function FieldData(nm, ::Base.Type{T}, col, dictencodings) where {T}
                     )
                 end
             end
-        elseif S <: KeyValue
+        elseif S <: Arrow.KeyValue
             push!(
                 children,
                 FieldData("key", Arrow.keyvalueK(S), (x.key for x in col), dictencodings),
@@ -1011,6 +1011,7 @@ function DataFile(source)
     dictionaries = DictionaryBatch[]
     dictencodings = Dict{String,Tuple{Base.Type,DictEncoding}}()
     dictid = Ref(0)
+    sch = nothing
     for (i, tbl1) in enumerate(Tables.partitions(source))
         tbl = Arrow.toarrowtable(
             Tables.Columns(tbl1),
