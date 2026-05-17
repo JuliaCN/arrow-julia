@@ -342,6 +342,45 @@ StructTypes.subtypes(::Base.Type{Type}) = SUBTYPES
 const Metadata = Union{Nothing,Vector{NamedTuple{(:key, :value),Tuple{String,String}}}}
 Metadata() = nothing
 
+function _metadata_pairs(meta)
+    meta === nothing && return nothing
+    entries = NamedTuple{(:key, :value),Tuple{String,String}}[]
+    for (key, value) in pairs(meta)
+        push!(entries, (key=String(key), value=String(value)))
+    end
+    return isempty(entries) ? nothing : entries
+end
+
+function _metadata_pairs(meta::AbstractVector{<:NamedTuple})
+    isempty(meta) && return nothing
+    return NamedTuple{(:key, :value),Tuple{String,String}}[
+        (key=String(entry.key), value=String(entry.value)) for entry in meta
+    ]
+end
+
+function _metadata_dict(meta::Metadata)
+    meta === nothing && return nothing
+    isempty(meta) && return nothing
+    dict = Dict{String,String}()
+    for entry in meta
+        dict[String(entry.key)] = String(entry.value)
+    end
+    return dict
+end
+
+function _metadata_dict(meta)
+    meta === nothing && return nothing
+    dict = Dict{String,String}()
+    for (key, value) in pairs(meta)
+        dict[String(key)] = String(value)
+    end
+    return isempty(dict) ? nothing : dict
+end
+
+function _metadata_equal(expected::Metadata, actual)
+    return _metadata_dict(expected) == _metadata_dict(actual)
+end
+
 mutable struct DictEncoding
     id::Int64
     indexType::Type
@@ -623,6 +662,8 @@ StructTypes.StructType(::Base.Type{DataFile}) = StructTypes.Mutable()
 
 parsefile(file) = JSON3.read(Mmap.mmap(file), DataFile)
 
+Arrow.getmetadata(x::DataFile) = _metadata_dict(x.schema.metadata)
+
 # make DataFile satisfy Tables.jl interface
 function Tables.partitions(x::DataFile)
     if isempty(x.batches)
@@ -648,7 +689,7 @@ Tables.columnnames(x::DataFile) = map(x -> Symbol(x.name), x.schema.fields)
 function Tables.getcolumn(x::DataFile, i::Base.Int)
     field = x.schema.fields[i]
     type = juliatype(field)
-    return ChainedVector(
+    column = ChainedVector(
         ArrowArray{type}[
             ArrowArray{type}(
                 field,
@@ -657,6 +698,7 @@ function Tables.getcolumn(x::DataFile, i::Base.Int)
             ) for j = 1:length(x.batches)
         ],
     )
+    return Arrow._wrapmetadata(column, _metadata_dict(field.metadata))
 end
 
 function Tables.getcolumn(x::DataFile, nm::Symbol)
@@ -834,7 +876,7 @@ end
 # take any Tables.jl source and write out arrow json datafile
 function DataFile(source)
     fields = Field[]
-    metadata = nothing # TODO?
+    metadata = _metadata_pairs(Arrow.getmetadata(source))
     batches = RecordBatch[]
     dictionaries = DictionaryBatch[]
     dictencodings = Dict{String,Tuple{Base.Type,DictEncoding}}()
@@ -868,7 +910,9 @@ function DataFile(source)
                     end
                     dictencodings[String(nm)] = (T, DictEncoding(id, IT, false))
                 end
-                push!(fields, Field(String(nm), T, dictencodings))
+                field = Field(String(nm), T, dictencodings)
+                field.metadata = _metadata_pairs(Arrow.getmetadata(col))
+                push!(fields, field)
             end
         end
         # build record batch
@@ -893,6 +937,13 @@ end
 
 function Base.isequal(df::DataFile, tbl::Arrow.Table)
     Arrow.is_equivalent_schema(Tables.schema(df), Tables.schema(tbl)) || return false
+    _metadata_equal(df.schema.metadata, Arrow.getmetadata(tbl)) || return false
+    for (column_index, field) in enumerate(df.schema.fields)
+        _metadata_equal(
+            field.metadata,
+            Arrow.getmetadata(Tables.getcolumn(tbl, column_index)),
+        ) || return false
+    end
     i = 1
     for (col1, col2) in zip(Tables.Columns(df), Tables.Columns(tbl))
         if !isequal(col1, col2)
