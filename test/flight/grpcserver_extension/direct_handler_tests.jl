@@ -70,8 +70,9 @@ function grpcserver_extension_test_direct_handlers(grpcserver, service, fixture)
         actions_stream,
     )
     @test actions_closed[]
-    @test length(actions_messages) == 1
+    @test length(actions_messages) == 2
     @test actions_messages[1].var"#type" == "ping"
+    @test actions_messages[2].var"#type" == "CancelFlightInfo"
 
     action_messages, action_closed, action_stream =
         grpcserver_capture_server_stream(grpcserver, protocol.Result)

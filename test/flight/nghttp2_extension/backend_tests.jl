@@ -26,7 +26,7 @@ function nghttp2_extension_test_backend_profiles()
     @test !capabilities.bidirectional_doexchange
     @test length(capabilities.blockers) == 3
     @test occursin("Handshake", capabilities.blockers[1])
-    @test occursin("PureHTTP2", capabilities.blockers[2])
+    @test occursin("gRPCServer", capabilities.blockers[2])
     @test occursin("bidirectional", lowercase(capabilities.blockers[3]))
     @test !Arrow.Flight.flight_server_backend_supported(:nghttp2)
 
@@ -43,5 +43,5 @@ function nghttp2_extension_test_backend_profiles()
     message = sprint(showerror, failure)
     @test occursin("Handshake", message)
     @test occursin("DoExchange", message)
-    @test occursin("PureHTTP2", message)
+    @test occursin("gRPCServer", message)
 end

@@ -38,14 +38,49 @@ options = fl.FlightCallOptions(
 )
 descriptor = fl.FlightDescriptor.for_path(*path)
 
+def _encode_varint(value):
+    encoded = bytearray()
+    while value >= 0x80:
+        encoded.append((value & 0x7f) | 0x80)
+        value >>= 7
+    encoded.append(value)
+    return bytes(encoded)
+
+def _decode_varint(payload, offset=0):
+    shift = 0
+    value = 0
+    while True:
+        byte = payload[offset]
+        offset += 1
+        value |= (byte & 0x7f) << shift
+        if not byte & 0x80:
+            return value, offset
+        shift += 7
+
+def _cancel_flight_info_request_body(info):
+    serialized = info.serialize()
+    serialized_info = (
+        serialized.to_pybytes()
+        if hasattr(serialized, "to_pybytes")
+        else bytes(serialized)
+    )
+    return b"\x0a" + _encode_varint(len(serialized_info)) + serialized_info
+
+def _assert_cancelled_result(result):
+    body = result.body.to_pybytes()
+    tag, offset = _decode_varint(body)
+    status, offset = _decode_varint(body, offset)
+    assert tag == 0x08
+    assert status == 1
+    assert offset == len(body)
+
 flights = list(client.list_flights(options=options))
 assert len(flights) == 1
 assert flights[0].total_records == 3
 assert [part.decode("utf-8") for part in flights[0].descriptor.path] == path
 
 actions = list(client.list_actions(options=options))
-assert len(actions) == 1
-assert actions[0].type == "ping"
+assert [action.type for action in actions] == ["ping", "CancelFlightInfo"]
 
 results = list(client.do_action(fl.Action("ping", b""), options=options))
 assert len(results) == 1
@@ -55,6 +90,13 @@ info = client.get_flight_info(descriptor, options=options)
 assert info.total_records == 3
 assert [part.decode("utf-8") for part in info.descriptor.path] == path
 assert len(info.endpoints) == 1
+
+cancel_results = list(client.do_action(
+    fl.Action("CancelFlightInfo", _cancel_flight_info_request_body(info)),
+    options=options,
+))
+assert len(cancel_results) == 1
+_assert_cancelled_result(cancel_results[0])
 
 schema = client.get_schema(descriptor, options=options).schema
 assert schema.names == ["id", "name"]
@@ -140,14 +182,49 @@ options = fl.FlightCallOptions(
 )
 descriptor = fl.FlightDescriptor.for_path(*path)
 
+def _encode_varint(value):
+    encoded = bytearray()
+    while value >= 0x80:
+        encoded.append((value & 0x7f) | 0x80)
+        value >>= 7
+    encoded.append(value)
+    return bytes(encoded)
+
+def _decode_varint(payload, offset=0):
+    shift = 0
+    value = 0
+    while True:
+        byte = payload[offset]
+        offset += 1
+        value |= (byte & 0x7f) << shift
+        if not byte & 0x80:
+            return value, offset
+        shift += 7
+
+def _cancel_flight_info_request_body(info):
+    serialized = info.serialize()
+    serialized_info = (
+        serialized.to_pybytes()
+        if hasattr(serialized, "to_pybytes")
+        else bytes(serialized)
+    )
+    return b"\x0a" + _encode_varint(len(serialized_info)) + serialized_info
+
+def _assert_cancelled_result(result):
+    body = result.body.to_pybytes()
+    tag, offset = _decode_varint(body)
+    status, offset = _decode_varint(body, offset)
+    assert tag == 0x08
+    assert status == 1
+    assert offset == len(body)
+
 flights = list(client.list_flights(options=options))
 assert len(flights) == 1
 assert flights[0].total_records == 3
 assert [part.decode("utf-8") for part in flights[0].descriptor.path] == path
 
 actions = list(client.list_actions(options=options))
-assert len(actions) == 1
-assert actions[0].type == "ping"
+assert [action.type for action in actions] == ["ping", "CancelFlightInfo"]
 
 results = list(client.do_action(fl.Action("ping", b""), options=options))
 assert len(results) == 1
@@ -157,6 +234,13 @@ info = client.get_flight_info(descriptor, options=options)
 assert info.total_records == 3
 assert [part.decode("utf-8") for part in info.descriptor.path] == path
 assert len(info.endpoints) == 1
+
+cancel_results = list(client.do_action(
+    fl.Action("CancelFlightInfo", _cancel_flight_info_request_body(info)),
+    options=options,
+))
+assert len(cancel_results) == 1
+_assert_cancelled_result(cancel_results[0])
 
 schema = client.get_schema(descriptor, options=options).schema
 assert schema.names == ["id", "name"]
@@ -847,13 +931,26 @@ function flight_live_service(protocol, fixture)
         listactions=(ctx, response) -> begin
             flight_live_assert_authenticated(ctx, fixture)
             put!(response, protocol.ActionType("ping", "Ping action"))
+            put!(response, Arrow.Flight.cancelflightinfoactiontype())
             close(response)
             return :listactions_ok
         end,
         doaction=(ctx, action, response) -> begin
             flight_live_assert_authenticated(ctx, fixture)
-            @test action.var"#type" == "ping"
-            put!(response, protocol.Result(b"pong"))
+            if action.var"#type" == "ping"
+                put!(response, protocol.Result(b"pong"))
+            else
+                request = Arrow.Flight.cancelflightinforequest(action)
+                @test request.info.flight_descriptor.path ==
+                      fixture.info.flight_descriptor.path
+                @test request.info.total_records == fixture.info.total_records
+                put!(
+                    response,
+                    Arrow.Flight.cancelflightinforesult(
+                        protocol.CancelStatus.CANCEL_STATUS_CANCELLED,
+                    ),
+                )
+            end
             close(response)
             return :doaction_ok
         end,
