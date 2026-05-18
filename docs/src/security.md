@@ -42,12 +42,13 @@ lead to unsafe indexing or misleading semantic interpretation:
 - canonical extension metadata and storage contracts are parsed and validated
   for the supported canonical extension names before Arrow.jl returns
   converted semantic values;
-- C Data import validates metadata entry counts and string byte lengths, base
-  struct shape, length/null-count consistency, child counts, child pointer
-  entries, buffers, release callbacks, non-zero offsets, dictionary schema/array
-  peers, nested dictionaries, Binary/UTF-8 offsets, UTF-8 bytes, view buffers,
-  UTF-8 view bytes, dictionary indices, list-view spans, and run-end encoded
-  child shape inside the documented same-process ownership model.
+- C Data import validates format strings, metadata entry counts and string byte
+  lengths, base struct shape, length/null-count consistency, child counts,
+  child pointer entries, buffers, release callbacks, non-zero offsets,
+  dictionary schema/array peers, nested dictionaries, Binary/UTF-8 offsets,
+  UTF-8 bytes, view buffers, UTF-8 view bytes, dictionary indices, list-view
+  spans, and run-end encoded child shape inside the documented same-process
+  ownership model.
 
 ## Current Limits
 
