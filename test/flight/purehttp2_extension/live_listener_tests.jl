@@ -158,6 +158,13 @@ function purehttp2_extension_test_live_listener(fixture)
                 required_modules=FlightTestSupport.POLL_FLIGHT_REQUIRED_MODULES,
             ),
         )
+        handshake_smoke_ran =
+            flight_live_python_handshake_smoke(server.host, server.port, live_fixture)
+        @test handshake_smoke_ran || isnothing(
+            FlightTestSupport.pyarrow_flight_python(
+                required_modules=FlightTestSupport.POLL_FLIGHT_REQUIRED_MODULES,
+            ),
+        )
     finally
         Arrow.Flight.stop!(server; force=true)
         @test !isopen(server)

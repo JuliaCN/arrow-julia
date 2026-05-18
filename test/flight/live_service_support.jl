@@ -308,6 +308,56 @@ assert tuple(second.info.flight_descriptor.path) == tuple(path)
 assert second.info.total_records == 3
 """
 
+const FLIGHT_LIVE_PYTHON_HANDSHAKE_SMOKE = raw"""
+import pathlib
+import sys
+import tempfile
+
+import grpc
+import grpc_tools
+from grpc_tools import protoc
+
+proto_root = pathlib.Path(sys.argv[1])
+grpc_tools_proto = pathlib.Path(grpc_tools.__file__).resolve().parent / "_proto"
+host = sys.argv[2]
+port = int(sys.argv[3])
+token_payload = sys.argv[4].encode("utf-8")
+
+out = pathlib.Path(tempfile.mkdtemp(prefix="flight_handshake_client_proto_"))
+result = protoc.main([
+    "grpc_tools.protoc",
+    f"-I{proto_root}",
+    f"-I{grpc_tools_proto}",
+    f"--python_out={out}",
+    f"--grpc_python_out={out}",
+    str(proto_root / "Flight.proto"),
+])
+if result != 0:
+    raise RuntimeError(f"protoc failed with exit code {result}")
+sys.path.insert(0, str(out))
+
+import Flight_pb2 as pb2
+import Flight_pb2_grpc as pb2_grpc
+
+channel = grpc.insecure_channel(f"{host}:{port}")
+stub = pb2_grpc.FlightServiceStub(channel)
+
+responses = list(stub.Handshake(
+    iter([pb2.HandshakeRequest(protocol_version=0, payload=token_payload)]),
+    timeout=30,
+))
+assert len(responses) == 1
+assert responses[0].protocol_version == 0
+assert responses[0].payload == token_payload
+
+actions = list(stub.ListActions(
+    pb2.Empty(),
+    metadata=(("auth-token-bin", responses[0].payload),),
+    timeout=30,
+))
+assert [action.type for action in actions] == ["ping", "CancelFlightInfo"]
+"""
+
 const FLIGHT_LIVE_PYARROW_DOGET_BENCHMARK = raw"""
 import pyarrow.flight as fl
 import sys
@@ -1100,6 +1150,27 @@ function flight_live_python_poll_smoke(host::AbstractString, port::Integer, fixt
             fixture.handshake_username,
             fixture.handshake_password,
             fixture.poll_descriptor.path...,
+        ]),
+    )
+    return true
+end
+
+function flight_live_python_handshake_smoke(host::AbstractString, port::Integer, fixture)
+    python = FlightTestSupport.pyarrow_flight_python(
+        required_modules=FlightTestSupport.POLL_FLIGHT_REQUIRED_MODULES,
+    )
+    isnothing(python) && return false
+    proto_root =
+        normpath(joinpath(FlightTestSupport.TEST_ROOT, "..", "src", "flight", "proto"))
+    run(
+        Cmd([
+            python,
+            "-c",
+            FLIGHT_LIVE_PYTHON_HANDSHAKE_SMOKE,
+            proto_root,
+            host,
+            string(port),
+            String(copy(fixture.handshake_token)),
         ]),
     )
     return true
