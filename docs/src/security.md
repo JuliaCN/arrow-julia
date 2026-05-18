@@ -43,10 +43,11 @@ lead to unsafe indexing or misleading semantic interpretation:
   for the supported canonical extension names before Arrow.jl returns
   converted semantic values;
 - C Data import validates base struct shape, length/null-count consistency,
-  child counts, buffers, release callbacks, non-zero offsets, nested
-  dictionaries, Binary/UTF-8 offsets, UTF-8 bytes, view buffers, UTF-8 view
-  bytes, dictionary indices, list-view spans, and run-end encoded child shape
-  inside the documented same-process ownership model.
+  child counts, child pointer entries, buffers, release callbacks, non-zero
+  offsets, dictionary schema/array peers, nested dictionaries, Binary/UTF-8
+  offsets, UTF-8 bytes, view buffers, UTF-8 view bytes, dictionary indices,
+  list-view spans, and run-end encoded child shape inside the documented
+  same-process ownership model.
 
 ## Current Limits
 
