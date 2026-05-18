@@ -323,10 +323,51 @@ end
         Ref{Arrow.Meta.Schema}(),
     )
     @test_throws ArgumentError CData.exporttable(large_offsets)
+
+    function expect_map_import_error(offsets::Vector{Int32}, err)
+        bad_exported = CData.exporttable(table)
+        map_ptr = _child_array_ptr(CData.array(bad_exported), 1)
+        map_array = unsafe_load(map_ptr)
+        buffers =
+            Ptr{Cvoid}[unsafe_load(map_array.buffers, 1), Ptr{Cvoid}(pointer(offsets))]
+        GC.@preserve offsets buffers begin
+            _set_array_layout!(map_ptr; buffers=buffers)
+            try
+                @test_throws ArgumentError(err) CData.importtable(
+                    CData.schema_ptr(bad_exported),
+                    CData.array_ptr(bad_exported),
+                )
+            finally
+                CData.release!(bad_exported)
+            end
+            @test CData.isreleased(bad_exported)
+        end
+    end
+
+    expect_map_import_error(Int32[-1, 0, 1, 1], "map column map has negative offset")
+    expect_map_import_error(
+        Int32[0, 2, 1, 1],
+        "map column map offsets must be nondecreasing",
+    )
+    expect_map_import_error(
+        Int32[0, 1, 2, 9],
+        "map column map offsets exceed child value length",
+    )
 end
 
 @testset "exports and imports union columns" begin
     source = Union{Int64,Float64,Missing}[1, 2.0, missing, 3]
+
+    function union_export()
+        table = Arrow.Table(
+            Arrow.tobuffer((
+                dense=Arrow.DenseUnionVector(source),
+                sparse=Arrow.SparseUnionVector(source),
+            ),),
+        )
+        return CData.exporttable(table)
+    end
+
     table = Arrow.Table(
         Arrow.tobuffer((
             dense=Arrow.DenseUnionVector(source),
@@ -370,6 +411,60 @@ end
     CData.release!(imported)
     @test CData.isreleased(imported)
     @test CData.isreleased(exported)
+
+    function expect_union_import_error(exported, err)
+        try
+            @test_throws ArgumentError(err) CData.importtable(
+                CData.schema_ptr(exported),
+                CData.array_ptr(exported),
+            )
+        finally
+            CData.release!(exported)
+        end
+        @test CData.isreleased(exported)
+    end
+
+    bad_type_id = union_export()
+    bad_type_id_dense_ptr = _child_array_ptr(CData.array(bad_type_id), 1)
+    bad_type_id_dense_array = unsafe_load(bad_type_id_dense_ptr)
+    undeclared_type_ids = UInt8[0xff, 0x01, 0x02, 0x00]
+    bad_type_id_buffers = Ptr{Cvoid}[
+        Ptr{Cvoid}(pointer(undeclared_type_ids)),
+        unsafe_load(bad_type_id_dense_array.buffers, 2),
+    ]
+    GC.@preserve undeclared_type_ids bad_type_id_buffers begin
+        _set_array_layout!(bad_type_id_dense_ptr; buffers=bad_type_id_buffers)
+        expect_union_import_error(
+            bad_type_id,
+            "union column dense references undeclared type id 255",
+        )
+    end
+
+    bad_dense_offset = union_export()
+    bad_offset_dense_ptr = _child_array_ptr(CData.array(bad_dense_offset), 1)
+    bad_offset_dense_array = unsafe_load(bad_offset_dense_ptr)
+    out_of_bounds_offsets = Int32[typemax(Int32), 0, 0, 0]
+    bad_offset_buffers = Ptr{Cvoid}[
+        unsafe_load(bad_offset_dense_array.buffers, 1),
+        Ptr{Cvoid}(pointer(out_of_bounds_offsets)),
+    ]
+    GC.@preserve out_of_bounds_offsets bad_offset_buffers begin
+        _set_array_layout!(bad_offset_dense_ptr; buffers=bad_offset_buffers)
+        expect_union_import_error(
+            bad_dense_offset,
+            "dense union column dense has child offset out of bounds",
+        )
+    end
+
+    sparse_short_child = union_export()
+    sparse_ptr = _child_array_ptr(CData.array(sparse_short_child), 2)
+    sparse_array = unsafe_load(sparse_ptr)
+    first_child_ptr = _child_array_ptr(sparse_array, 1)
+    _set_array_layout!(first_child_ptr; length=1)
+    expect_union_import_error(
+        sparse_short_child,
+        "sparse union column sparse child length must match row count",
+    )
 end
 
 @testset "exports and imports run-end encoded columns" begin

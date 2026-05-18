@@ -516,18 +516,23 @@ function _list_view_offset_type_for_format(format::AbstractString)
     throw(ArgumentError("Arrow C Data import does not support list-view format $format"))
 end
 
-function _assert_list_offsets!(offsets::Vector, values::AbstractVector, name::Symbol)
-    isempty(offsets) && throw(ArgumentError("list column $name has empty offsets"))
+function _assert_list_offsets!(
+    offsets::Vector,
+    values::AbstractVector,
+    name::Symbol,
+    label::AbstractString="list",
+)
+    isempty(offsets) && throw(ArgumentError("$label column $name has empty offsets"))
     previous = Int(first(offsets))
-    previous >= 0 || throw(ArgumentError("list column $name has negative offset"))
+    previous >= 0 || throw(ArgumentError("$label column $name has negative offset"))
     for offset in Iterators.drop(offsets, 1)
         current = Int(offset)
         current >= previous ||
-            throw(ArgumentError("list column $name offsets must be nondecreasing"))
+            throw(ArgumentError("$label column $name offsets must be nondecreasing"))
         previous = current
     end
     previous <= length(values) ||
-        throw(ArgumentError("list column $name offsets exceed child value length"))
+        throw(ArgumentError("$label column $name offsets exceed child value length"))
     return nothing
 end
 
@@ -668,7 +673,7 @@ function _import_map_column(schema::ArrowSchema, array::ArrowArray, name::Symbol
         Int(array.length) + 1;
         own=false,
     )
-    _assert_list_offsets!(offsets, entries, name)
+    _assert_list_offsets!(offsets, entries, name, "map")
     nullable = _nullable_field(schema, array)
     validity = nullable ? _validity_vector(array, name) : UInt8[]
     return ImportedMapVector(
