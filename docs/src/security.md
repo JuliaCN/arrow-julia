@@ -45,7 +45,7 @@ lead to unsafe indexing or misleading semantic interpretation:
 - C Data import validates base struct shape, child counts, buffers, release
   callbacks, non-zero offsets, nested dictionaries, Binary/UTF-8 offsets,
   UTF-8 bytes, view buffers, UTF-8 view bytes, list-view spans, and run-end
-  encoded children inside the documented same-process ownership model.
+  encoded child shape inside the documented same-process ownership model.
 
 ## Current Limits
 

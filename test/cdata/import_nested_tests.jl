@@ -469,6 +469,8 @@ end
 
 @testset "exports and imports run-end encoded columns" begin
     table = Arrow.Table(_test_fixture("run_end_encoded_small.arrow"); convert=false)
+    ree_export() = CData.exporttable(table)
+
     exported = CData.exporttable(table)
     imported = CData.importtable(CData.schema_ptr(exported), CData.array_ptr(exported))
 
@@ -501,6 +503,73 @@ end
     CData.release!(imported)
     @test CData.isreleased(imported)
     @test CData.isreleased(exported)
+
+    function expect_ree_import_error(exported, err)
+        try
+            @test_throws ArgumentError(err) CData.importtable(
+                CData.schema_ptr(exported),
+                CData.array_ptr(exported),
+            )
+        finally
+            CData.release!(exported)
+        end
+        @test CData.isreleased(exported)
+    end
+
+    function run_ends_ptr(exported)
+        ree_ptr = _child_array_ptr(CData.array(exported), 1)
+        return _child_array_ptr(unsafe_load(ree_ptr), 1)
+    end
+
+    duplicate_run_end = ree_export()
+    duplicate_run_ends = Int16[2, 2]
+    duplicate_buffers = Ptr{Cvoid}[C_NULL, Ptr{Cvoid}(pointer(duplicate_run_ends))]
+    GC.@preserve duplicate_run_ends duplicate_buffers begin
+        _set_array_layout!(run_ends_ptr(duplicate_run_end); buffers=duplicate_buffers)
+        expect_ree_import_error(
+            duplicate_run_end,
+            "run-end encoded run_ends must be strictly increasing",
+        )
+    end
+
+    null_run_end = ree_export()
+    nullable_run_ends = Int16[2, 5]
+    run_end_validity = UInt8[0x01]
+    nullable_buffers = Ptr{Cvoid}[
+        Ptr{Cvoid}(pointer(run_end_validity)),
+        Ptr{Cvoid}(pointer(nullable_run_ends)),
+    ]
+    GC.@preserve nullable_run_ends run_end_validity nullable_buffers begin
+        _set_array_layout!(
+            run_ends_ptr(null_run_end);
+            null_count=1,
+            buffers=nullable_buffers,
+        )
+        expect_ree_import_error(
+            null_run_end,
+            "run-end encoded run_ends cannot contain nulls",
+        )
+    end
+
+    mismatched_values = ree_export()
+    ree_ptr = _child_array_ptr(CData.array(mismatched_values), 1)
+    values_ptr = _child_array_ptr(unsafe_load(ree_ptr), 2)
+    _set_array_layout!(values_ptr; length=1)
+    expect_ree_import_error(
+        mismatched_values,
+        "run-end encoded run_ends and values lengths must match",
+    )
+
+    short_final_run = ree_export()
+    short_run_ends = Int16[2, 4]
+    short_buffers = Ptr{Cvoid}[C_NULL, Ptr{Cvoid}(pointer(short_run_ends))]
+    GC.@preserve short_run_ends short_buffers begin
+        _set_array_layout!(run_ends_ptr(short_final_run); buffers=short_buffers)
+        expect_ree_import_error(
+            short_final_run,
+            "run-end encoded final run_end must cover logical length",
+        )
+    end
 end
 
 @testset "exports and imports UTF-8 and binary view columns" begin

@@ -664,9 +664,10 @@ struct ImportedRunEndEncodedVector{T,R<:AbstractVector,V<:AbstractVector} <:
 end
 
 function _assert_run_end_type(::Type{T}) where {T}
-    T === Int16 ||
-        T === Int32 ||
-        T === Int64 ||
+    R = Base.nonmissingtype(T)
+    R === Int16 ||
+        R === Int32 ||
+        R === Int64 ||
         throw(
             ArgumentError("run-end encoded run_ends must use signed 16/32/64-bit integers"),
         )
@@ -689,6 +690,8 @@ function _assert_run_end_shape(
         throw(ArgumentError("non-empty run-end encoded arrays must have at least one run"))
     previous = 0
     for run_end in run_ends
+        run_end === missing &&
+            throw(ArgumentError("run-end encoded run_ends cannot contain nulls"))
         current = Int(run_end)
         current > previous ||
             throw(ArgumentError("run-end encoded run_ends must be strictly increasing"))
