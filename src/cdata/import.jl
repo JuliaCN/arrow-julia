@@ -494,6 +494,7 @@ function _import_dictionary_column(schema::ArrowSchema, array::ArrowArray, name:
         throw(ArgumentError("dictionary column $name has C_NULL indices buffer"))
     offset = _logical_offset(array)
     indices = _wrap_buffer(I, index_ptr, _logical_length(array), offset)
+    _assert_dictionary_indices!(indices, dictionary, validity, offset, name)
     return ImportedDictionaryVector(
         indices,
         dictionary,
@@ -502,6 +503,31 @@ function _import_dictionary_column(schema::ArrowSchema, array::ArrowArray, name:
         nullable,
         offset,
     )
+end
+
+function _assert_dictionary_indices!(
+    indices::Vector,
+    dictionary::AbstractVector,
+    validity::Vector{UInt8},
+    validity_offset::Int,
+    name::Symbol,
+)
+    dictionary_len = length(dictionary)
+    for i in eachindex(indices)
+        _validity_bit(validity, i, validity_offset) || continue
+        raw_index = @inbounds indices[i]
+        index = try
+            Int(raw_index)
+        catch
+            throw(ArgumentError("dictionary column $name has dictionary index too large"))
+        end
+        index >= 0 ||
+            throw(ArgumentError("dictionary column $name has negative dictionary index"))
+        index < dictionary_len || throw(
+            ArgumentError("dictionary column $name has dictionary index out of bounds"),
+        )
+    end
+    return nothing
 end
 
 function _list_offset_type_for_format(format::AbstractString)

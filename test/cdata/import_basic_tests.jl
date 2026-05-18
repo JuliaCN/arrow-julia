@@ -374,6 +374,8 @@ end
 
 @testset "imports dictionary encoded C Data columns" begin
     table = Arrow.Table(Arrow.tobuffer((color=["red", "blue", "red"],); dictencode=true))
+    dictionary_export() = CData.exporttable(table)
+
     exported = CData.exporttable(table)
     imported = CData.importtable(CData.schema_ptr(exported), CData.array_ptr(exported))
 
@@ -448,6 +450,66 @@ end
     CData.release!(nested_imported)
     @test CData.isreleased(nested_imported)
     @test CData.isreleased(nested_exported)
+
+    function expect_dictionary_import_error(exported, indices::Vector{Int8}, err)
+        color_ptr = _child_array_ptr(CData.array(exported), 1)
+        color_array = unsafe_load(color_ptr)
+        buffers =
+            Ptr{Cvoid}[unsafe_load(color_array.buffers, 1), Ptr{Cvoid}(pointer(indices))]
+        GC.@preserve indices buffers begin
+            _set_array_layout!(color_ptr; buffers=buffers)
+            try
+                @test_throws ArgumentError(err) CData.importtable(
+                    CData.schema_ptr(exported),
+                    CData.array_ptr(exported),
+                )
+            finally
+                CData.release!(exported)
+            end
+            @test CData.isreleased(exported)
+        end
+    end
+
+    expect_dictionary_import_error(
+        dictionary_export(),
+        Int8[-1, 1, 0],
+        "dictionary column color has negative dictionary index",
+    )
+    expect_dictionary_import_error(
+        dictionary_export(),
+        Int8[0, 2, 0],
+        "dictionary column color has dictionary index out of bounds",
+    )
+
+    null_slot_bad_index = CData.exporttable(nullable_table)
+    null_slot_color_ptr = _child_array_ptr(CData.array(null_slot_bad_index), 1)
+    null_slot_color_array = unsafe_load(null_slot_color_ptr)
+    original_null_slot_indices = unsafe_wrap(
+        Vector{Int8},
+        Ptr{Int8}(unsafe_load(null_slot_color_array.buffers, 2)),
+        Int(null_slot_color_array.length);
+        own=false,
+    )
+    null_slot_indices = copy(original_null_slot_indices)
+    null_slot_indices[2] = -1
+    null_slot_buffers = Ptr{Cvoid}[
+        unsafe_load(null_slot_color_array.buffers, 1),
+        Ptr{Cvoid}(pointer(null_slot_indices)),
+    ]
+    GC.@preserve null_slot_indices null_slot_buffers begin
+        _set_array_layout!(null_slot_color_ptr; buffers=null_slot_buffers)
+        imported_null_slot_bad_index = CData.importtable(
+            CData.schema_ptr(null_slot_bad_index),
+            CData.array_ptr(null_slot_bad_index),
+        )
+        @test isequal(
+            collect(Tables.getcolumn(imported_null_slot_bad_index, :color)),
+            Union{Missing,String}["red", missing, "blue", "red"],
+        )
+        CData.release!(imported_null_slot_bad_index)
+        @test CData.isreleased(imported_null_slot_bad_index)
+        @test CData.isreleased(null_slot_bad_index)
+    end
 end
 
 @testset "imports list C Data columns" begin
