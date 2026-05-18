@@ -47,6 +47,26 @@ function _array_ref_with_children(array::CData.ArrowArray, children)
     )
 end
 
+function _schema_ref_with_metadata(schema::CData.ArrowSchema, metadata::Vector{UInt8})
+    return Ref(
+        CData.ArrowSchema(
+            schema.format,
+            schema.name,
+            Ptr{UInt8}(pointer(metadata)),
+            schema.flags,
+            schema.n_children,
+            schema.children,
+            schema.dictionary,
+            schema.release,
+            schema.private_data,
+        ),
+    )
+end
+
+function _int32_metadata_bytes(values::Int32...)
+    return collect(reinterpret(UInt8, collect(values)))
+end
+
 @testset "rejects malformed C Data child pointer entries" begin
     table = Arrow.Table(Arrow.tobuffer((id=Int32[1, 2], label=["a", "bb"])))
     exported = CData.exporttable(table)
@@ -142,4 +162,39 @@ end
     end
     CData.release!(missing_dictionary_array)
     @test CData.isreleased(missing_dictionary_array)
+end
+
+@testset "rejects malformed C Data metadata bytes" begin
+    table = Arrow.Table(Arrow.tobuffer((id=Int32[1, 2], label=["a", "bb"])))
+
+    negative_entry_count = CData.exporttable(table)
+    metadata = _int32_metadata_bytes(Int32(-1))
+    bad_schema = _schema_ref_with_metadata(CData.schema(negative_entry_count), metadata)
+    GC.@preserve metadata bad_schema begin
+        @test_throws ArgumentError("Arrow C Data metadata has negative entry count") CData.importtable(
+            Base.unsafe_convert(Ptr{CData.ArrowSchema}, bad_schema),
+            CData.array_ptr(negative_entry_count),
+        )
+    end
+    CData.release!(negative_entry_count)
+    @test CData.isreleased(negative_entry_count)
+
+    negative_key_length = CData.exporttable(table)
+    schema = CData.schema(negative_key_length)
+    id_schema = _child_schema(schema, 1)
+    field_metadata = _int32_metadata_bytes(Int32(1), Int32(-1))
+    bad_id_schema = _schema_ref_with_metadata(id_schema, field_metadata)
+    schema_children = Ptr{CData.ArrowSchema}[
+        Base.unsafe_convert(Ptr{CData.ArrowSchema}, bad_id_schema),
+        unsafe_load(schema.children, 2),
+    ]
+    bad_top_schema = _schema_ref_with_children(schema, schema_children)
+    GC.@preserve field_metadata bad_id_schema schema_children bad_top_schema begin
+        @test_throws ArgumentError("Arrow C Data metadata has negative byte length") CData.importtable(
+            Base.unsafe_convert(Ptr{CData.ArrowSchema}, bad_top_schema),
+            CData.array_ptr(negative_key_length),
+        )
+    end
+    CData.release!(negative_key_length)
+    @test CData.isreleased(negative_key_length)
 end
