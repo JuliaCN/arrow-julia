@@ -426,13 +426,19 @@ because the `pyarrow.flight` client surface used in the test environment does
 not expose every high-level control-plane API. A separate focused runner,
 `test/flight_purehttp2_perf.jl`, now measures large-response end-to-end
 `DoGet`, `DoPut`, bounded same-client reused `DoPut`, and `DoExchange`
-performance on that same package-owned listener through a reusable
-backend-factory seam, and it can replay concurrent soak rounds via
+performance on that same package-owned listener through reusable backend
+factory hooks, and it can replay concurrent soak rounds via
 `ARROW_FLIGHT_PYARROW_CONCURRENT_CLIENTS`,
 `ARROW_FLIGHT_PYARROW_REQUESTS_PER_CLIENT`, and
 `ARROW_FLIGHT_PYARROW_SOAK_ROUNDS`; the same-client upload receipt count is
 controlled by `ARROW_FLIGHT_PYARROW_REUSED_DOPUT_REQUESTS` and defaults to two
-sequential large uploads. A second focused runner,
+sequential large uploads, while the dedicated same-client upload soak count is
+controlled by `ARROW_FLIGHT_PYARROW_REUSED_DOPUT_SOAK_ROUNDS` and defaults to
+four rounds against one server. Each round opens one PyArrow client and runs
+the configured reused-upload count. Set
+`ARROW_FLIGHT_PYARROW_REUSED_DOPUT_MIN_THROUGHPUT_MIB_PER_SEC` to a positive
+number to make that local soak enforce an environment-specific throughput
+floor. A second focused runner,
 `test/flight_nghttp2_probe.jl`,
 verifies the currently exported `Nghttp2Wrapper.jl` low-level session /
 callback / submit hooks and raw h2c substrate behavior. A third focused

@@ -55,6 +55,7 @@ function flight_live_transport_benchmark(
     batch_count::Integer=2,
     rows_per_batch::Integer=256,
     payload_bytes::Integer=4_096,
+    reused_doput_requests::Union{Nothing,Integer}=nothing,
     operations::Tuple{Vararg{Symbol}}=(:doget, :doput, :doexchange),
 )
     fixture = flight_live_transport_fixture(
@@ -104,6 +105,7 @@ function flight_live_transport_benchmark(
                 fixture;
                 backend=transport.backend,
                 iterations=iterations,
+                reused_requests=reused_doput_requests,
             )
             if isnothing(doput_reused_metric)
                 @test true

@@ -154,6 +154,10 @@ include(joinpath(TEST_ROOT, "flight", "purehttp2_extension", "performance_tests.
     purehttp2_extension_test_large_transport_performance()
 end
 
+@testset "Flight gRPCServer same-client upload reuse soak" begin
+    purehttp2_extension_test_reused_doput_soak()
+end
+
 @testset "Flight gRPCServer large transport concurrent soak" begin
     purehttp2_extension_test_large_transport_concurrent_soak()
 end

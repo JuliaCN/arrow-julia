@@ -110,10 +110,14 @@ function flight_live_pyarrow_reused_doput_metric(
     fixture;
     backend::Symbol,
     iterations::Integer,
+    reused_requests::Union{Nothing,Integer}=nothing,
 )
     python = FlightTestSupport.pyarrow_flight_python()
     isnothing(python) && return nothing
-    reused_requests = _flight_live_pyarrow_reused_doput_requests()
+    requests =
+        isnothing(reused_requests) ? _flight_live_pyarrow_reused_doput_requests() :
+        reused_requests
+    requests >= 2 || throw(ArgumentError("reused_requests must be >= 2"))
     output = _flight_live_readchomp_with_timeout(
         Cmd([
             python,
@@ -121,7 +125,7 @@ function flight_live_pyarrow_reused_doput_metric(
             FLIGHT_LIVE_PYARROW_REUSED_DOPUT_BENCHMARK,
             host,
             string(port),
-            string(reused_requests),
+            string(requests),
             string(length(fixture.batches)),
             string(length(first(fixture.batches).id)),
             fixture.payload_value,

@@ -59,6 +59,22 @@ function flight_live_transport_print_concurrent_summary(io::IO, metrics)
     return nothing
 end
 
+function flight_live_transport_print_reused_doput_summary(io::IO, metric)
+    metric.operation == :doput_reused_client ||
+        throw(ArgumentError("reused DoPut summary requires operation :doput_reused_client"))
+    println(
+        io,
+        "doput_reused_client soak: total_requests=$(metric.total_requests) " *
+        "wall_ms=$(round(metric.median_ms; digits=2)) " *
+        "request_median_ms=$(round(metric.request_median_ms; digits=2)) " *
+        "request_p95_ms=$(round(metric.request_p95_ms; digits=2)) " *
+        "request_p99_ms=$(round(metric.request_p99_ms; digits=2)) " *
+        "request_max_ms=$(round(metric.request_max_ms; digits=2)) " *
+        "throughput_mib_per_sec=$(round(metric.throughput_mib_per_sec; digits=2))",
+    )
+    return nothing
+end
+
 function flight_live_transport_metric(metrics, backend::Symbol, operation::Symbol)
     for metric in metrics
         metric.backend == backend && metric.operation == operation && return metric

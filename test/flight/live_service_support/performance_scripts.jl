@@ -197,10 +197,10 @@ def run_doput(client):
         write_batches(writer, make_batches())
         writer.done_writing()
         put_result = reader.read()
-        while reader.read() is not None:
-            pass
     finally:
         writer.close()
+    while reader.read() is not None:
+        pass
     assert put_result is not None
     assert put_result.to_pybytes() == b"stored"
 
