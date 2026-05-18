@@ -275,7 +275,11 @@ argument is an in-process `Arrow.Flight.Service`.
 
 Arrow.jl now treats `Arrow.Flight` as a protocol-plus-server package surface.
 Package-owned interop and performance proofs run through external Python
-clients instead of an in-package Julia Flight gRPC client runtime.
+clients instead of an in-package Julia Flight gRPC client runtime. The current
+boundary is queryable through [`Arrow.Flight.flight_client_runtime_capabilities`](@ref)
+and [`Arrow.Flight.flight_client_runtime_supported`](@ref); adding a Julia
+Flight client runtime would require a dedicated dependency, API, and live
+client test design.
 
 ### IPC Performance Receipt
 
