@@ -63,7 +63,7 @@ function purehttp2_extension_test_large_transport_performance(;
         batch_count=batch_count,
         rows_per_batch=rows_per_batch,
         payload_bytes=payload_bytes,
-        operations=(:doput,),
+        operations=(:doput, :doput_reused_client),
     )
     doexchange_metrics = flight_live_transport_benchmark(
         Arrow.Flight.Protocol,
@@ -76,14 +76,24 @@ function purehttp2_extension_test_large_transport_performance(;
     )
     metrics = vcat(doget_metrics, doput_metrics, doexchange_metrics)
     isempty(metrics) && return metrics
-    @test length(metrics) == 3
+    @test length(metrics) == 4
     @test all(metric.backend == :grpcserver for metric in metrics)
-    @test Set(metric.operation for metric in metrics) == Set([:doget, :doput, :doexchange])
+    @test Set(metric.operation for metric in metrics) ==
+          Set([:doget, :doput, :doput_reused_client, :doexchange])
     doget_metric = flight_live_transport_metric(metrics, :grpcserver, :doget)
     doput_metric = flight_live_transport_metric(metrics, :grpcserver, :doput)
+    doput_reused_metric =
+        flight_live_transport_metric(metrics, :grpcserver, :doput_reused_client)
     doexchange_metric = flight_live_transport_metric(metrics, :grpcserver, :doexchange)
     @test doget_metric.total_bytes >= PUREHTTP2_EXTENSION_LARGE_TRANSPORT_BYTES
     @test doput_metric.request_bytes >= PUREHTTP2_EXTENSION_LARGE_TRANSPORT_BYTES
+    @test doput_reused_metric.total_requests >= 2
+    @test doput_reused_metric.request_bytes >=
+          PUREHTTP2_EXTENSION_LARGE_TRANSPORT_BYTES * doput_reused_metric.total_requests
+    @test doput_reused_metric.request_median_ns > 0
+    @test doput_reused_metric.request_p95_ns >= doput_reused_metric.request_median_ns
+    @test doput_reused_metric.request_p99_ns >= doput_reused_metric.request_p95_ns
+    @test doput_reused_metric.request_max_ns >= doput_reused_metric.request_p99_ns
     @test doexchange_metric.total_bytes >= PUREHTTP2_EXTENSION_EXCHANGE_TRANSPORT_BYTES
     @test all(metric.request_bytes >= 0 for metric in metrics)
     @test all(metric.response_bytes > 0 for metric in metrics)
