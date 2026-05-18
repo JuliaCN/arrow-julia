@@ -70,6 +70,83 @@
         )
     end
 
+    bad_null_count = Ref(
+        CData.ArrowArray(
+            array.length,
+            array.length + 1,
+            array.offset,
+            array.n_buffers,
+            array.n_children,
+            array.buffers,
+            array.children,
+            array.dictionary,
+            array.release,
+            array.private_data,
+        ),
+    )
+    GC.@preserve bad_null_count begin
+        @test_throws ArgumentError(
+            "column top-level struct has null count greater than length",
+        ) CData.importtable(
+            CData.schema_ptr(exported),
+            Base.unsafe_convert(Ptr{CData.ArrowArray}, bad_null_count),
+        )
+    end
+
+    bad_child_count = Ref(
+        CData.ArrowArray(
+            array.length,
+            array.null_count,
+            array.offset,
+            array.n_buffers,
+            -1,
+            array.buffers,
+            array.children,
+            array.dictionary,
+            array.release,
+            array.private_data,
+        ),
+    )
+    GC.@preserve bad_child_count begin
+        @test_throws ArgumentError("column top-level struct has negative child count") CData.importtable(
+            CData.schema_ptr(exported),
+            Base.unsafe_convert(Ptr{CData.ArrowArray}, bad_child_count),
+        )
+    end
+
+    bad_schema_child_count = Ref(
+        CData.ArrowSchema(
+            schema.format,
+            schema.name,
+            schema.metadata,
+            schema.flags,
+            -1,
+            schema.children,
+            schema.dictionary,
+            schema.release,
+            schema.private_data,
+        ),
+    )
+    GC.@preserve bad_schema_child_count begin
+        @test_throws ArgumentError(
+            "schema for column top-level struct has negative child count",
+        ) CData.importtable(
+            Base.unsafe_convert(Ptr{CData.ArrowSchema}, bad_schema_child_count),
+            CData.array_ptr(exported),
+        )
+    end
+
+    child_bad_null_count = CData.exporttable(table)
+    child_array_ptr = _child_array_ptr(CData.array(child_bad_null_count), 1)
+    child_array = unsafe_load(child_array_ptr)
+    _set_array_layout!(child_array_ptr; null_count=(child_array.length + 1))
+    @test_throws ArgumentError("column id has null count greater than length") CData.importtable(
+        CData.schema_ptr(child_bad_null_count),
+        CData.array_ptr(child_bad_null_count),
+    )
+    CData.release!(child_bad_null_count)
+    @test CData.isreleased(child_bad_null_count)
+
     ccall(array.release, Cvoid, (Ptr{CData.ArrowArray},), CData.array_ptr(exported))
     @test CData.array(exported).release == C_NULL
 

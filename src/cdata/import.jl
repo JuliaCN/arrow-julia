@@ -24,10 +24,20 @@ function _assert_import_live(schema::ArrowSchema, array::ArrowArray)
     return nothing
 end
 
+function _assert_import_schema_layout(schema::ArrowSchema, name::Symbol)
+    schema.n_children >= 0 ||
+        throw(ArgumentError("schema for column $name has negative child count"))
+    return nothing
+end
+
 function _assert_import_column_layout(array::ArrowArray, name::Symbol)
     array.length >= 0 || throw(ArgumentError("column $name has negative length"))
     array.null_count >= -1 || throw(ArgumentError("column $name has invalid null count"))
+    (array.null_count == -1 || array.null_count <= array.length) ||
+        throw(ArgumentError("column $name has null count greater than length"))
     array.offset >= 0 || throw(ArgumentError("column $name has negative offset"))
+    array.n_buffers >= 0 || throw(ArgumentError("column $name has negative buffer count"))
+    array.n_children >= 0 || throw(ArgumentError("column $name has negative child count"))
     return nothing
 end
 
@@ -917,6 +927,8 @@ function _import_column_data(schema_ptr::Ptr{ArrowSchema}, array_ptr::Ptr{ArrowA
     array = unsafe_load(array_ptr)
     _assert_import_live(schema, array)
     name = schema.name == C_NULL ? Symbol("") : Symbol(unsafe_string(schema.name))
+    _assert_import_schema_layout(schema, name)
+    _assert_import_column_layout(array, name)
     if schema.dictionary != C_NULL || array.dictionary != C_NULL
         return name, _import_dictionary_column(schema, array, name)
     end
@@ -973,6 +985,8 @@ function importtable(schema_ptr::Ptr{ArrowSchema}, array_ptr::Ptr{ArrowArray})
     schema = unsafe_load(schema_ptr)
     array = unsafe_load(array_ptr)
     _assert_import_live(schema, array)
+    _assert_import_schema_layout(schema, Symbol("top-level struct"))
+    _assert_import_column_layout(array, Symbol("top-level struct"))
     _import_format(schema) == "+s" || throw(
         ArgumentError("Arrow C Data import currently requires top-level struct format +s"),
     )

@@ -460,7 +460,7 @@ end
     sparse_ptr = _child_array_ptr(CData.array(sparse_short_child), 2)
     sparse_array = unsafe_load(sparse_ptr)
     first_child_ptr = _child_array_ptr(sparse_array, 1)
-    _set_array_layout!(first_child_ptr; length=1)
+    _set_array_layout!(first_child_ptr; length=1, null_count=0)
     expect_union_import_error(
         sparse_short_child,
         "sparse union column sparse child length must match row count",
