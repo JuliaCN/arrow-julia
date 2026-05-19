@@ -41,6 +41,8 @@ lead to unsafe indexing or misleading semantic interpretation:
   non-null slots before exposing Julia strings;
 - IPC dictionary-encoded columns validate non-null index slots against the
   dictionary length before exposing borrowed `DictEncoded` vectors;
+- IPC dense and sparse union columns validate type ids, and dense unions also
+  validate child offsets before exposing borrowed union vectors;
 - canonical extension metadata and storage contracts are parsed and validated
   for the supported canonical extension names before Arrow.jl returns
   converted semantic values;

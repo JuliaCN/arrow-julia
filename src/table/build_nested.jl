@@ -284,6 +284,82 @@ function build(
     varbufferidx
 end
 
+function _declared_union_type_ids(type_ids, child_count::Integer, name::Symbol)
+    if type_ids === nothing
+        return collect(0:(Int(child_count) - 1))
+    end
+    length(type_ids) == child_count ||
+        throw(ArgumentError("union column $name type id count must match child count"))
+    declared = Int.(type_ids)
+    seen = Set{Int}()
+    for id in declared
+        id >= 0 || throw(ArgumentError("union column $name has negative type id $id"))
+        id in seen && throw(ArgumentError("union column $name has duplicate type id $id"))
+        push!(seen, id)
+    end
+    return declared
+end
+
+function _union_child_map(declared_type_ids, child_count::Integer, name::Symbol)
+    declared = _declared_union_type_ids(declared_type_ids, child_count, name)
+    return Dict(id => child_index for (child_index, id) in enumerate(declared))
+end
+
+function _assert_union_type_id_buffer!(
+    type_ids::AbstractVector{UInt8},
+    len::Integer,
+    child_by_type_id::AbstractDict{Int,Int},
+    name::Symbol,
+)
+    length(type_ids) == len || throw(
+        ArgumentError("union column $name type id buffer length must match row count"),
+    )
+    for raw_type_id in type_ids
+        type_id = Int(raw_type_id)
+        haskey(child_by_type_id, type_id) || throw(
+            ArgumentError("union column $name references undeclared type id $type_id"),
+        )
+    end
+    return nothing
+end
+
+function _assert_dense_union_layout!(
+    type_ids::AbstractVector{UInt8},
+    offsets::AbstractVector{Int32},
+    data::Tuple,
+    declared_type_ids,
+    len::Integer,
+    name::Symbol,
+)
+    child_by_type_id = _union_child_map(declared_type_ids, length(data), name)
+    _assert_union_type_id_buffer!(type_ids, len, child_by_type_id, name)
+    length(offsets) == len || throw(
+        ArgumentError("dense union column $name offset buffer length must match row count"),
+    )
+    for i in eachindex(type_ids)
+        type_id = Int(@inbounds type_ids[i])
+        child_index = child_by_type_id[type_id]
+        offset = Int(@inbounds offsets[i])
+        offset >= 0 ||
+            throw(ArgumentError("dense union column $name has negative child offset"))
+        offset < length(data[child_index]) ||
+            throw(ArgumentError("dense union column $name has child offset out of bounds"))
+    end
+    return nothing
+end
+
+function _assert_sparse_union_layout!(
+    type_ids::AbstractVector{UInt8},
+    data::Tuple,
+    declared_type_ids,
+    len::Integer,
+    name::Symbol,
+)
+    child_by_type_id = _union_child_map(declared_type_ids, length(data), name)
+    _assert_union_type_id_buffer!(type_ids, len, child_by_type_id, name)
+    return nothing
+end
+
 function build(
     f::Meta.Field,
     L::Meta.Union,
@@ -305,6 +381,7 @@ function build(
         bufferidx += 1
     end
     vecs = []
+    len = rb.nodes[nodeidx].length
     nodeidx += 1
     for child in f.children
         A, nodeidx, bufferidx, varbufferidx =
@@ -315,9 +392,12 @@ function build(
     meta = buildmetadata(f.custom_metadata)
     T = juliaeltype(f, meta, convert)
     UT = UnionT(f, convert)
+    name = Symbol(f.name)
     if L.mode == Meta.UnionMode.Dense
+        _assert_dense_union_layout!(typeIds, offsets, data, L.typeIds, len, name)
         B = DenseUnion{T,UT,typeof(data)}(bytes, bytes2, typeIds, offsets, data, meta)
     else
+        _assert_sparse_union_layout!(typeIds, data, L.typeIds, len, name)
         B = SparseUnion{T,UT,typeof(data)}(bytes, typeIds, data, meta)
     end
     return B, nodeidx, bufferidx, varbufferidx

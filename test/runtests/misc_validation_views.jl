@@ -61,6 +61,25 @@
         validity=Arrow.ValidityBitmap(fill(true, length(indices))),
     ) = native_dictencoded_column(String, indices, validity)
 
+    function patched_record_batch_bytes(column, patcher)
+        bytes = read(Arrow.tobuffer(native_arrow_vector_table(:values, column); ntasks=0))
+        blob = Arrow.ArrowBlob(bytes, 1, nothing)
+        for batch in Arrow.BatchIterator(blob)
+            rb = batch.msg.header
+            rb isa Arrow.Meta.RecordBatch || continue
+            patcher(bytes, batch, rb)
+            return bytes
+        end
+        error("record batch not found")
+    end
+
+    function patch_record_batch_buffer!(bytes, batch, rb, buffer_index, values)
+        start = batch.pos + rb.buffers[buffer_index].offset
+        raw = collect(reinterpret(UInt8, values))
+        copyto!(bytes, start, raw, 1, length(raw))
+        return bytes
+    end
+
     item = Tables.getcolumn(Arrow.Table(Arrow.tobuffer((item=Int32[1, 2, 3],))), :item)
     validity = Arrow.ValidityBitmap(fill(true, 2))
 
@@ -320,6 +339,58 @@
     )
     @test Tables.getcolumn(null_slot_table, :values)[1] == "red"
     @test ismissing(Tables.getcolumn(null_slot_table, :values)[2])
+
+    union_source = Union{Int64,Float64,Missing}[1, 2.0, missing]
+    dense_union = Arrow.DenseUnionVector(union_source)
+    sparse_union = Arrow.SparseUnionVector(union_source)
+
+    dense_union_bad_type_id = patched_record_batch_bytes(
+        dense_union,
+        (bytes, batch, rb) ->
+            patch_record_batch_buffer!(bytes, batch, rb, 1, UInt8[0xff, 0x01, 0x02]),
+    )
+    assert_argument_error(
+        () -> Arrow.Table(IOBuffer(dense_union_bad_type_id); convert=false),
+        "union column values references undeclared type id 255",
+    )
+
+    dense_union_negative_offset = patched_record_batch_bytes(
+        dense_union,
+        (bytes, batch, rb) ->
+            patch_record_batch_buffer!(bytes, batch, rb, 2, Int32[0, -1, 0]),
+    )
+    assert_argument_error(
+        () -> Arrow.Table(IOBuffer(dense_union_negative_offset); convert=false),
+        "dense union column values has negative child offset",
+    )
+
+    dense_union_bad_offset = patched_record_batch_bytes(
+        dense_union,
+        (bytes, batch, rb) ->
+            patch_record_batch_buffer!(bytes, batch, rb, 2, Int32[0, 1, 0]),
+    )
+    assert_argument_error(
+        () -> Arrow.Table(IOBuffer(dense_union_bad_offset); convert=false),
+        "dense union column values has child offset out of bounds",
+    )
+
+    sparse_union_bad_type_id = patched_record_batch_bytes(
+        sparse_union,
+        (bytes, batch, rb) ->
+            patch_record_batch_buffer!(bytes, batch, rb, 1, UInt8[0x00, 0xff, 0x02]),
+    )
+    assert_argument_error(
+        () -> Arrow.Table(IOBuffer(sparse_union_bad_type_id); convert=false),
+        "union column values references undeclared type id 255",
+    )
+
+    @test Arrow._assert_sparse_union_layout!(
+        UInt8[0x00, 0x01, 0x00],
+        (Int64[1, 3], Float64[0, 2, 0]),
+        nothing,
+        3,
+        :values,
+    ) === nothing
 end
 
 @testset "View buffer count inference" begin
