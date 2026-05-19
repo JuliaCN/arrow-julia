@@ -37,6 +37,30 @@
         return
     end
 
+    function native_dictionary_values()
+        table = Arrow.Table(Arrow.tobuffer((values=["red", "blue"],)))
+        return Tables.getcolumn(table, :values)
+    end
+
+    function native_dictencoded_column(
+        ::Type{T},
+        indices,
+        validity=Arrow.ValidityBitmap(fill(true, length(indices))),
+    ) where {T}
+        values = native_dictionary_values()
+        encoding = Arrow.DictEncoding{T,eltype(indices),typeof(values)}(
+            Int64(1),
+            values,
+            false,
+            nothing,
+        )
+        return Arrow.DictEncoded(UInt8[], validity, indices, encoding, nothing)
+    end
+    native_dictencoded_column(
+        indices,
+        validity=Arrow.ValidityBitmap(fill(true, length(indices))),
+    ) = native_dictencoded_column(String, indices, validity)
+
     item = Tables.getcolumn(Arrow.Table(Arrow.tobuffer((item=Int32[1, 2, 3],))), :item)
     validity = Arrow.ValidityBitmap(fill(true, 2))
 
@@ -257,6 +281,45 @@
         ),
         "map offsets length 4 does not match logical length 1",
     )
+
+    negative_dictionary_index = native_dictencoded_column(Int8[0, -1])
+    assert_argument_error(
+        () -> Arrow.Table(
+            Arrow.tobuffer(
+                native_arrow_vector_table(:values, negative_dictionary_index);
+                ntasks=0,
+            );
+            convert=false,
+        ),
+        "dictionary column values has negative dictionary index",
+    )
+
+    out_of_bounds_dictionary_index = native_dictencoded_column(Int8[0, 2])
+    assert_argument_error(
+        () -> Arrow.Table(
+            Arrow.tobuffer(
+                native_arrow_vector_table(:values, out_of_bounds_dictionary_index);
+                ntasks=0,
+            );
+            convert=false,
+        ),
+        "dictionary column values has dictionary index out of bounds",
+    )
+
+    null_slot_dictionary_index = native_dictencoded_column(
+        Union{Missing,String},
+        Int8[0, 2],
+        Arrow.ValidityBitmap(Union{Missing,String}["red", missing]),
+    )
+    null_slot_table = Arrow.Table(
+        Arrow.tobuffer(
+            native_arrow_vector_table(:values, null_slot_dictionary_index);
+            ntasks=0,
+        );
+        convert=false,
+    )
+    @test Tables.getcolumn(null_slot_table, :values)[1] == "red"
+    @test ismissing(Tables.getcolumn(null_slot_table, :values)[2])
 end
 
 @testset "View buffer count inference" begin

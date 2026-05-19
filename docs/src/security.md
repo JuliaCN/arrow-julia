@@ -39,6 +39,8 @@ lead to unsafe indexing or misleading semantic interpretation:
   required, non-negative spans, and child/data bounds before materialization;
 - IPC Utf8, LargeUtf8, and Utf8View string values validate UTF-8 bytes for
   non-null slots before exposing Julia strings;
+- IPC dictionary-encoded columns validate non-null index slots against the
+  dictionary length before exposing borrowed `DictEncoded` vectors;
 - canonical extension metadata and storage contracts are parsed and validated
   for the supported canonical extension names before Arrow.jl returns
   converted semantic values;

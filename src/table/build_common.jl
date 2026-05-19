@@ -20,6 +20,34 @@ const LargeLists = Union{Meta.LargeUtf8,Meta.LargeBinary,Meta.LargeList,Meta.Lar
 const ViewTypes = Union{Meta.Utf8View,Meta.BinaryView}
 const ListViewTypes = Union{Meta.ListView,Meta.LargeListView}
 
+function _dictionary_index_as_int(raw_index, name)
+    return try
+        Int(raw_index)
+    catch
+        throw(ArgumentError("dictionary column $name has dictionary index too large"))
+    end
+end
+
+function _assert_dictionary_index_bounds!(
+    indices::AbstractVector,
+    encoding::DictEncoding,
+    validity::ValidityBitmap,
+    name::Symbol,
+)
+    dictionary_len = length(encoding)
+    for i in eachindex(indices)
+        @inbounds validity[i] || continue
+        raw_index = @inbounds indices[i]
+        index = _dictionary_index_as_int(raw_index, name)
+        index >= 0 ||
+            throw(ArgumentError("dictionary column $name has negative dictionary index"))
+        index < dictionary_len || throw(
+            ArgumentError("dictionary column $name has dictionary index out of bounds"),
+        )
+    end
+    return nothing
+end
+
 @inline function _viewbuffercount(validity, views, declared::Integer)
     count = Int(declared)
     for i in eachindex(views)
@@ -42,6 +70,12 @@ function build(field::Meta.Field, batch, rb, de, nodeidx, bufferidx, varbufferid
         bytes, indices = reinterp(S, batch, buffer, rb.compression)
         @lock de begin
             encoding = de[][d.id]
+            _assert_dictionary_index_bounds!(
+                indices,
+                encoding,
+                validity,
+                Symbol(field.name),
+            )
             A = DictEncoded(
                 bytes,
                 validity,
