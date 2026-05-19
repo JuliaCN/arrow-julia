@@ -100,17 +100,18 @@ function importtable(schema_ptr::Ptr{ArrowSchema}, array_ptr::Ptr{ArrowArray})
     array.n_children > 0 &&
         array.children == C_NULL &&
         throw(ArgumentError("top-level struct array has C_NULL children"))
-    names = Symbol[]
-    imported_columns = AbstractVector[]
+    child_count = Int(schema.n_children)
+    names = Vector{Symbol}(undef, child_count)
+    imported_columns = Vector{AbstractVector}(undef, child_count)
     top_validity =
         _nullable_field(schema, array) ?
         _validity_vector(array, Symbol("top-level struct")) : UInt8[]
     top_offset = _logical_offset(array)
-    for i = 1:schema.n_children
+    for i = 1:child_count
         child_schema_ptr = unsafe_load(schema.children, i)
         child_array_ptr = unsafe_load(array.children, i)
         name, column = _import_column_data(child_schema_ptr, child_array_ptr)
-        push!(names, name)
+        names[i] = name
         metadata = _metadata_from_schema_ptr(child_schema_ptr)
         imported_column =
             top_offset == 0 ? column :
@@ -123,7 +124,7 @@ function importtable(schema_ptr::Ptr{ArrowSchema}, array_ptr::Ptr{ArrowArray})
             end
         imported_column =
             _wrap_imported_row_validity(imported_column, top_validity, top_offset)
-        push!(imported_columns, _wrap_imported_metadata(imported_column, metadata))
+        imported_columns[i] = _wrap_imported_metadata(imported_column, metadata)
     end
     return ImportedTable(
         schema_ptr,

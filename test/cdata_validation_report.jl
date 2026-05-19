@@ -28,7 +28,7 @@ function measure(f)
         result[] = f()
     end
     elapsed_ms = (time_ns() - start) / 1_000_000
-    return result[], elapsed_ms, allocated
+    return (value=result[], elapsed_ms=elapsed_ms, allocated=allocated)
 end
 
 function cdata_perf_table(rows::Int)
@@ -71,14 +71,147 @@ end
 assert_zero_copy(exported, imported) = assert_zero_copy(CData.array(exported), imported)
 
 function checksum(imported)
-    ids = Tables.getcolumn(imported, :id)
-    names = Tables.getcolumn(imported, :name)
+    return checksum_columns(
+        Tables.getcolumn(imported, :id),
+        Tables.getcolumn(imported, :name),
+    )
+end
+
+function checksum_columns(ids::AbstractVector, names)
+    offsets = names.offsets
     total = 0
     @inbounds for i in eachindex(ids)
         total += Int(ids[i])
-        total += ncodeunits(names[i])
+        total += Int(offsets[i + 1]) - Int(offsets[i])
     end
     return total
+end
+
+noop_cleanup(_) = nothing
+
+function release_exported_table!(exported)
+    CData.release!(exported)
+    @assert CData.isreleased(exported)
+    return nothing
+end
+
+function release_exported_stream!(exported_stream)
+    CData.release!(exported_stream)
+    @assert CData.isreleased(exported_stream)
+    return nothing
+end
+
+function cleanup_base_import!(sample)
+    CData.release!(sample.imported)
+    @assert CData.isreleased(sample.imported)
+    @assert CData.isreleased(sample.exported)
+    return nothing
+end
+
+function cleanup_stream_open!(sample)
+    CData.release!(sample.imported_stream)
+    @assert CData.isreleased(sample.imported_stream)
+    @assert CData.isreleased(sample.exported_stream)
+    return nothing
+end
+
+function cleanup_stream_batch!(sample)
+    CData.release!(sample.batch)
+    @assert CData.isreleased(sample.batch)
+    CData.release!(sample.imported_stream)
+    @assert CData.isreleased(sample.imported_stream)
+    @assert CData.isreleased(sample.exported_stream)
+    return nothing
+end
+
+function cleanup_stream_batches!(sample)
+    foreach(CData.release!, sample.batches)
+    @assert all(CData.isreleased, sample.batches)
+    CData.release!(sample.imported_stream)
+    @assert CData.isreleased(sample.imported_stream)
+    @assert CData.isreleased(sample.exported_stream)
+    return nothing
+end
+
+function pull_stream_batch(imported_stream)
+    next = iterate(Tables.partitions(imported_stream))
+    next === nothing && error("expected one C Stream batch")
+    batch, _ = next
+    return batch
+end
+
+function operation_sample(value, measured)
+    return (value=value, elapsed_ms=measured.elapsed_ms, allocated=measured.allocated)
+end
+
+function measure_base_import(table)
+    exported = CData.exporttable(table)
+    measured = measure(
+        () -> CData.importtable(CData.schema_ptr(exported), CData.array_ptr(exported)),
+    )
+    return operation_sample((exported=exported, imported=measured.value), measured)
+end
+
+function measure_stream_open(table)
+    exported_stream = CData.exportstream(table)
+    measured = measure(() -> CData.importstream(CData.stream_ptr(exported_stream)))
+    return operation_sample(
+        (exported_stream=exported_stream, imported_stream=measured.value),
+        measured,
+    )
+end
+
+function measure_stream_batch(table)
+    exported_stream = CData.exportstream(table)
+    imported_stream = CData.importstream(CData.stream_ptr(exported_stream))
+    measured = measure(() -> pull_stream_batch(imported_stream))
+    return operation_sample(
+        (
+            exported_stream=exported_stream,
+            imported_stream=imported_stream,
+            batch=measured.value,
+        ),
+        measured,
+    )
+end
+
+function measure_stream_collect(table)
+    exported_stream = CData.exportstream(table)
+    imported_stream = CData.importstream(CData.stream_ptr(exported_stream))
+    measured = measure(() -> collect(Tables.partitions(imported_stream)))
+    return operation_sample(
+        (
+            exported_stream=exported_stream,
+            imported_stream=imported_stream,
+            batches=measured.value,
+        ),
+        measured,
+    )
+end
+
+function better_sample(candidate, current)
+    current === nothing && return true
+    candidate.allocated < current.allocated && return true
+    return candidate.allocated == current.allocated &&
+           candidate.elapsed_ms < current.elapsed_ms
+end
+
+function steady_measure(operation; cleanup=noop_cleanup, warmups::Int=2, samples::Int=5)
+    for _ = 1:warmups
+        sample = operation()
+        cleanup(sample.value)
+    end
+    best = nothing
+    for _ = 1:samples
+        sample = operation()
+        if better_sample(sample, best)
+            best === nothing || cleanup(best.value)
+            best = sample
+        else
+            cleanup(sample.value)
+        end
+    end
+    return best
 end
 
 function print_measure(label::AbstractString, elapsed_ms, allocated)
@@ -115,68 +248,110 @@ end
 function main()
     rows = parse(Int, get(ENV, "ARROW_CDATA_REPORT_ROWS", "100000"))
     rows > 0 || throw(ArgumentError("ARROW_CDATA_REPORT_ROWS must be positive"))
+    warmups = parse(Int, get(ENV, "ARROW_CDATA_REPORT_WARMUPS", "2"))
+    warmups >= 0 || throw(ArgumentError("ARROW_CDATA_REPORT_WARMUPS must be non-negative"))
+    samples = parse(Int, get(ENV, "ARROW_CDATA_REPORT_SAMPLES", "5"))
+    samples > 0 || throw(ArgumentError("ARROW_CDATA_REPORT_SAMPLES must be positive"))
 
-    table, prepare_ms, prepare_alloc = measure(() -> cdata_perf_table(rows))
-    exported, export_ms, export_alloc = measure(() -> CData.exporttable(table))
-    imported, import_ms, import_alloc = measure(
-        () -> CData.importtable(CData.schema_ptr(exported), CData.array_ptr(exported)),
+    prepared = measure(() -> cdata_perf_table(rows))
+    table = prepared.value
+    exported = steady_measure(
+        () -> measure(() -> CData.exporttable(table));
+        cleanup=(release_exported_table!),
+        warmups=warmups,
+        samples=samples,
+    )
+    imported = steady_measure(
+        () -> measure_base_import(table);
+        cleanup=(cleanup_base_import!),
+        warmups=warmups,
+        samples=samples,
     )
 
-    assert_zero_copy(exported, imported)
+    assert_zero_copy(imported.value.exported, imported.value.imported)
 
-    sum_value, scan_ms, scan_alloc = measure(() -> checksum(imported))
+    scanned = steady_measure(
+        () -> measure(() -> checksum(imported.value.imported));
+        warmups=warmups,
+        samples=samples,
+    )
 
-    exported_stream, stream_export_ms, stream_export_alloc =
-        measure(() -> CData.exportstream(table))
-    imported_stream, stream_open_ms, stream_open_alloc =
-        measure(() -> CData.importstream(CData.stream_ptr(exported_stream)))
-    stream_batches, stream_import_ms, stream_import_alloc =
-        measure(() -> collect(Tables.partitions(imported_stream)))
-    stream_batch = only(stream_batches)
+    exported_stream = steady_measure(
+        () -> measure(() -> CData.exportstream(table));
+        cleanup=(release_exported_stream!),
+        warmups=warmups,
+        samples=samples,
+    )
+    opened_stream = steady_measure(
+        () -> measure_stream_open(table);
+        cleanup=(cleanup_stream_open!),
+        warmups=warmups,
+        samples=samples,
+    )
+    stream_batch = steady_measure(
+        () -> measure_stream_batch(table);
+        cleanup=(cleanup_stream_batch!),
+        warmups=warmups,
+        samples=samples,
+    )
+    stream_collect = steady_measure(
+        () -> measure_stream_collect(table);
+        cleanup=(cleanup_stream_batches!),
+        warmups=warmups,
+        samples=samples,
+    )
 
-    assert_zero_copy(CData.array(stream_batch), stream_batch)
+    assert_zero_copy(CData.array(stream_batch.value.batch), stream_batch.value.batch)
 
-    stream_sum_value, stream_scan_ms, stream_scan_alloc =
-        measure(() -> checksum(stream_batch))
+    stream_scanned = steady_measure(
+        () -> measure(() -> checksum(stream_batch.value.batch));
+        warmups=warmups,
+        samples=samples,
+    )
 
     println("arrow_cdata_validation_report")
     println("rows=$(rows)")
-    print_measure("prepare", prepare_ms, prepare_alloc)
-    print_measure("export", export_ms, export_alloc)
-    print_measure("import", import_ms, import_alloc)
-    print_measure("scan", scan_ms, scan_alloc)
-    print_measure("stream_export", stream_export_ms, stream_export_alloc)
-    print_measure("stream_open", stream_open_ms, stream_open_alloc)
-    print_measure("stream_import", stream_import_ms, stream_import_alloc)
-    print_measure("stream_scan", stream_scan_ms, stream_scan_alloc)
+    println("warmups=$(warmups)")
+    println("samples=$(samples)")
+    print_measure("prepare", prepared.elapsed_ms, prepared.allocated)
+    print_measure("export", exported.elapsed_ms, exported.allocated)
+    print_measure("import", imported.elapsed_ms, imported.allocated)
+    print_measure("scan", scanned.elapsed_ms, scanned.allocated)
+    print_measure("stream_export", exported_stream.elapsed_ms, exported_stream.allocated)
+    print_measure("stream_open", opened_stream.elapsed_ms, opened_stream.allocated)
+    print_measure("stream_import", stream_batch.elapsed_ms, stream_batch.allocated)
+    print_measure("stream_collect", stream_collect.elapsed_ms, stream_collect.allocated)
+    print_measure("stream_scan", stream_scanned.elapsed_ms, stream_scanned.allocated)
     println("zero_copy_checks=passed")
-    println("checksum=$(sum_value)")
-    println("stream_checksum=$(stream_sum_value)")
+    println("checksum=$(scanned.value)")
+    println("stream_checksum=$(stream_scanned.value)")
     enforce_max(
         "import_alloc_bytes",
-        import_alloc,
+        imported.allocated,
         optional_int_limit("ARROW_CDATA_MAX_IMPORT_ALLOC_BYTES"),
     )
-    enforce_max("import_ms", import_ms, optional_float_limit("ARROW_CDATA_MAX_IMPORT_MS"))
+    enforce_max(
+        "import_ms",
+        imported.elapsed_ms,
+        optional_float_limit("ARROW_CDATA_MAX_IMPORT_MS"),
+    )
     enforce_max(
         "stream_import_alloc_bytes",
-        stream_import_alloc,
+        stream_batch.allocated,
         optional_int_limit("ARROW_CDATA_MAX_STREAM_IMPORT_ALLOC_BYTES"),
     )
     enforce_max(
         "stream_import_ms",
-        stream_import_ms,
+        stream_batch.elapsed_ms,
         optional_float_limit("ARROW_CDATA_MAX_STREAM_IMPORT_MS"),
     )
 
-    CData.release!(stream_batch)
-    @assert CData.isreleased(stream_batch)
-    CData.release!(imported_stream)
-    @assert CData.isreleased(imported_stream)
-    @assert CData.isreleased(exported_stream)
-    CData.release!(imported)
-    @assert CData.isreleased(imported)
-    @assert CData.isreleased(exported)
+    cleanup_stream_batches!(stream_collect.value)
+    cleanup_stream_batch!(stream_batch.value)
+    cleanup_stream_open!(opened_stream.value)
+    release_exported_stream!(exported_stream.value)
+    cleanup_base_import!(imported.value)
+    release_exported_table!(exported.value)
     return nothing
 end
 

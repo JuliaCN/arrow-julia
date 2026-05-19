@@ -407,11 +407,14 @@ and zero-copy receipt, run:
 julia --project=test test/cdata_validation_report.jl
 ```
 
-Set `ARROW_CDATA_REPORT_ROWS` to change the row count for that local report.
-The report prints base C Data and C Stream export/import/scan timings,
-allocation counts, checksums, and pointer-identity checks. CI gates obvious
-base and stream import allocation regressions while leaving wall-clock timings
-informational by default.
+Set `ARROW_CDATA_REPORT_ROWS` to change the row count for that local report;
+`ARROW_CDATA_REPORT_WARMUPS` and `ARROW_CDATA_REPORT_SAMPLES` tune the
+steady-state measurement loop. The report warms C Data and C Stream paths
+before printing base export/import/scan timings, C Stream export/open/import,
+consumer-side collection, scan timings, allocation counts, checksums, and
+pointer-identity checks. CI gates steady-state base and stream import
+allocation regressions while leaving wall-clock timings informational by
+default.
 See [C Data Interface Alignment](cdata_alignment.md) for the live support
 matrix and audit tracker.
 
