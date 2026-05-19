@@ -126,6 +126,7 @@ end
 
 const HANDLE_LOCK = ReentrantLock()
 const LIVE_HANDLES = Dict{Ptr{Cvoid},ExportHandle}()
+const EMPTY_METADATA_BYTES = UInt8[]
 
 function _retain!(handle::ExportHandle)
     ptr = Ptr{Cvoid}(pointer_from_objref(handle))
@@ -163,9 +164,9 @@ function _append_int32!(bytes::Vector{UInt8}, value::Integer)
 end
 
 function _metadata_bytes(metadata)
-    metadata === nothing && return UInt8[]
+    metadata === nothing && return EMPTY_METADATA_BYTES
     entries = [(String(key), String(metadata[key])) for key in keys(metadata)]
-    isempty(entries) && return UInt8[]
+    isempty(entries) && return EMPTY_METADATA_BYTES
     sort!(entries; by=first)
     bytes = UInt8[]
     _append_int32!(bytes, length(entries))

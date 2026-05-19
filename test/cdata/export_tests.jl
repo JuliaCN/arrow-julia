@@ -29,6 +29,7 @@
 
     @test _cstring(schema.format) == "+s"
     @test _cstring(schema.name) == ""
+    @test schema.metadata == C_NULL
     @test schema.n_children == 3
     @test array.length == 3
     @test array.null_count == 0
@@ -41,10 +42,13 @@
     flag_schema = _child_schema(schema, 3)
     @test _cstring(id_schema.format) == "i"
     @test _cstring(id_schema.name) == "id"
+    @test id_schema.metadata == C_NULL
     @test _cstring(score_schema.format) == "g"
     @test _cstring(score_schema.name) == "score"
+    @test score_schema.metadata == C_NULL
     @test _cstring(flag_schema.format) == "b"
     @test _cstring(flag_schema.name) == "flag"
+    @test flag_schema.metadata == C_NULL
 
     id_column = Tables.getcolumn(table, :id)
     score_column = Tables.getcolumn(table, :score)

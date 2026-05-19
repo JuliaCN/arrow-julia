@@ -326,6 +326,11 @@ function main()
     println("checksum=$(scanned.value)")
     println("stream_checksum=$(stream_scanned.value)")
     enforce_max(
+        "export_alloc_bytes",
+        exported.allocated,
+        optional_int_limit("ARROW_CDATA_MAX_EXPORT_ALLOC_BYTES"),
+    )
+    enforce_max(
         "import_alloc_bytes",
         imported.allocated,
         optional_int_limit("ARROW_CDATA_MAX_IMPORT_ALLOC_BYTES"),
@@ -334,6 +339,11 @@ function main()
         "import_ms",
         imported.elapsed_ms,
         optional_float_limit("ARROW_CDATA_MAX_IMPORT_MS"),
+    )
+    enforce_max(
+        "stream_export_alloc_bytes",
+        exported_stream.allocated,
+        optional_int_limit("ARROW_CDATA_MAX_STREAM_EXPORT_ALLOC_BYTES"),
     )
     enforce_max(
         "stream_import_alloc_bytes",

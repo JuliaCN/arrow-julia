@@ -413,10 +413,11 @@ steady-state measurement loop. The report warms C Data and C Stream paths
 before printing base export/import/scan timings, C Stream producer setup,
 open/import, consumer-side collection, scan timings, allocation counts,
 checksums, and pointer-identity checks. CI gates steady-state base and stream
-import allocation regressions while leaving wall-clock timings informational
-by default. The current local receipt keeps the base import path at 1792
-allocated bytes and the single-batch C Stream import path at 2016 allocated
-bytes for the default 100000-row report table.
+export/import allocation regressions while leaving wall-clock timings
+informational by default. The current local receipt keeps the base export path
+at 7776 allocated bytes, the base import path at 1792 allocated bytes, the
+C Stream export path at 8016 allocated bytes, and the single-batch C Stream
+import path at 2016 allocated bytes for the default 100000-row report table.
 See [C Data Interface Alignment](cdata_alignment.md) for the live support
 matrix and audit tracker.
 
