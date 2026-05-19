@@ -33,6 +33,11 @@ and
 [Arrow PyCapsule Interface](https://arrow.apache.org/docs/format/CDataInterface/PyCapsuleInterface.html)
 are adjacent specifications and are tracked separately below.
 
+Post-merge baseline:
+reviewed against the Apache Arrow v24.0.0 C Data, C Stream, C Device, and
+PyCapsule specification pages on 2026-05-19 after the CPU host-buffer
+C Data/C Stream closeout merged to `main`.
+
 Status labels:
 
 - `Covered`: implemented and covered by focused tests.
@@ -66,8 +71,8 @@ Status labels:
 | Logical scalar storage | Decimal, date, time, timestamp, duration, and interval storage use C Data format strings over physical buffers. | Arrow.jl-surfaced decimal, date, time, timestamp, duration, year-month interval, day-time interval, and month-day-nano interval storage exports. | The same surfaced logical scalar formats import over borrowed physical buffers. | Logical scalar tests, the format-mapping guard in `test/cdata/base_contract_tests.jl`, and `src/cdata/formats.jl`. | Covered | None. |
 | Array offsets | Consumers may receive arrays with non-zero `ArrowArray.offset` when buffers are large enough for `length + offset`. | Export emits zero-offset arrays. | Import honors non-zero offsets for supported top-level and child arrays, including bit-level validity and boolean buffers. | Offset-aware import tests in `test/cdata.jl`. | Covered | None. |
 | C Stream Interface | `ArrowArrayStream` is a pull-style stream of schemas and arrays using callbacks. | `exportstream` and `exportstream!` export an `Arrow.Table` as one pull-style `ArrowArrayStream` batch, followed by a released end-of-stream array; the single-batch producer precomputes schema/array exports and transfers cached ownership through the callbacks. | `importstream` borrows an `ArrowArrayStream` as an iterator of release-governed `ImportedStreamBatch` table views. | `src/cdata/stream.jl`, `include/arrow_julia_cdata.h`, `test/cdata/stream_tests.jl`, `test/cdata_smoke.c`. | Covered | Keep stream producer/import release behavior and unconsumed cached-export cleanup guarded by focused tests. |
-| C Device data interface | Device arrays and device streams carry memory-manager and device placement information. | Not exported as C Device. | Not imported as C Device. | Out-of-scope docs boundary. | Out of scope | `CDATA-AUDIT-009`. |
-| PyCapsule Interface | Python objects can expose Arrow C Data, Stream, and Device interfaces through capsule methods. | No PyCapsule producer. | No PyCapsule consumer. | Out-of-scope docs boundary. | Out of scope | `CDATA-AUDIT-010`. |
+| C Device data interface | Device arrays and device streams carry memory-manager and device placement information. This is separate from CPU C Data zero-copy. | Not exported as C Device. | Not imported as C Device. | Out-of-scope docs boundary; the official surface is experimental and requires a device-memory owner. | Out of scope | `CDATA-AUDIT-009`. |
+| PyCapsule Interface | Python objects can expose Arrow C Data, Stream, and Device interfaces through capsule methods. | No PyCapsule producer. | No PyCapsule consumer. | Out-of-scope docs boundary; this is a Python object protocol layered on top of C Data/C Stream ownership, not a base C ABI feature. | Out of scope | `CDATA-AUDIT-010`. |
 
 ## Audit Tracker
 
@@ -93,3 +98,7 @@ Status labels:
    tests.
 2. Keep `CDATA-AUDIT-009` and `CDATA-AUDIT-010` outside the current C Data
    base-scope unless a separate device or Python interop design is accepted.
+3. Keep CPU host-buffer zero-copy claims tied to C Data/C Stream pointer
+   identity receipts; do not extend those claims to device memory, Python
+   capsules, IPC serialization, or network Flight transport without separate
+   evidence.
