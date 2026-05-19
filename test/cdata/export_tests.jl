@@ -43,12 +43,18 @@
     @test _cstring(id_schema.format) == "i"
     @test _cstring(id_schema.name) == "id"
     @test id_schema.metadata == C_NULL
+    @test id_schema.n_children == 0
+    @test id_schema.children == C_NULL
     @test _cstring(score_schema.format) == "g"
     @test _cstring(score_schema.name) == "score"
     @test score_schema.metadata == C_NULL
+    @test score_schema.n_children == 0
+    @test score_schema.children == C_NULL
     @test _cstring(flag_schema.format) == "b"
     @test _cstring(flag_schema.name) == "flag"
     @test flag_schema.metadata == C_NULL
+    @test flag_schema.n_children == 0
+    @test flag_schema.children == C_NULL
 
     id_column = Tables.getcolumn(table, :id)
     score_column = Tables.getcolumn(table, :score)
@@ -60,6 +66,12 @@
     @test id_array.n_buffers == 2
     @test score_array.n_buffers == 2
     @test flag_array.n_buffers == 2
+    @test id_array.n_children == 0
+    @test id_array.children == C_NULL
+    @test score_array.n_children == 0
+    @test score_array.children == C_NULL
+    @test flag_array.n_children == 0
+    @test flag_array.children == C_NULL
     @test unsafe_load(id_array.buffers, 1) == C_NULL
     @test unsafe_load(score_array.buffers, 1) == C_NULL
     @test unsafe_load(flag_array.buffers, 1) == C_NULL

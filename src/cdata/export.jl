@@ -19,16 +19,19 @@ function _schema_export(
     name::AbstractString;
     flags::Integer=0,
     metadata=nothing,
-    children::Vector{SchemaExport}=SchemaExport[],
+    children::Vector{SchemaExport}=EMPTY_SCHEMA_EXPORTS,
     dictionary::Union{Nothing,SchemaExport}=nothing,
 )
     strings = [_cstring(format), _cstring(name)]
     metadata_bytes = _metadata_bytes(metadata)
-    child_refs = [child.ref for child in children]
-    child_handles = [child.handle for child in children]
-    child_ptrs = Ptr{ArrowSchema}[
-        Base.unsafe_convert(Ptr{ArrowSchema}, child.ref) for child in children
-    ]
+    child_refs = isempty(children) ? EMPTY_SCHEMA_REFS : [child.ref for child in children]
+    child_handles =
+        isempty(children) ? EMPTY_SCHEMA_HANDLES : [child.handle for child in children]
+    child_ptrs =
+        isempty(children) ? EMPTY_SCHEMA_PTRS :
+        Ptr{ArrowSchema}[
+            Base.unsafe_convert(Ptr{ArrowSchema}, child.ref) for child in children
+        ]
     dictionary_ref = dictionary === nothing ? nothing : dictionary.ref
     dictionary_handle = dictionary === nothing ? nothing : dictionary.handle
     dictionary_ptr =
@@ -258,14 +261,17 @@ function _array_export(
     len::Integer,
     null_count::Integer,
     buffers::Vector{Ptr{Cvoid}};
-    children::Vector{ArrayExport}=ArrayExport[],
+    children::Vector{ArrayExport}=EMPTY_ARRAY_EXPORTS,
     dictionary::Union{Nothing,ArrayExport}=nothing,
 )
-    child_refs = [child.ref for child in children]
-    child_handles = [child.handle for child in children]
-    child_ptrs = Ptr{ArrowArray}[
-        Base.unsafe_convert(Ptr{ArrowArray}, child.ref) for child in children
-    ]
+    child_refs = isempty(children) ? EMPTY_ARRAY_REFS : [child.ref for child in children]
+    child_handles =
+        isempty(children) ? EMPTY_ARRAY_HANDLES : [child.handle for child in children]
+    child_ptrs =
+        isempty(children) ? EMPTY_ARRAY_PTRS :
+        Ptr{ArrowArray}[
+            Base.unsafe_convert(Ptr{ArrowArray}, child.ref) for child in children
+        ]
     dictionary_ref = dictionary === nothing ? nothing : dictionary.ref
     dictionary_handle = dictionary === nothing ? nothing : dictionary.handle
     dictionary_ptr =

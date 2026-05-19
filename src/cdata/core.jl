@@ -101,6 +101,15 @@ struct ArrayExport
     handle::ArrayHandle
 end
 
+const EMPTY_SCHEMA_EXPORTS = SchemaExport[]
+const EMPTY_ARRAY_EXPORTS = ArrayExport[]
+const EMPTY_SCHEMA_REFS = Base.RefValue{ArrowSchema}[]
+const EMPTY_ARRAY_REFS = Base.RefValue{ArrowArray}[]
+const EMPTY_SCHEMA_HANDLES = SchemaHandle[]
+const EMPTY_ARRAY_HANDLES = ArrayHandle[]
+const EMPTY_SCHEMA_PTRS = Ptr{ArrowSchema}[]
+const EMPTY_ARRAY_PTRS = Ptr{ArrowArray}[]
+
 """
     Arrow.CData.ExportedTable
 
