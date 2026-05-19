@@ -99,6 +99,40 @@ end
     CData.release!(exported)
 end
 
+@testset "imports ArrowArrayStream batches" begin
+    table = Arrow.Table(Arrow.tobuffer((id=Int32[1, 2], name=["a", "b"])))
+    exported = CData.exportstream(table)
+    imported = CData.importstream(CData.stream_ptr(exported))
+
+    batches = collect(Tables.partitions(imported))
+    @test length(batches) == 1
+    batch = only(batches)
+    @test collect(Tables.getcolumn(batch, :id)) == Int32[1, 2]
+    @test collect(Tables.getcolumn(batch, :name)) == ["a", "b"]
+    @test Tables.columnnames(batch) == [:id, :name]
+    @test !CData.isreleased(batch)
+
+    CData.release!(batch)
+    @test CData.isreleased(batch)
+    @test !CData.isreleased(imported)
+    CData.release!(imported)
+    @test CData.isreleased(imported)
+    @test CData.isreleased(exported)
+end
+
+@testset "rejects invalid ArrowArrayStream imports" begin
+    @test_throws ArgumentError("ArrowArrayStream input pointer must not be C_NULL") CData.importstream(
+        Ptr{CData.ArrowArrayStream}(C_NULL),
+    )
+
+    table = Arrow.Table(Arrow.tobuffer((id=Int32[1],)))
+    exported = CData.exportstream(table)
+    CData.release!(exported)
+    @test_throws ArgumentError("cannot import released ArrowArrayStream") CData.importstream(
+        CData.stream_ptr(exported),
+    )
+end
+
 @testset "C smoke consumer validates stream callbacks" begin
     smoke_lib = _compile_cdata_smoke()
     before = CData._retained_handle_count()

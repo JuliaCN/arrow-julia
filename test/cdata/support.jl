@@ -100,6 +100,18 @@ end
 _julia_include_dir() = abspath(Sys.BINDIR, Base.INCLUDEDIR)
 _julia_lib_dir() = abspath(Sys.BINDIR, Base.LIBDIR)
 
+function _macos_deployment_target_flags(libjulia)
+    Sys.isapple() || return String[]
+    try
+        output = read(`otool -l $libjulia`, String)
+        build_version = match(r"LC_BUILD_VERSION.*?minos\s+([0-9.]+)"s, output)
+        build_version === nothing && return String[]
+        return ["-mmacosx-version-min=$(build_version.captures[1])"]
+    catch
+        return String[]
+    end
+end
+
 function _compile_cdata_embed_smoke()
     cc = get(ENV, "CC", "cc")
     source = _test_fixture("cdata_embed_smoke.c")
@@ -109,10 +121,12 @@ function _compile_cdata_embed_smoke()
     julia_include_private = joinpath(julia_include, "julia")
     julia_lib = _julia_lib_dir()
     julia_private_lib = joinpath(julia_lib, "julia")
+    deployment_flags =
+        _macos_deployment_target_flags(joinpath(julia_lib, "libjulia.$(Libdl.dlext)"))
     rpath_julia = "-Wl,-rpath,$julia_lib"
     rpath_private = "-Wl,-rpath,$julia_private_lib"
     run(
-        `$cc -I$include_dir -I$julia_include -I$julia_include_private $source -L$julia_lib -ljulia $rpath_julia $rpath_private -o $output`,
+        `$cc $deployment_flags -I$include_dir -I$julia_include -I$julia_include_private $source -L$julia_lib -ljulia $rpath_julia $rpath_private -o $output`,
     )
     return output
 end

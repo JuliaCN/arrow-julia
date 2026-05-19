@@ -37,6 +37,28 @@ mutable struct ExportedStream
     stream_base::Ptr{ArrowArrayStream}
 end
 
+"""
+    Arrow.CData.ImportedStream
+
+Borrowed iterator over `ArrowArrayStream` batches. Release it explicitly with
+[`Arrow.CData.release!`](@ref).
+"""
+mutable struct ImportedStream
+    stream_base::Ptr{ArrowArrayStream}
+end
+
+"""
+    Arrow.CData.ImportedStreamBatch
+
+Tables.jl-compatible batch imported from an `ArrowArrayStream`. Release it
+explicitly with [`Arrow.CData.release!`](@ref).
+"""
+mutable struct ImportedStreamBatch
+    table::ImportedTable
+    schema_ref::Base.RefValue{ArrowSchema}
+    array_ref::Base.RefValue{ArrowArray}
+end
+
 function ExportedStream(stream::StreamExport)
     return ExportedStream(stream, Base.unsafe_convert(Ptr{ArrowArrayStream}, stream.ref))
 end
@@ -173,6 +195,102 @@ function _stream_release_callback_ptr()
     return STREAM_RELEASE_CALLBACK[]
 end
 
+function _assert_import_stream_layout(stream_ptr::Ptr{ArrowArrayStream})
+    stream_ptr == C_NULL &&
+        throw(ArgumentError("ArrowArrayStream input pointer must not be C_NULL"))
+    stream = unsafe_load(stream_ptr)
+    stream.release == C_NULL &&
+        throw(ArgumentError("cannot import released ArrowArrayStream"))
+    stream.get_schema == C_NULL &&
+        throw(ArgumentError("ArrowArrayStream get_schema callback is C_NULL"))
+    stream.get_next == C_NULL &&
+        throw(ArgumentError("ArrowArrayStream get_next callback is C_NULL"))
+    return stream
+end
+
+function _stream_last_error(stream::ArrowArrayStream, stream_ptr::Ptr{ArrowArrayStream})
+    stream.get_last_error == C_NULL && return ""
+    ptr = ccall(stream.get_last_error, Ptr{UInt8}, (Ptr{ArrowArrayStream},), stream_ptr)
+    return ptr == C_NULL ? "" : unsafe_string(ptr)
+end
+
+function _stream_status_error(
+    stream::ArrowArrayStream,
+    stream_ptr::Ptr{ArrowArrayStream},
+    callback::AbstractString,
+)
+    detail = _stream_last_error(stream, stream_ptr)
+    message =
+        isempty(detail) ? "ArrowArrayStream $callback callback failed" :
+        "ArrowArrayStream $callback callback failed: $detail"
+    return ArgumentError(message)
+end
+
+function _get_next_stream_array(stream::ArrowArrayStream, stream_ptr::Ptr{ArrowArrayStream})
+    array_ref = Ref{ArrowArray}()
+    GC.@preserve array_ref begin
+        array_out = Base.unsafe_convert(Ptr{ArrowArray}, array_ref)
+        status = ccall(
+            stream.get_next,
+            Cint,
+            (Ptr{ArrowArrayStream}, Ptr{ArrowArray}),
+            stream_ptr,
+            array_out,
+        )
+        status == 0 || throw(_stream_status_error(stream, stream_ptr, "get_next"))
+        array_ref[].release == C_NULL && return nothing
+        return array_ref
+    end
+end
+
+function _get_stream_schema(
+    stream::ArrowArrayStream,
+    stream_ptr::Ptr{ArrowArrayStream},
+    array_ref::Base.RefValue{ArrowArray},
+)
+    schema_ref = Ref{ArrowSchema}()
+    GC.@preserve schema_ref begin
+        schema_out = Base.unsafe_convert(Ptr{ArrowSchema}, schema_ref)
+        status = ccall(
+            stream.get_schema,
+            Cint,
+            (Ptr{ArrowArrayStream}, Ptr{ArrowSchema}),
+            stream_ptr,
+            schema_out,
+        )
+        if status != 0
+            arr = array_ref[]
+            array_ptr = Base.unsafe_convert(Ptr{ArrowArray}, array_ref)
+            arr.release == C_NULL ||
+                ccall(arr.release, Cvoid, (Ptr{ArrowArray},), array_ptr)
+            throw(_stream_status_error(stream, stream_ptr, "get_schema"))
+        end
+        return schema_ref
+    end
+end
+
+function _import_stream_batch(stream::ArrowArrayStream, stream_ptr::Ptr{ArrowArrayStream})
+    array_ref = _get_next_stream_array(stream, stream_ptr)
+    array_ref === nothing && return nothing
+    schema_ref = _get_stream_schema(stream, stream_ptr, array_ref)
+    GC.@preserve schema_ref array_ref begin
+        schema_ptr = Base.unsafe_convert(Ptr{ArrowSchema}, schema_ref)
+        array_ptr = Base.unsafe_convert(Ptr{ArrowArray}, array_ref)
+        table = try
+            importtable(schema_ptr, array_ptr)
+        catch
+            arr = array_ref[]
+            arr.release == C_NULL ||
+                ccall(arr.release, Cvoid, (Ptr{ArrowArray},), array_ptr)
+            sch = schema_ref[]
+            sch.release == C_NULL ||
+                ccall(sch.release, Cvoid, (Ptr{ArrowSchema},), schema_ptr)
+            rethrow()
+        end
+        return ImportedStreamBatch(table, schema_ref, array_ref)
+    end
+end
+
 function _stream_export_for_table(table::Table)
     handle = StreamHandle(table, false, _cstring(""), C_NULL)
     private_data = _retain!(handle)
@@ -219,11 +337,25 @@ function exportstream!(stream_out::Ptr{ArrowArrayStream}, table::Table)
 end
 
 """
+    Arrow.CData.importstream(stream_ptr) -> Arrow.CData.ImportedStream
+
+Borrow an `ArrowArrayStream` as an iterator of
+[`Arrow.CData.ImportedStreamBatch`](@ref) table views. Each batch owns the
+caller-side `ArrowSchema` and `ArrowArray` storage returned by the stream
+callbacks and must be released with [`Arrow.CData.release!`](@ref).
+"""
+function importstream(stream_ptr::Ptr{ArrowArrayStream})
+    _assert_import_stream_layout(stream_ptr)
+    return ImportedStream(stream_ptr)
+end
+
+"""
     Arrow.CData.stream(exported)
 
 Return the current `ArrowArrayStream` value for an exported stream.
 """
 stream(exported::ExportedStream) = unsafe_load(stream_ptr(exported))
+stream(imported::ImportedStream) = unsafe_load(stream_ptr(imported))
 
 """
     Arrow.CData.stream_ptr(exported)
@@ -231,6 +363,7 @@ stream(exported::ExportedStream) = unsafe_load(stream_ptr(exported))
 Return a pointer to the exported stream's `ArrowArrayStream` base struct.
 """
 stream_ptr(exported::ExportedStream) = exported.stream_base
+stream_ptr(imported::ImportedStream) = imported.stream_base
 
 """
     Arrow.CData.isreleased(exported::Arrow.CData.ExportedStream)
@@ -238,6 +371,35 @@ stream_ptr(exported::ExportedStream) = exported.stream_base
 Return whether an exported C Stream has been released.
 """
 isreleased(exported::ExportedStream) = stream(exported).release == C_NULL
+isreleased(imported::ImportedStream) = stream(imported).release == C_NULL
+isreleased(batch::ImportedStreamBatch) = isreleased(batch.table)
+
+schema_ptr(batch::ImportedStreamBatch) = schema_ptr(batch.table)
+array_ptr(batch::ImportedStreamBatch) = array_ptr(batch.table)
+schema(batch::ImportedStreamBatch) = schema(batch.table)
+array(batch::ImportedStreamBatch) = array(batch.table)
+getmetadata(batch::ImportedStreamBatch) = getmetadata(batch.table)
+
+Tables.istable(::Type{ImportedStreamBatch}) = true
+Tables.columnaccess(::Type{ImportedStreamBatch}) = true
+Tables.columns(batch::ImportedStreamBatch) = batch
+Tables.columnnames(batch::ImportedStreamBatch) = Tables.columnnames(batch.table)
+Tables.schema(batch::ImportedStreamBatch) = Tables.schema(batch.table)
+Tables.getcolumn(batch::ImportedStreamBatch, index::Int) =
+    Tables.getcolumn(batch.table, index)
+Tables.getcolumn(batch::ImportedStreamBatch, name::Symbol) =
+    Tables.getcolumn(batch.table, name)
+
+Tables.partitions(stream::ImportedStream) = stream
+Base.IteratorSize(::Type{ImportedStream}) = Base.SizeUnknown()
+Base.eltype(::Type{ImportedStream}) = ImportedStreamBatch
+
+function Base.iterate(imported::ImportedStream, state=nothing)
+    st = _assert_import_stream_layout(stream_ptr(imported))
+    batch = _import_stream_batch(st, stream_ptr(imported))
+    batch === nothing && return nothing
+    return batch, state
+end
 
 """
     Arrow.CData.release!(exported::Arrow.CData.ExportedStream)
@@ -250,3 +412,12 @@ function release!(exported::ExportedStream)
         ccall(st.release, Cvoid, (Ptr{ArrowArrayStream},), stream_ptr(exported))
     return exported
 end
+
+function release!(imported::ImportedStream)
+    st = stream(imported)
+    st.release == C_NULL ||
+        ccall(st.release, Cvoid, (Ptr{ArrowArrayStream},), stream_ptr(imported))
+    return imported
+end
+
+release!(batch::ImportedStreamBatch) = (release!(batch.table); batch)

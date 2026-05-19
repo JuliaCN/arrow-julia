@@ -30,6 +30,8 @@ which borrows top-level struct arrays with matching supported column layouts.
 The first C Stream producer surface is [`Arrow.CData.exportstream`](@ref),
 which exposes a single `Arrow.Table` as one pull-style `ArrowArrayStream`
 batch over the same C Data layout and release callbacks.
+[`Arrow.CData.importstream`](@ref) borrows `ArrowArrayStream` batches as
+release-governed imported table views.
 """
 module CData
 
@@ -98,6 +100,8 @@ export ArrowArray,
     ImportedRowValidityVector,
     ImportedRunEndEncodedVector,
     ImportedSparseUnionVector,
+    ImportedStream,
+    ImportedStreamBatch,
     ImportedStringVector,
     ImportedStringViewVector,
     ImportedStructVector,
@@ -109,6 +113,7 @@ export ArrowArray,
     exporttable,
     exporttable!,
     header_path,
+    importstream,
     importtable,
     isreleased,
     release!,
@@ -125,8 +130,8 @@ include("cdata/core.jl")
 include("cdata/formats.jl")
 include("cdata/lifecycle.jl")
 include("cdata/export.jl")
-include("cdata/stream.jl")
 include("cdata/imported_vectors.jl")
 include("cdata/import.jl")
+include("cdata/stream.jl")
 
 end # module CData
