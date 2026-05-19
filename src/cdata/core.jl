@@ -68,7 +68,8 @@ end
 abstract type ExportHandle end
 
 mutable struct SchemaHandle <: ExportHandle
-    strings::Vector{Vector{UInt8}}
+    format::Vector{UInt8}
+    name::Vector{UInt8}
     metadata::Vector{UInt8}
     children::Vector{Base.RefValue{ArrowSchema}}
     child_handles::Vector{SchemaHandle}

@@ -22,7 +22,8 @@ function _schema_export(
     children::Vector{SchemaExport}=EMPTY_SCHEMA_EXPORTS,
     dictionary::Union{Nothing,SchemaExport}=nothing,
 )
-    strings = [_schema_format_cstring(format), _schema_name_cstring(name)]
+    format_bytes = _schema_format_cstring(format)
+    name_bytes = _schema_name_cstring(name)
     metadata_bytes = _metadata_bytes(metadata)
     child_refs = isempty(children) ? EMPTY_SCHEMA_REFS : [child.ref for child in children]
     child_handles =
@@ -38,7 +39,8 @@ function _schema_export(
         dictionary === nothing ? Ptr{ArrowSchema}(C_NULL) :
         Base.unsafe_convert(Ptr{ArrowSchema}, dictionary.ref)
     handle = SchemaHandle(
-        strings,
+        format_bytes,
+        name_bytes,
         metadata_bytes,
         child_refs,
         child_handles,
@@ -51,8 +53,8 @@ function _schema_export(
     private_data = _retain!(handle)
     handle.private_data = private_data
     schema = ArrowSchema(
-        _cstring_ptr(strings[1]),
-        _cstring_ptr(strings[2]),
+        _cstring_ptr(format_bytes),
+        _cstring_ptr(name_bytes),
         _metadata_ptr(metadata_bytes),
         Int64(flags),
         Int64(length(children)),

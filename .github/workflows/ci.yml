@@ -268,9 +268,9 @@ jobs:
           Pkg.instantiate()
       - name: Run C Data validation report
         env:
-          ARROW_CDATA_MAX_EXPORT_ALLOC_BYTES: '7168'
+          ARROW_CDATA_MAX_EXPORT_ALLOC_BYTES: '6656'
           ARROW_CDATA_MAX_IMPORT_ALLOC_BYTES: '4096'
-          ARROW_CDATA_MAX_STREAM_EXPORT_ALLOC_BYTES: '7168'
+          ARROW_CDATA_MAX_STREAM_EXPORT_ALLOC_BYTES: '6656'
           ARROW_CDATA_MAX_STREAM_IMPORT_ALLOC_BYTES: '4096'
         run: julia --color=yes --project=test test/cdata_validation_report.jl
   ipc_performance:
