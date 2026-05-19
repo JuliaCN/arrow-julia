@@ -398,15 +398,20 @@ native-endian key/value byte layout, and omitted metadata is represented as
 `C_NULL`, not an empty string. Binary and UTF-8 view arrays include the C Data
 extra variadic-buffer-lengths buffer after the variadic data buffers.
 
-The focused validation suite in `test/cdata.jl` checks supported format strings,
-buffer pointer identity, negative layout validation, and release idempotency.
-For a performance and zero-copy receipt, run:
+The focused validation suite in `test/cdata.jl` checks supported format
+strings, buffer pointer identity, negative layout validation, C Stream
+callbacks, and release idempotency. For a base C Data plus C Stream performance
+and zero-copy receipt, run:
 
 ```julia
 julia --project=test test/cdata_validation_report.jl
 ```
 
 Set `ARROW_CDATA_REPORT_ROWS` to change the row count for that local report.
+The report prints base C Data and C Stream export/import/scan timings,
+allocation counts, checksums, and pointer-identity checks. CI gates obvious
+base and stream import allocation regressions while leaving wall-clock timings
+informational by default.
 See [C Data Interface Alignment](cdata_alignment.md) for the live support
 matrix and audit tracker.
 
