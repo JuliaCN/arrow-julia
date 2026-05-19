@@ -17,6 +17,8 @@
 mutable struct StreamHandle <: ExportHandle
     source::Table
     emitted::Bool
+    schema_export::Union{Nothing,SchemaExport}
+    array_export::Union{Nothing,ArrayExport}
     last_error::Vector{UInt8}
     private_data::Ptr{Cvoid}
 end
@@ -80,6 +82,56 @@ function _set_stream_error!(handle::StreamHandle, err)
     return Cint(1)
 end
 
+function _clear_stream_error!(handle::StreamHandle)
+    resize!(handle.last_error, 1)
+    handle.last_error[1] = 0x00
+    return nothing
+end
+
+function _release_schema_export!(schema_export::SchemaExport)
+    schema = schema_export.ref[]
+    schema.release == C_NULL && return nothing
+    schema_ptr = Base.unsafe_convert(Ptr{ArrowSchema}, schema_export.ref)
+    ccall(schema.release, Cvoid, (Ptr{ArrowSchema},), schema_ptr)
+    return nothing
+end
+
+function _release_array_export!(array_export::ArrayExport)
+    array = array_export.ref[]
+    array.release == C_NULL && return nothing
+    array_ptr = Base.unsafe_convert(Ptr{ArrowArray}, array_export.ref)
+    ccall(array.release, Cvoid, (Ptr{ArrowArray},), array_ptr)
+    return nothing
+end
+
+function _release_cached_stream_exports!(handle::StreamHandle)
+    schema_export = handle.schema_export
+    if schema_export !== nothing
+        _release_schema_export!(schema_export)
+        handle.schema_export = nothing
+    end
+    array_export = handle.array_export
+    if array_export !== nothing
+        _release_array_export!(array_export)
+        handle.array_export = nothing
+    end
+    return nothing
+end
+
+function _take_stream_schema_export!(handle::StreamHandle)
+    schema_export = handle.schema_export
+    schema_export === nothing && return _schema_export_for_table(handle.source)
+    handle.schema_export = nothing
+    return schema_export
+end
+
+function _take_stream_array_export!(handle::StreamHandle)
+    array_export = handle.array_export
+    array_export === nothing && return _array_export_for_table(handle.source)
+    handle.array_export = nothing
+    return array_export
+end
+
 function _released_array()
     return ArrowArray(
         Int64(0),
@@ -104,9 +156,9 @@ function _stream_get_schema_callback(
     try
         schema_out == C_NULL &&
             throw(ArgumentError("ArrowSchema output pointer must not be C_NULL"))
-        schema_export = _schema_export_for_table(handle.source)
+        schema_export = _take_stream_schema_export!(handle)
         unsafe_store!(schema_out, schema_export.ref[])
-        handle.last_error = _cstring("")
+        _clear_stream_error!(handle)
         return Cint(0)
     catch err
         return _set_stream_error!(handle, err)
@@ -124,13 +176,13 @@ function _stream_get_next_callback(
             throw(ArgumentError("ArrowArray output pointer must not be C_NULL"))
         if handle.emitted
             unsafe_store!(array_out, _released_array())
-            handle.last_error = _cstring("")
+            _clear_stream_error!(handle)
             return Cint(0)
         end
-        array_export = _array_export_for_table(handle.source)
+        array_export = _take_stream_array_export!(handle)
         unsafe_store!(array_out, array_export.ref[])
         handle.emitted = true
-        handle.last_error = _cstring("")
+        _clear_stream_error!(handle)
         return Cint(0)
     catch err
         return _set_stream_error!(handle, err)
@@ -147,6 +199,8 @@ function _stream_release_callback(stream_ptr::Ptr{ArrowArrayStream})
     stream_ptr == C_NULL && return nothing
     stream = unsafe_load(stream_ptr)
     stream.release == C_NULL && return nothing
+    handle = _stream_handle(stream_ptr)
+    handle === nothing || _release_cached_stream_exports!(handle)
     _release_handle!(stream.private_data)
     unsafe_store!(stream_ptr, ArrowArrayStream(C_NULL, C_NULL, C_NULL, C_NULL, C_NULL))
     return nothing
@@ -292,7 +346,14 @@ function _import_stream_batch(stream::ArrowArrayStream, stream_ptr::Ptr{ArrowArr
 end
 
 function _stream_export_for_table(table::Table)
-    handle = StreamHandle(table, false, _cstring(""), C_NULL)
+    schema_export = _schema_export_for_table(table)
+    array_export = try
+        _array_export_for_table(table)
+    catch
+        _release_schema_export!(schema_export)
+        rethrow()
+    end
+    handle = StreamHandle(table, false, schema_export, array_export, _cstring(""), C_NULL)
     private_data = _retain!(handle)
     handle.private_data = private_data
     stream = ArrowArrayStream(

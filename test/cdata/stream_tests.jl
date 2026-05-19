@@ -99,6 +99,59 @@ end
     CData.release!(exported)
 end
 
+@testset "releases unconsumed cached stream exports" begin
+    before = CData._retained_handle_count()
+    table = Arrow.Table(Arrow.tobuffer((id=Int32[1, 2], name=["a", "b"])))
+    exported = CData.exportstream(table)
+    @test CData._retained_handle_count() > before
+
+    CData.release!(exported)
+    @test CData.isreleased(exported)
+    @test CData._retained_handle_count() == before
+end
+
+@testset "refreshes transferred stream schemas" begin
+    before = CData._retained_handle_count()
+    table = Arrow.Table(Arrow.tobuffer((id=Int32[1, 2], name=["a", "b"])))
+    exported = CData.exportstream(table)
+    stream_ptr = CData.stream_ptr(exported)
+    stream = CData.stream(exported)
+
+    schema_ref = Ref{CData.ArrowSchema}()
+    second_schema_ref = Ref{CData.ArrowSchema}()
+    GC.@preserve schema_ref second_schema_ref begin
+        schema_out = Base.unsafe_convert(Ptr{CData.ArrowSchema}, schema_ref)
+        second_schema_out = Base.unsafe_convert(Ptr{CData.ArrowSchema}, second_schema_ref)
+        @test ccall(
+            stream.get_schema,
+            Cint,
+            (Ptr{CData.ArrowArrayStream}, Ptr{CData.ArrowSchema}),
+            stream_ptr,
+            schema_out,
+        ) == 0
+        @test ccall(
+            stream.get_schema,
+            Cint,
+            (Ptr{CData.ArrowArrayStream}, Ptr{CData.ArrowSchema}),
+            stream_ptr,
+            second_schema_out,
+        ) == 0
+        @test unsafe_string(schema_ref[].format) == "+s"
+        @test unsafe_string(second_schema_ref[].format) == "+s"
+        ccall(schema_ref[].release, Cvoid, (Ptr{CData.ArrowSchema},), schema_out)
+        ccall(
+            second_schema_ref[].release,
+            Cvoid,
+            (Ptr{CData.ArrowSchema},),
+            second_schema_out,
+        )
+    end
+
+    CData.release!(exported)
+    @test CData.isreleased(exported)
+    @test CData._retained_handle_count() == before
+end
+
 @testset "imports ArrowArrayStream batches" begin
     table = Arrow.Table(Arrow.tobuffer((id=Int32[1, 2], name=["a", "b"])))
     exported = CData.exportstream(table)

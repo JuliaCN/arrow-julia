@@ -268,8 +268,8 @@ jobs:
           Pkg.instantiate()
       - name: Run C Data validation report
         env:
-          ARROW_CDATA_MAX_IMPORT_ALLOC_BYTES: '20000'
-          ARROW_CDATA_MAX_STREAM_IMPORT_ALLOC_BYTES: '50000'
+          ARROW_CDATA_MAX_IMPORT_ALLOC_BYTES: '10000'
+          ARROW_CDATA_MAX_STREAM_IMPORT_ALLOC_BYTES: '10000'
         run: julia --color=yes --project=test test/cdata_validation_report.jl
   ipc_performance:
     name: IPC performance - Julia 1 - ubuntu-latest
