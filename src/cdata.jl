@@ -17,8 +17,8 @@
 """
     Arrow.CData
 
-Low-level Apache Arrow C Data Interface bindings for in-process sharing of
-Arrow buffers with C-compatible consumers.
+Low-level Apache Arrow C Data and C Stream Interface bindings for in-process
+sharing of Arrow buffers with C-compatible consumers.
 
 The first supported producer surface is [`Arrow.CData.exporttable`](@ref),
 which exports an `Arrow.Table` as a top-level struct array when all columns are
@@ -27,6 +27,9 @@ encoded Arrow vectors, including binary/UTF-8 view, dense/sparse union, and
 run-end encoded layouts. Logical scalar primitive storage uses standard C Data
 format strings. The first import surface is [`Arrow.CData.importtable`](@ref),
 which borrows top-level struct arrays with matching supported column layouts.
+The first C Stream producer surface is [`Arrow.CData.exportstream`](@ref),
+which exposes a single `Arrow.Table` as one pull-style `ArrowArrayStream`
+batch over the same C Data layout and release callbacks.
 """
 module CData
 
@@ -75,7 +78,9 @@ import ..Arrow:
     validitybitmap
 
 export ArrowArray,
+    ArrowArrayStream,
     ArrowSchema,
+    ExportedStream,
     ExportedTable,
     ImportedBinaryVector,
     ImportedBoolVector,
@@ -99,6 +104,8 @@ export ArrowArray,
     ImportedTable,
     array,
     array_ptr,
+    exportstream,
+    exportstream!,
     exporttable,
     exporttable!,
     header_path,
@@ -106,7 +113,9 @@ export ArrowArray,
     isreleased,
     release!,
     schema,
-    schema_ptr
+    schema_ptr,
+    stream,
+    stream_ptr
 
 const ARROW_FLAG_DICTIONARY_ORDERED = Int64(1)
 const ARROW_FLAG_NULLABLE = Int64(2)
@@ -116,6 +125,7 @@ include("cdata/core.jl")
 include("cdata/formats.jl")
 include("cdata/lifecycle.jl")
 include("cdata/export.jl")
+include("cdata/stream.jl")
 include("cdata/imported_vectors.jl")
 include("cdata/import.jl")
 

@@ -322,8 +322,8 @@ installed package.
 The focused C Data tests also compile a standalone C executable that embeds
 Julia, loads Arrow.jl, exports into C-owned `ArrowSchema` / `ArrowArray`
 structs, validates them from C, and releases them from C. That smoke is an
-integration proof for the low-level ABI; Arrow.jl does not yet provide a
-stable high-level C table-construction or embedding library.
+integration proof for the low-level ABI; Arrow.jl does not provide a stable
+high-level C table-construction or embedding library.
 
 [`Arrow.CData.importtable`](@ref) provides the first import-side surface. It
 borrows a top-level C Data struct array as a Tables.jl-compatible view when
@@ -367,6 +367,16 @@ explicit errors. The surface is meant for same-process FFI consumers that can us
 standard Arrow C Data Interface pointers. It is not a cross-process or network
 zero-copy transport; use Arrow IPC or Arrow Flight for persistence and
 transport.
+
+[`Arrow.CData.exportstream`](@ref) provides the first C Stream producer
+surface. It exports an `Arrow.Table` as a single `ArrowArrayStream` batch whose
+`get_schema` and `get_next` callbacks hand out C Data `ArrowSchema` and
+`ArrowArray` structs with normal release callbacks. The second `get_next` call
+returns the standard end-of-stream `ArrowArray` with `release == C_NULL`.
+Callers that own stream storage can use [`Arrow.CData.exportstream!`](@ref)
+with an `ArrowArrayStream*` output pointer. This is still a same-process FFI
+surface and does not imply C Stream import, Python capsule methods, or device
+memory support.
 
 Map support follows the standard `+m` C Data layout with Int32 offsets and one
 entries struct child. Arrow.jl map columns that use large-list Int64 offsets are

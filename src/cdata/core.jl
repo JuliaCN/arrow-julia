@@ -51,6 +51,20 @@ struct ArrowArray
     private_data::Ptr{Cvoid}
 end
 
+"""
+    Arrow.CData.ArrowArrayStream
+
+ABI-compatible representation of the Apache Arrow C Stream Interface
+`ArrowArrayStream` struct.
+"""
+struct ArrowArrayStream
+    get_schema::Ptr{Cvoid}
+    get_next::Ptr{Cvoid}
+    get_last_error::Ptr{Cvoid}
+    release::Ptr{Cvoid}
+    private_data::Ptr{Cvoid}
+end
+
 abstract type ExportHandle end
 
 mutable struct SchemaHandle <: ExportHandle

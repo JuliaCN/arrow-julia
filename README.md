@@ -73,10 +73,11 @@ including support for:
   * Run-End Encoded arrays, including native `Arrow.RunEndEncoded` IPC read/write roundtrips and compressed child-buffer payloads
   * Streaming, file, record batch, and replacement and isdelta dictionary messages
   * In-process C Data Interface export and import through `Arrow.CData`, including nested, dictionary, union, run-end encoded, logical scalar, metadata, and release-governed same-process zero-copy surfaces
+  * Single-batch C Stream Interface export through `Arrow.CData.exportstream`, using `ArrowArrayStream` callbacks over the same C Data layouts
 
 It currently doesn't include support for:
   * Tensor or sparse tensor IPC payload semantics; Arrow.jl now recognizes those message headers explicitly and rejects them with precise errors instead of falling through to a generic unsupported-message path
-  * C Stream Interface, C Device Interface, or PyCapsule protocol surfaces
+  * C Stream import, C Device Interface, or PyCapsule protocol surfaces
 
 Flight RPC status:
   * Experimental `Arrow.Flight` support is available in-tree

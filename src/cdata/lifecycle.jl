@@ -96,6 +96,7 @@ end
 
 function __init__()
     _init_release_callbacks!()
+    _init_stream_callbacks!()
     return nothing
 end
 

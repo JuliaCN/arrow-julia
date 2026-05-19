@@ -31,9 +31,11 @@ extern "C" {
 
 struct ArrowSchema;
 struct ArrowArray;
+struct ArrowArrayStream;
 
 typedef struct ArrowSchema ArrowSchema;
 typedef struct ArrowArray ArrowArray;
+typedef struct ArrowArrayStream ArrowArrayStream;
 
 struct ArrowSchema {
     const char *format;
@@ -60,6 +62,14 @@ struct ArrowArray {
     void *private_data;
 };
 
+struct ArrowArrayStream {
+    int (*get_schema)(struct ArrowArrayStream *, struct ArrowSchema *out);
+    int (*get_next)(struct ArrowArrayStream *, struct ArrowArray *out);
+    const char *(*get_last_error)(struct ArrowArrayStream *);
+    void (*release)(struct ArrowArrayStream *);
+    void *private_data;
+};
+
 static inline int arrow_julia_cdata_schema_is_released(const struct ArrowSchema *schema)
 {
     return schema == 0 || schema->release == 0;
@@ -68,6 +78,11 @@ static inline int arrow_julia_cdata_schema_is_released(const struct ArrowSchema 
 static inline int arrow_julia_cdata_array_is_released(const struct ArrowArray *array)
 {
     return array == 0 || array->release == 0;
+}
+
+static inline int arrow_julia_cdata_stream_is_released(const struct ArrowArrayStream *stream)
+{
+    return stream == 0 || stream->release == 0;
 }
 
 static inline void arrow_julia_cdata_release_schema(struct ArrowSchema *schema)
@@ -90,6 +105,13 @@ static inline void arrow_julia_cdata_release_pair(
 {
     arrow_julia_cdata_release_array(array);
     arrow_julia_cdata_release_schema(schema);
+}
+
+static inline void arrow_julia_cdata_release_stream(struct ArrowArrayStream *stream)
+{
+    if (stream != 0 && stream->release != 0) {
+        stream->release(stream);
+    }
 }
 
 #ifdef __cplusplus

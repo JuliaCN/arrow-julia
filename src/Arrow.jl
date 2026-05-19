@@ -27,10 +27,11 @@ This implementation supports the 1.0 version of the specification, including sup
   * Streaming, file, record batch, and replacement and isdelta dictionary messages
   * Buffer compression/decompression via the standard LZ4 frame and Zstd formats
   * In-process C Data Interface producer/import surfaces for standard `Arrow.Table` column layouts, including nested, dictionary, union, run-end encoded, and logical scalar physical storage
+  * A single-batch C Stream Interface producer over `Arrow.CData.ArrowArrayStream`
 
 It currently doesn't include support for:
   * Tensors or sparse tensors
-  * C Stream Interface or C Device Interface
+  * C Stream import, C Device Interface, or PyCapsule protocol surfaces
 
 Flight RPC status:
   * Experimental `Arrow.Flight` support is available in-tree

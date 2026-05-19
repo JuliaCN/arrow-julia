@@ -87,3 +87,51 @@ int arrow_julia_cdata_smoke_release_schema(struct ArrowSchema *schema)
     arrow_julia_cdata_release_schema(schema);
     return arrow_julia_cdata_schema_is_released(schema) ? 0 : 2;
 }
+
+int arrow_julia_cdata_smoke_validate_stream(struct ArrowArrayStream *stream)
+{
+    struct ArrowSchema schema = {0};
+    struct ArrowArray array = {0};
+    struct ArrowArray eos = {0};
+    int validation;
+
+    if (stream == 0) {
+        return 1;
+    }
+    if (arrow_julia_cdata_stream_is_released(stream)) {
+        return 2;
+    }
+    if (stream->get_schema == 0 || stream->get_next == 0 || stream->get_last_error == 0) {
+        return 3;
+    }
+    if (stream->get_schema(stream, &schema) != 0) {
+        return 4;
+    }
+    if (stream->get_next(stream, &array) != 0) {
+        arrow_julia_cdata_release_schema(&schema);
+        return 5;
+    }
+
+    validation = arrow_julia_cdata_smoke_validate(&schema, &array);
+    if (validation != 0) {
+        arrow_julia_cdata_release_pair(&schema, &array);
+        arrow_julia_cdata_release_stream(stream);
+        return 20 + validation;
+    }
+
+    if (stream->get_next(stream, &eos) != 0) {
+        arrow_julia_cdata_release_pair(&schema, &array);
+        arrow_julia_cdata_release_stream(stream);
+        return 50;
+    }
+    if (!arrow_julia_cdata_array_is_released(&eos)) {
+        arrow_julia_cdata_release_pair(&schema, &array);
+        arrow_julia_cdata_release_array(&eos);
+        arrow_julia_cdata_release_stream(stream);
+        return 51;
+    }
+
+    arrow_julia_cdata_release_pair(&schema, &array);
+    arrow_julia_cdata_release_stream(stream);
+    return arrow_julia_cdata_stream_is_released(stream) ? 0 : 52;
+}

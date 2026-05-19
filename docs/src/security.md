@@ -21,11 +21,12 @@
 
 # Security and Robustness
 
-Arrow.jl reads Arrow IPC, C Data, and Flight payloads as in-process data. It
-does not sandbox parsing, allocate data in a separate trust domain, or turn
-untrusted input into a security boundary by itself. Applications that accept
-Arrow data from untrusted peers should keep normal process isolation, resource
-limits, and transport authentication outside Arrow.jl.
+Arrow.jl reads Arrow IPC, C Data, and Flight payloads as in-process data, and
+exposes C Stream producers over the same C Data ownership model. It does not
+sandbox parsing, allocate data in a separate trust domain, or turn untrusted
+input into a security boundary by itself. Applications that accept Arrow data
+from untrusted peers should keep normal process isolation, resource limits, and
+transport authentication outside Arrow.jl.
 
 ## Checked Layout Boundaries
 
