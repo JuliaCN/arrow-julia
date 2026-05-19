@@ -22,7 +22,7 @@ function _schema_export(
     children::Vector{SchemaExport}=EMPTY_SCHEMA_EXPORTS,
     dictionary::Union{Nothing,SchemaExport}=nothing,
 )
-    strings = [_cstring(format), _cstring(name)]
+    strings = [_schema_format_cstring(format), _schema_name_cstring(name)]
     metadata_bytes = _metadata_bytes(metadata)
     child_refs = isempty(children) ? EMPTY_SCHEMA_REFS : [child.ref for child in children]
     child_handles =

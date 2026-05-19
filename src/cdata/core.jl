@@ -109,6 +109,33 @@ const EMPTY_SCHEMA_HANDLES = SchemaHandle[]
 const EMPTY_ARRAY_HANDLES = ArrayHandle[]
 const EMPTY_SCHEMA_PTRS = Ptr{ArrowSchema}[]
 const EMPTY_ARRAY_PTRS = Ptr{ArrowArray}[]
+const EMPTY_CSTRING = UInt8[0x00]
+const CSTRING_FORMAT_NULL = UInt8[UInt8('n'), 0x00]
+const CSTRING_FORMAT_BOOL = UInt8[UInt8('b'), 0x00]
+const CSTRING_FORMAT_INT8 = UInt8[UInt8('c'), 0x00]
+const CSTRING_FORMAT_UINT8 = UInt8[UInt8('C'), 0x00]
+const CSTRING_FORMAT_INT16 = UInt8[UInt8('s'), 0x00]
+const CSTRING_FORMAT_UINT16 = UInt8[UInt8('S'), 0x00]
+const CSTRING_FORMAT_INT32 = UInt8[UInt8('i'), 0x00]
+const CSTRING_FORMAT_UINT32 = UInt8[UInt8('I'), 0x00]
+const CSTRING_FORMAT_INT64 = UInt8[UInt8('l'), 0x00]
+const CSTRING_FORMAT_UINT64 = UInt8[UInt8('L'), 0x00]
+const CSTRING_FORMAT_FLOAT16 = UInt8[UInt8('e'), 0x00]
+const CSTRING_FORMAT_FLOAT32 = UInt8[UInt8('f'), 0x00]
+const CSTRING_FORMAT_FLOAT64 = UInt8[UInt8('g'), 0x00]
+const CSTRING_FORMAT_UTF8 = UInt8[UInt8('u'), 0x00]
+const CSTRING_FORMAT_LARGE_UTF8 = UInt8[UInt8('U'), 0x00]
+const CSTRING_FORMAT_BINARY = UInt8[UInt8('z'), 0x00]
+const CSTRING_FORMAT_LARGE_BINARY = UInt8[UInt8('Z'), 0x00]
+const CSTRING_FORMAT_UTF8_VIEW = UInt8[UInt8('v'), UInt8('u'), 0x00]
+const CSTRING_FORMAT_BINARY_VIEW = UInt8[UInt8('v'), UInt8('z'), 0x00]
+const CSTRING_FORMAT_STRUCT = UInt8[UInt8('+'), UInt8('s'), 0x00]
+const CSTRING_FORMAT_LIST = UInt8[UInt8('+'), UInt8('l'), 0x00]
+const CSTRING_FORMAT_LARGE_LIST = UInt8[UInt8('+'), UInt8('L'), 0x00]
+const CSTRING_FORMAT_LIST_VIEW = UInt8[UInt8('+'), UInt8('v'), UInt8('l'), 0x00]
+const CSTRING_FORMAT_LARGE_LIST_VIEW = UInt8[UInt8('+'), UInt8('v'), UInt8('L'), 0x00]
+const CSTRING_FORMAT_MAP = UInt8[UInt8('+'), UInt8('m'), 0x00]
+const CSTRING_FORMAT_RUN_END_ENCODED = UInt8[UInt8('+'), UInt8('r'), 0x00]
 
 """
     Arrow.CData.ExportedTable
@@ -162,6 +189,38 @@ function _cstring(value::AbstractString)
 end
 
 _cstring_ptr(bytes::Vector{UInt8}) = pointer(bytes)
+
+function _schema_format_cstring(value::AbstractString)
+    value == "n" && return CSTRING_FORMAT_NULL
+    value == "b" && return CSTRING_FORMAT_BOOL
+    value == "c" && return CSTRING_FORMAT_INT8
+    value == "C" && return CSTRING_FORMAT_UINT8
+    value == "s" && return CSTRING_FORMAT_INT16
+    value == "S" && return CSTRING_FORMAT_UINT16
+    value == "i" && return CSTRING_FORMAT_INT32
+    value == "I" && return CSTRING_FORMAT_UINT32
+    value == "l" && return CSTRING_FORMAT_INT64
+    value == "L" && return CSTRING_FORMAT_UINT64
+    value == "e" && return CSTRING_FORMAT_FLOAT16
+    value == "f" && return CSTRING_FORMAT_FLOAT32
+    value == "g" && return CSTRING_FORMAT_FLOAT64
+    value == "u" && return CSTRING_FORMAT_UTF8
+    value == "U" && return CSTRING_FORMAT_LARGE_UTF8
+    value == "z" && return CSTRING_FORMAT_BINARY
+    value == "Z" && return CSTRING_FORMAT_LARGE_BINARY
+    value == "vu" && return CSTRING_FORMAT_UTF8_VIEW
+    value == "vz" && return CSTRING_FORMAT_BINARY_VIEW
+    value == "+s" && return CSTRING_FORMAT_STRUCT
+    value == "+l" && return CSTRING_FORMAT_LIST
+    value == "+L" && return CSTRING_FORMAT_LARGE_LIST
+    value == "+vl" && return CSTRING_FORMAT_LIST_VIEW
+    value == "+vL" && return CSTRING_FORMAT_LARGE_LIST_VIEW
+    value == "+m" && return CSTRING_FORMAT_MAP
+    value == "+r" && return CSTRING_FORMAT_RUN_END_ENCODED
+    return _cstring(value)
+end
+
+_schema_name_cstring(value::AbstractString) = value == "" ? EMPTY_CSTRING : _cstring(value)
 
 function _append_int32!(bytes::Vector{UInt8}, value::Integer)
     value > typemax(Int32) &&
