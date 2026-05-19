@@ -42,7 +42,7 @@ function _import_fixed_size_list_column(
     length(values) >= list_size * (offset + Int(array.length)) ||
         throw(ArgumentError("fixed-size-list column $name child array is too short"))
     nullable = _nullable_field(schema, array)
-    validity = nullable ? _validity_vector(array, name) : UInt8[]
+    validity = nullable ? _validity_vector(array, name) : EMPTY_VALIDITY
     return ImportedFixedSizeListVector(
         Val(list_size),
         values,
@@ -80,7 +80,7 @@ function _import_dictionary_column(schema::ArrowSchema, array::ArrowArray, name:
     index_ptr = unsafe_load(array.buffers, 2)
     I = _storage_type_for_format(_import_format(schema))
     nullable = _nullable_field(schema, array)
-    validity = nullable ? _validity_vector(array, name) : UInt8[]
+    validity = nullable ? _validity_vector(array, name) : EMPTY_VALIDITY
     array.length == 0 &&
         return ImportedDictionaryVector(I[], dictionary, validity, 0, nullable, 0)
     index_ptr == C_NULL &&
@@ -138,7 +138,7 @@ function _import_list_column(
     offsets = _wrap_buffer(O, offsets_ptr, _logical_length(array) + 1, offset)
     _assert_list_offsets!(offsets, values, name)
     nullable = _nullable_field(schema, array)
-    validity = nullable ? _validity_vector(array, name) : UInt8[]
+    validity = nullable ? _validity_vector(array, name) : EMPTY_VALIDITY
     return ImportedListVector(
         offsets,
         values,
@@ -191,7 +191,7 @@ function _import_list_view_column(
         array.length == 0 ? O[] : _wrap_buffer(O, sizes_ptr, _logical_length(array), offset)
     _assert_list_view_spans!(offsets, sizes, values, name)
     nullable = _nullable_field(schema, array)
-    validity = nullable ? _validity_vector(array, name) : UInt8[]
+    validity = nullable ? _validity_vector(array, name) : EMPTY_VALIDITY
     return ImportedListViewVector(
         offsets,
         sizes,
@@ -230,7 +230,7 @@ function _import_map_column(schema::ArrowSchema, array::ArrowArray, name::Symbol
     )
     _assert_list_offsets!(offsets, entries, name, "map")
     nullable = _nullable_field(schema, array)
-    validity = nullable ? _validity_vector(array, name) : UInt8[]
+    validity = nullable ? _validity_vector(array, name) : EMPTY_VALIDITY
     return ImportedMapVector(
         offsets,
         entries,
@@ -382,7 +382,7 @@ function _import_struct_column(schema::ArrowSchema, array::ArrowArray, name::Sym
         push!(columns, child)
     end
     nullable = _nullable_field(schema, array)
-    validity = nullable ? _validity_vector(array, name) : UInt8[]
+    validity = nullable ? _validity_vector(array, name) : EMPTY_VALIDITY
     return ImportedStructVector(
         names,
         columns,

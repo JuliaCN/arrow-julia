@@ -17,6 +17,8 @@
 _logical_offset(array::ArrowArray) = Int(array.offset)
 _logical_length(array::ArrowArray) = Int(array.length)
 
+const EMPTY_VALIDITY = UInt8[]
+
 _validity_nbytes(len::Integer, offset::Integer=0) = len == 0 ? 0 : Int(cld(len + offset, 8))
 
 function _buffer_pointer(::Type{T}, ptr::Ptr{Cvoid}, offset::Integer=0) where {T}
@@ -42,8 +44,8 @@ function _validity_vector(array::ArrowArray, name::Symbol)
         throw(ArgumentError("nullable column $name has C_NULL validity buffer"))
     end
     nbytes = _validity_nbytes(array.length, array.offset)
-    nbytes == 0 && return UInt8[]
-    validity_ptr == C_NULL && return UInt8[]
+    nbytes == 0 && return EMPTY_VALIDITY
+    validity_ptr == C_NULL && return EMPTY_VALIDITY
     return unsafe_wrap(Vector{UInt8}, Ptr{UInt8}(validity_ptr), nbytes; own=false)
 end
 

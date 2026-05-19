@@ -341,7 +341,7 @@ intervals. Imported tables must be released explicitly with
 [`Arrow.CData.release!`](@ref). C Data import preserves
 `ARROW:extension:name` and `ARROW:extension:metadata` field metadata as a raw
 storage fallback; it does not reconstruct Julia extension wrapper values.
-C Stream, C Device, and PyCapsule import paths remain unsupported.
+C Device and PyCapsule import paths remain unsupported.
 Imported arrays honor non-zero `ArrowArray.offset` values for the supported
 layouts, including bit-level offsets for validity and boolean buffers.
 Imported C Data schema and field metadata are decoded from
@@ -412,9 +412,11 @@ Set `ARROW_CDATA_REPORT_ROWS` to change the row count for that local report;
 steady-state measurement loop. The report warms C Data and C Stream paths
 before printing base export/import/scan timings, C Stream producer setup,
 open/import, consumer-side collection, scan timings, allocation counts,
-checksums, and pointer-identity checks. CI gates steady-state base and stream import
-allocation regressions while leaving wall-clock timings informational by
-default.
+checksums, and pointer-identity checks. CI gates steady-state base and stream
+import allocation regressions while leaving wall-clock timings informational
+by default. The current local receipt keeps the base import path at 1792
+allocated bytes and the single-batch C Stream import path at 2016 allocated
+bytes for the default 100000-row report table.
 See [C Data Interface Alignment](cdata_alignment.md) for the live support
 matrix and audit tracker.
 

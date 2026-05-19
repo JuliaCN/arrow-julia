@@ -105,7 +105,7 @@ function importtable(schema_ptr::Ptr{ArrowSchema}, array_ptr::Ptr{ArrowArray})
     imported_columns = Vector{AbstractVector}(undef, child_count)
     top_validity =
         _nullable_field(schema, array) ?
-        _validity_vector(array, Symbol("top-level struct")) : UInt8[]
+        _validity_vector(array, Symbol("top-level struct")) : EMPTY_VALIDITY
     top_offset = _logical_offset(array)
     for i = 1:child_count
         child_schema_ptr = unsafe_load(schema.children, i)

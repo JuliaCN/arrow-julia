@@ -28,7 +28,7 @@ function _import_bool_column(schema::ArrowSchema, array::ArrowArray, name::Symbo
     array.n_buffers == 2 ||
         throw(ArgumentError("bool column $name must expose two buffers"))
     nullable = _nullable_field(schema, array)
-    validity = nullable ? _validity_vector(array, name) : UInt8[]
+    validity = nullable ? _validity_vector(array, name) : EMPTY_VALIDITY
     data = _bitmap_vector(array, name, 2, "bool")
     offset = _logical_offset(array)
     return ImportedBoolVector(
@@ -50,7 +50,7 @@ function _import_primitive_column(schema::ArrowSchema, array::ArrowArray, name::
     data_ptr = unsafe_load(array.buffers, 2)
     T = _storage_type_for_format(_import_format(schema))
     nullable = _nullable_field(schema, array)
-    validity = nullable ? _validity_vector(array, name) : UInt8[]
+    validity = nullable ? _validity_vector(array, name) : EMPTY_VALIDITY
     array.length == 0 &&
         return nullable ? ImportedNullablePrimitiveVector(T[], validity, 0, 0) : T[]
     data_ptr == C_NULL &&
@@ -86,7 +86,7 @@ function _import_string_column(
         unsafe_wrap(Vector{UInt8}, Ptr{UInt8}(data_ptr), data_len; own=false)
     values = ImportedStringVector(offsets, data, Int(array.length))
     nullable = _nullable_field(schema, array)
-    validity = nullable ? _validity_vector(array, name) : UInt8[]
+    validity = nullable ? _validity_vector(array, name) : EMPTY_VALIDITY
     _assert_utf8_spans!(offsets, data, validity, _logical_length(array), name, offset)
     return nullable ? ImportedNullableStringVector(values, validity, offset) : values
 end
@@ -115,7 +115,7 @@ function _import_binary_column(
         data_len == 0 ? UInt8[] :
         unsafe_wrap(Vector{UInt8}, Ptr{UInt8}(data_ptr), data_len; own=false)
     nullable = _nullable_field(schema, array)
-    validity = nullable ? _validity_vector(array, name) : UInt8[]
+    validity = nullable ? _validity_vector(array, name) : EMPTY_VALIDITY
     return ImportedBinaryVector(
         offsets,
         data,
@@ -180,7 +180,7 @@ function _import_view_column(
         )
     end
     nullable = _nullable_field(schema, array)
-    validity = nullable ? _validity_vector(array, name) : UInt8[]
+    validity = nullable ? _validity_vector(array, name) : EMPTY_VALIDITY
     _assert_view_spans!(views, buffers, validity, name, offset)
     if utf8
         _assert_utf8_view_spans!(views, inline, buffers, validity, name, offset)
@@ -245,7 +245,7 @@ function _import_fixed_size_binary_column(
         throw(ArgumentError("fixed-size-binary column $name has C_NULL data buffer")) :
         _wrap_byte_buffer(data_ptr, nbytes, offset * width)
     nullable = _nullable_field(schema, array)
-    validity = nullable ? _validity_vector(array, name) : UInt8[]
+    validity = nullable ? _validity_vector(array, name) : EMPTY_VALIDITY
     return ImportedFixedSizeBinaryVector(
         Val(width),
         data,
