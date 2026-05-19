@@ -104,9 +104,10 @@ One note on performance: when writing `TimeZones.ZonedDateTime` columns to the a
 as the column has `ZonedDateTime` elements that all share a common timezone. This ensures the writing process can know "upfront" which timezone will be encoded and is thus much more
 efficient and performant.
 
-Run-End Encoded arrays are now supported on the read path. Arrow.jl exposes REE
-columns as read-only vectors and continues to reject REE on write paths, rather
-than attempting a partial or lossy re-encoding.
+Run-End Encoded arrays are supported on read and write paths when callers use
+native `Arrow.RunEndEncoded` columns. Arrow.jl preserves the official REE
+layout with bufferless parent arrays and `run_ends` / `values` children; it
+does not automatically run-end encode ordinary Julia vectors.
 
 Tensor and SparseTensor IPC messages are still unsupported, but Arrow.jl now
 recognizes those message headers explicitly and rejects them with precise
@@ -274,7 +275,151 @@ argument is an in-process `Arrow.Flight.Service`.
 
 Arrow.jl now treats `Arrow.Flight` as a protocol-plus-server package surface.
 Package-owned interop and performance proofs run through external Python
-clients instead of an in-package Julia Flight gRPC client runtime.
+clients instead of an in-package Julia Flight gRPC client runtime. The current
+boundary is queryable through [`Arrow.Flight.flight_client_runtime_capabilities`](@ref)
+and [`Arrow.Flight.flight_client_runtime_supported`](@ref); adding a Julia
+Flight client runtime would require a dedicated dependency, API, and live
+client test design.
+
+### IPC Performance Receipt
+
+The focused IPC performance receipt is `test/ipc_performance_report.jl`. It
+generates a representative primitive, boolean, UTF-8, and binary table, warms
+the runtime path, then reports Arrow IPC stream and file write timings,
+metadata-read timings, scan timings, allocations, byte sizes, throughput, row
+counts, and checksums. Metadata-read and scan timings are intentionally
+separate: constructing `Arrow.Table` or `Arrow.Stream` is a lightweight
+metadata-wrapping path, while the scan receipt proves the columns can be
+visited and checked without changing the IPC support claim into a full
+application benchmark.
+
+```julia
+julia --project=test test/ipc_performance_report.jl
+```
+
+Set `ARROW_IPC_REPORT_ROWS` to change the row count. Optional
+`ARROW_IPC_MAX_*` environment variables can enforce local timing or allocation
+limits, but the default CI receipt keeps wall-clock timing informational.
+
+### C Data Interface
+
+Arrow.jl provides a first in-process producer surface for the Apache Arrow C
+Data Interface through [`Arrow.CData.exporttable`](@ref). The helper exports an
+`Arrow.Table` as a top-level struct array with `ArrowSchema` and `ArrowArray`
+base structs. The returned owner object keeps schema strings, child structs,
+buffer pointer arrays, and the source Julia Arrow buffers alive until
+[`Arrow.CData.release!`](@ref) is called or an external C consumer calls the
+base structs' `release` callbacks.
+
+Callers that already own C Data base struct storage can use
+[`Arrow.CData.exporttable!`](@ref) with `ArrowSchema*` and `ArrowArray*`
+output pointers. The returned owner object still keeps Julia-owned member
+memory alive, while [`Arrow.CData.schema_ptr`](@ref) and
+[`Arrow.CData.array_ptr`](@ref) refer to the caller-owned base structs.
+The package also ships `include/arrow_julia_cdata.h`; use
+[`Arrow.CData.header_path`](@ref) to locate that C consumer header from an
+installed package.
+The focused C Data tests also compile a standalone C executable that embeds
+Julia, loads Arrow.jl, exports into C-owned `ArrowSchema` / `ArrowArray`
+structs, validates them from C, and releases them from C. That smoke is an
+integration proof for the low-level ABI; Arrow.jl does not provide a stable
+high-level C table-construction or embedding library.
+
+[`Arrow.CData.importtable`](@ref) provides the first import-side surface. It
+borrows a top-level C Data struct array as a Tables.jl-compatible view when
+all child fields are primitive, boolean, UTF-8, large UTF-8, binary, large
+binary, UTF-8 view, or binary view columns, including nullable columns with
+validity bitmaps, dictionary encoded columns over those value arrays, or
+variable-size list columns over imported child arrays, fixed-size-binary and
+fixed-size-list columns, list-view columns over imported offsets, sizes, and
+child arrays, map columns over entries structs, dense and sparse union columns
+over imported child arrays, run-end encoded columns over imported `run_ends`
+and `values` children, struct columns over imported child arrays, null columns,
+and logical scalar columns such as decimals, dates, times, timestamps,
+durations, year-month intervals, day-time intervals, and month-day-nano
+intervals. Imported tables must be released explicitly with
+[`Arrow.CData.release!`](@ref). C Data import preserves
+`ARROW:extension:name` and `ARROW:extension:metadata` field metadata as a raw
+storage fallback; it does not reconstruct Julia extension wrapper values.
+C Device and PyCapsule import paths remain unsupported.
+Imported arrays honor non-zero `ArrowArray.offset` values for the supported
+layouts, including bit-level offsets for validity and boolean buffers.
+Imported C Data schema and field metadata are decoded from
+`ArrowSchema.metadata` and exposed through [`Arrow.getmetadata`](@ref) on the
+imported table and metadata-bearing imported columns without changing borrowed
+data-buffer ownership.
+Nullable top-level struct arrays are imported by applying the top-level
+validity bitmap to each borrowed column, so invalid record-batch rows read as
+`missing` while child buffers remain borrowed.
+
+This producer surface supports primitive, boolean, UTF-8 string, binary, UTF-8
+view, binary view, list, list-view, fixed-size, map, dense/sparse union,
+run-end encoded, struct, and dictionary encoded columns, including schema and
+field metadata encoded on the exported `ArrowSchema` objects. Null columns and
+logical scalar primitive storage use their standard C Data format strings, for
+example `n`, `d:precision,scale`, `tdD`, `ttn`, `tsm:`, and `tDm`. Union columns use
+`+ud:<ids>` for dense unions and `+us:<ids>` for sparse unions. Run-end encoded
+columns use `+r` with `run_ends` and `values` children. Binary and UTF-8 view
+columns use `vz` and `vu`, including the C Data variadic-buffer-lengths buffer.
+List-view columns use `+vl` and `+vL` through `Arrow.ListView`, which carries
+offsets, sizes, and one child value array. Unsupported layouts still fail with
+explicit errors. The surface is meant for same-process FFI consumers that can use
+standard Arrow C Data Interface pointers. It is not a cross-process or network
+zero-copy transport; use Arrow IPC or Arrow Flight for persistence and
+transport.
+
+[`Arrow.CData.exportstream`](@ref) provides the C Stream producer surface. It
+exports an `Arrow.Table` as a single `ArrowArrayStream` batch whose
+`get_schema` and `get_next` callbacks hand out C Data `ArrowSchema` and
+`ArrowArray` structs with normal release callbacks. The second `get_next` call
+returns the standard end-of-stream `ArrowArray` with `release == C_NULL`.
+Callers that own stream storage can use [`Arrow.CData.exportstream!`](@ref)
+with an `ArrowArrayStream*` output pointer.
+[`Arrow.CData.importstream`](@ref) borrows an `ArrowArrayStream` as an iterator
+of [`Arrow.CData.ImportedStreamBatch`](@ref) table views. Each pulled batch uses
+the existing C Data `importtable` validation path and must be released with
+[`Arrow.CData.release!`](@ref). This is still a same-process FFI surface and
+does not imply Python capsule methods or device memory support.
+
+Map support follows the standard `+m` C Data layout with Int32 offsets and one
+entries struct child. Arrow.jl map columns that use large-list Int64 offsets are
+rejected explicitly because the C Data map format does not carry an offset-width
+variant.
+
+Arrow.CData's scope is intentionally aligned to the official
+[Arrow C Data Interface](https://arrow.apache.org/docs/format/CDataInterface.html):
+the interface is ABI-stable, same-process, and release-callback governed. It
+does not provide a high-level C API, cross-process sharing, or persistence.
+`ArrowSchema.format`, `ArrowSchema.name`, `ArrowSchema.metadata`,
+`ArrowSchema.children`, `ArrowSchema.dictionary`, `ArrowArray.buffers`,
+`ArrowArray.children`, `ArrowArray.dictionary`, and both `release` callbacks are
+retained by the Julia owner object until release. Metadata follows the official
+native-endian key/value byte layout, and omitted metadata is represented as
+`C_NULL`, not an empty string. Binary and UTF-8 view arrays include the C Data
+extra variadic-buffer-lengths buffer after the variadic data buffers.
+
+The focused validation suite in `test/cdata.jl` checks supported format
+strings, buffer pointer identity, negative layout validation, C Stream
+callbacks, and release idempotency. For a base C Data plus C Stream performance
+and zero-copy receipt, run:
+
+```julia
+julia --project=test test/cdata_validation_report.jl
+```
+
+Set `ARROW_CDATA_REPORT_ROWS` to change the row count for that local report;
+`ARROW_CDATA_REPORT_WARMUPS` and `ARROW_CDATA_REPORT_SAMPLES` tune the
+steady-state measurement loop. The report warms C Data and C Stream paths
+before printing base export/import/scan timings, C Stream producer setup,
+open/import, consumer-side collection, scan timings, allocation counts,
+checksums, and pointer-identity checks. CI gates steady-state base and stream
+export/import allocation regressions while leaving wall-clock timings
+informational by default. The current local receipt keeps the base export path
+at 5472 allocated bytes, the base import path at 1792 allocated bytes, the
+C Stream export path at 5712 allocated bytes, and the single-batch C Stream
+import path at 2016 allocated bytes for the default 100000-row report table.
+See [C Data Interface Alignment](cdata_alignment.md) for the live support
+matrix and audit tracker.
 
 Arrow.jl now ships built-in `PureHTTP2.jl` transport helpers in the Flight
 server core for package-owned h2c listeners,
@@ -298,16 +443,26 @@ loaded so the optional extension can bridge `Flight.Service` into the latest
 extension can provide `Arrow.Flight.nghttp2_flight_server(...)`. The current
 nghttp2 backend proves unary plus buffered server-streaming methods with
 trailer-borne `grpc-status`, while request-streaming `Handshake`, `DoPut`, and
-`DoExchange` remain unsupported there. The matching `pyarrow.flight` smoke coverage
-against that live Julia server currently spans all of those except
-`PollFlightInfo`, because the Python client surface used in the test
-environment does not expose a poll API. A separate focused runner,
+`DoExchange` remain unsupported there. The matching Python smoke coverage
+against that live Julia server spans those methods, including low-level
+generated-stub `Handshake` token propagation and `PollFlightInfo` proofs
+because the `pyarrow.flight` client surface used in the test environment does
+not expose every high-level control-plane API. A separate focused runner,
 `test/flight_purehttp2_perf.jl`, now measures large-response end-to-end
-`DoGet` performance on that same package-owned listener through a reusable
-backend-factory seam, and it can replay concurrent soak rounds via
+`DoGet`, `DoPut`, bounded same-client reused `DoPut`, and `DoExchange`
+performance on that same package-owned listener through reusable backend
+factory hooks, and it can replay concurrent soak rounds via
 `ARROW_FLIGHT_PYARROW_CONCURRENT_CLIENTS`,
 `ARROW_FLIGHT_PYARROW_REQUESTS_PER_CLIENT`, and
-`ARROW_FLIGHT_PYARROW_SOAK_ROUNDS`. A second focused runner,
+`ARROW_FLIGHT_PYARROW_SOAK_ROUNDS`; the same-client upload receipt count is
+controlled by `ARROW_FLIGHT_PYARROW_REUSED_DOPUT_REQUESTS` and defaults to two
+sequential large uploads, while the dedicated same-client upload soak count is
+controlled by `ARROW_FLIGHT_PYARROW_REUSED_DOPUT_SOAK_ROUNDS` and defaults to
+four rounds against one server. Each round opens one PyArrow client and runs
+the configured reused-upload count. Set
+`ARROW_FLIGHT_PYARROW_REUSED_DOPUT_MIN_THROUGHPUT_MIB_PER_SEC` to a positive
+number to make that local soak enforce an environment-specific throughput
+floor. A second focused runner,
 `test/flight_nghttp2_probe.jl`,
 verifies the currently exported `Nghttp2Wrapper.jl` low-level session /
 callback / submit hooks and raw h2c substrate behavior. A third focused

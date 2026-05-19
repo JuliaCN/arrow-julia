@@ -357,7 +357,7 @@ timestampAddTimezone(b::FlatBuffers.Builder, timezone::FlatBuffers.UOffsetT) =
     FlatBuffers.prependoffsetslot!(b, 1, timezone, 0)
 timestampEnd(b::FlatBuffers.Builder) = FlatBuffers.endobject!(b)
 
-@enumx IntervalUnit::Int16 YEAR_MONTH DAY_TIME
+@enumx IntervalUnit::Int16 YEAR_MONTH DAY_TIME MONTH_DAY_NANO
 
 struct Interval <: FlatBuffers.Table
     bytes::Vector{UInt8}
@@ -543,6 +543,11 @@ function Type(::Base.Type{T})::Int16 where {T}
     T == LargeBinary && return 19
     T == LargeUtf8 && return 20
     T == LargeList && return 21
+    T == RunEndEncoded && return 22
+    T == BinaryView && return 23
+    T == Utf8View && return 24
+    T == ListView && return 25
+    T == LargeListView && return 26
     return 0
 end
 

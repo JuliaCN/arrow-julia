@@ -30,6 +30,8 @@ makedocs(;
     pages=[
         "Home" => "index.md",
         "User Manual" => "manual.md",
+        "Full Arrow Alignment" => "arrow_alignment_audit.md",
+        "C Data Alignment" => "cdata_alignment.md",
         "API Reference" => "reference.md",
     ],
 )

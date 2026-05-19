@@ -1,0 +1,518 @@
+{
+  "schema": {
+    "metadata": [
+      {
+        "key": "fixture",
+        "value": "canonical-extensions"
+      }
+    ],
+    "fields": [
+      {
+        "name": "uuid_ext",
+        "type": {
+          "name": "fixedsizebinary",
+          "byteWidth": 16
+        },
+        "nullable": true,
+        "children": [],
+        "metadata": [
+          {
+            "key": "ARROW:extension:name",
+            "value": "arrow.uuid"
+          },
+          {
+            "key": "ARROW:extension:metadata",
+            "value": ""
+          }
+        ]
+      },
+      {
+        "name": "bool8_ext",
+        "type": {
+          "name": "int",
+          "isSigned": true,
+          "bitWidth": 8
+        },
+        "nullable": true,
+        "children": [],
+        "metadata": [
+          {
+            "key": "ARROW:extension:name",
+            "value": "arrow.bool8"
+          },
+          {
+            "key": "ARROW:extension:metadata",
+            "value": ""
+          }
+        ]
+      },
+      {
+        "name": "json_ext",
+        "type": {
+          "name": "utf8"
+        },
+        "nullable": true,
+        "children": [],
+        "metadata": [
+          {
+            "key": "ARROW:extension:name",
+            "value": "arrow.json"
+          },
+          {
+            "key": "ARROW:extension:metadata",
+            "value": "{}"
+          }
+        ]
+      },
+      {
+        "name": "opaque_ext",
+        "type": {
+          "name": "utf8"
+        },
+        "nullable": false,
+        "children": [],
+        "metadata": [
+          {
+            "key": "ARROW:extension:name",
+            "value": "arrow.opaque"
+          },
+          {
+            "key": "ARROW:extension:metadata",
+            "value": "{\"type_name\":\"pkg.Type\",\"vendor_name\":\"vendor.example\"}"
+          }
+        ]
+      },
+      {
+        "name": "timestamp_with_offset_ext",
+        "type": {
+          "name": "struct"
+        },
+        "nullable": true,
+        "children": [
+          {
+            "name": "timestamp",
+            "type": {
+              "name": "timestamp",
+              "unit": "MICROSECOND",
+              "timezone": "UTC"
+            },
+            "nullable": false,
+            "children": []
+          },
+          {
+            "name": "offset_minutes",
+            "type": {
+              "name": "int",
+              "isSigned": true,
+              "bitWidth": 16
+            },
+            "nullable": false,
+            "children": []
+          }
+        ],
+        "metadata": [
+          {
+            "key": "ARROW:extension:name",
+            "value": "arrow.timestamp_with_offset"
+          },
+          {
+            "key": "ARROW:extension:metadata",
+            "value": ""
+          }
+        ]
+      },
+      {
+        "name": "parquet_variant_ext",
+        "type": {
+          "name": "struct"
+        },
+        "nullable": true,
+        "children": [
+          {
+            "name": "metadata",
+            "type": {
+              "name": "binary"
+            },
+            "nullable": false,
+            "children": []
+          },
+          {
+            "name": "value",
+            "type": {
+              "name": "binary"
+            },
+            "nullable": false,
+            "children": []
+          }
+        ],
+        "metadata": [
+          {
+            "key": "ARROW:extension:name",
+            "value": "arrow.parquet.variant"
+          },
+          {
+            "key": "ARROW:extension:metadata",
+            "value": ""
+          }
+        ]
+      },
+      {
+        "name": "fixed_shape_tensor_ext",
+        "type": {
+          "name": "fixedsizelist",
+          "listSize": 4
+        },
+        "nullable": true,
+        "children": [
+          {
+            "name": "item",
+            "type": {
+              "name": "int",
+              "isSigned": true,
+              "bitWidth": 32
+            },
+            "nullable": false,
+            "children": []
+          }
+        ],
+        "metadata": [
+          {
+            "key": "ARROW:extension:name",
+            "value": "arrow.fixed_shape_tensor"
+          },
+          {
+            "key": "ARROW:extension:metadata",
+            "value": "{\"shape\":[2,2]}"
+          }
+        ]
+      },
+      {
+        "name": "variable_shape_tensor_ext",
+        "type": {
+          "name": "struct"
+        },
+        "nullable": true,
+        "children": [
+          {
+            "name": "data",
+            "type": {
+              "name": "list"
+            },
+            "nullable": false,
+            "children": [
+              {
+                "name": "item",
+                "type": {
+                  "name": "int",
+                  "isSigned": true,
+                  "bitWidth": 32
+                },
+                "nullable": false,
+                "children": []
+              }
+            ]
+          },
+          {
+            "name": "shape",
+            "type": {
+              "name": "fixedsizelist",
+              "listSize": 1
+            },
+            "nullable": false,
+            "children": [
+              {
+                "name": "item",
+                "type": {
+                  "name": "int",
+                  "isSigned": true,
+                  "bitWidth": 32
+                },
+                "nullable": false,
+                "children": []
+              }
+            ]
+          }
+        ],
+        "metadata": [
+          {
+            "key": "ARROW:extension:name",
+            "value": "arrow.variable_shape_tensor"
+          },
+          {
+            "key": "ARROW:extension:metadata",
+            "value": "{\"uniform_shape\":[null]}"
+          }
+        ]
+      }
+    ]
+  },
+  "batches": [
+    {
+      "count": 3,
+      "columns": [
+        {
+          "name": "uuid_ext",
+          "count": 3,
+          "VALIDITY": [
+            1,
+            0,
+            1
+          ],
+          "DATA": [
+            "550E8400E29B41D4A716446655440000",
+            "00000000000000000000000000000000",
+            "550E8400E29B41D4A716446655440001"
+          ]
+        },
+        {
+          "name": "bool8_ext",
+          "count": 3,
+          "VALIDITY": [
+            1,
+            0,
+            1
+          ],
+          "DATA": [
+            1,
+            0,
+            42
+          ]
+        },
+        {
+          "name": "json_ext",
+          "count": 3,
+          "VALIDITY": [
+            1,
+            0,
+            1
+          ],
+          "OFFSET": [
+            0,
+            7,
+            7,
+            14
+          ],
+          "DATA": [
+            "{\"a\":1}",
+            "",
+            "[1,2,3]"
+          ]
+        },
+        {
+          "name": "opaque_ext",
+          "count": 3,
+          "VALIDITY": [
+            1,
+            1,
+            1
+          ],
+          "OFFSET": [
+            0,
+            8,
+            16,
+            24
+          ],
+          "DATA": [
+            "opaque-a",
+            "opaque-b",
+            "opaque-c"
+          ]
+        },
+        {
+          "name": "timestamp_with_offset_ext",
+          "count": 3,
+          "VALIDITY": [
+            1,
+            0,
+            1
+          ],
+          "children": [
+            {
+              "name": "timestamp",
+              "count": 3,
+              "VALIDITY": [
+                1,
+                1,
+                1
+              ],
+              "DATA": [
+                "1577836800000000",
+                "0",
+                "1577923200000000"
+              ]
+            },
+            {
+              "name": "offset_minutes",
+              "count": 3,
+              "VALIDITY": [
+                1,
+                1,
+                1
+              ],
+              "DATA": [
+                330,
+                0,
+                -480
+              ]
+            }
+          ]
+        },
+        {
+          "name": "parquet_variant_ext",
+          "count": 3,
+          "VALIDITY": [
+            1,
+            0,
+            1
+          ],
+          "children": [
+            {
+              "name": "metadata",
+              "count": 3,
+              "VALIDITY": [
+                1,
+                1,
+                1
+              ],
+              "DATA": [
+                "7B7D",
+                "",
+                "7B7D"
+              ]
+            },
+            {
+              "name": "value",
+              "count": 3,
+              "VALIDITY": [
+                1,
+                1,
+                1
+              ],
+              "DATA": [
+                "7B2261223A317D",
+                "",
+                "616263"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "fixed_shape_tensor_ext",
+          "count": 3,
+          "VALIDITY": [
+            1,
+            0,
+            1
+          ],
+          "children": [
+            {
+              "name": "item",
+              "count": 12,
+              "VALIDITY": [
+                1,
+                1,
+                1,
+                1,
+                1,
+                1,
+                1,
+                1,
+                1,
+                1,
+                1,
+                1
+              ],
+              "DATA": [
+                1,
+                2,
+                3,
+                4,
+                0,
+                0,
+                0,
+                0,
+                5,
+                6,
+                7,
+                8
+              ]
+            }
+          ]
+        },
+        {
+          "name": "variable_shape_tensor_ext",
+          "count": 3,
+          "VALIDITY": [
+            1,
+            0,
+            1
+          ],
+          "children": [
+            {
+              "name": "data",
+              "count": 3,
+              "VALIDITY": [
+                1,
+                1,
+                1
+              ],
+              "OFFSET": [
+                0,
+                4,
+                4,
+                6
+              ],
+              "children": [
+                {
+                  "name": "item",
+                  "count": 6,
+                  "VALIDITY": [
+                    1,
+                    1,
+                    1,
+                    1,
+                    1,
+                    1
+                  ],
+                  "DATA": [
+                    1,
+                    2,
+                    3,
+                    4,
+                    5,
+                    6
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "shape",
+              "count": 3,
+              "VALIDITY": [
+                1,
+                1,
+                1
+              ],
+              "children": [
+                {
+                  "name": "item",
+                  "count": 3,
+                  "VALIDITY": [
+                    1,
+                    1,
+                    1
+                  ],
+                  "DATA": [
+                    2,
+                    0,
+                    1
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

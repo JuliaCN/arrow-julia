@@ -84,3 +84,17 @@ function flight_server_core_test_backend_profiles()
     @test occursin("Nghttp2Wrapper", message)
     @test occursin("gRPCServer.jl", message)
 end
+
+function flight_server_core_test_client_runtime_boundary()
+    capabilities = Arrow.Flight.flight_client_runtime_capabilities()
+    @test capabilities isa Arrow.Flight.FlightClientRuntimeCapabilities
+    @test !capabilities.supported
+    @test !Arrow.Flight.flight_client_runtime_supported()
+    @test length(capabilities.blockers) == 2
+    @test occursin("external Python-client", capabilities.blockers[1])
+    @test occursin(
+        "not an in-package Julia Flight gRPC client runtime",
+        capabilities.blockers[1],
+    )
+    @test occursin("dedicated dependency/API design", capabilities.blockers[2])
+end

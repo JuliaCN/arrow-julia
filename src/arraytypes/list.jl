@@ -28,6 +28,46 @@ Base.size(o::Offsets) = (length(o.offsets) - 1,)
     return lo, hi
 end
 
+function _assert_offsets_spans(offsets::Vector{O}, len, data_length, label) where {O}
+    logical_len = Int(len)
+    logical_len >= 0 || throw(ArgumentError("$label length must be non-negative"))
+    logical_len == 0 && isempty(offsets) && return nothing
+    expected = logical_len + 1
+    length(offsets) == expected || throw(
+        ArgumentError(
+            "$label offsets length $(length(offsets)) does not match logical length $logical_len",
+        ),
+    )
+    previous = 0
+    limit = Int(data_length)
+    for (idx, offset) in enumerate(offsets)
+        current = Int(offset)
+        current >= 0 || throw(ArgumentError("$label offsets must be non-negative"))
+        current >= previous || throw(
+            ArgumentError(
+                "$label offsets must be monotonically increasing (failed at offset $idx)",
+            ),
+        )
+        current <= limit ||
+            throw(ArgumentError("$label offset $current exceeds child/data length $limit"))
+        previous = current
+    end
+    return nothing
+end
+
+function _assert_utf8_spans(offsets::Vector{O}, data, validity, len, label) where {O}
+    logical_len = Int(len)
+    for i = 1:logical_len
+        @inbounds validity[i] || continue
+        start = Int(@inbounds offsets[i]) + 1
+        stop = Int(@inbounds offsets[i + 1])
+        stop < start && continue
+        isvalid(String, @view data[start:stop]) ||
+            throw(ArgumentError("$label value at index $i is not valid UTF-8"))
+    end
+    return nothing
+end
+
 """
     Arrow.List
 
@@ -43,6 +83,88 @@ struct List{T,O,A} <: ArrowVector{T}
 end
 
 Base.size(l::List) = (l.ℓ,)
+
+"""
+    Arrow.ListView
+
+An `ArrowVector` where each element is a variable sized list view over a child
+array. Unlike [`Arrow.List`](@ref), list-view elements use independent offsets
+and sizes, allowing repeated or out-of-order spans over the child values.
+"""
+struct ListView{T,O<:Union{Int32,Int64},A<:AbstractVector} <: ArrowVector{T}
+    arrow::Vector{UInt8}
+    sizesarrow::Vector{UInt8}
+    validity::ValidityBitmap
+    offsets::Vector{O}
+    sizes::Vector{O}
+    data::A
+    ℓ::Int
+    metadata::Union{Nothing,Base.ImmutableDict{String,String}}
+end
+
+Base.size(l::ListView) = (l.ℓ,)
+
+function _assert_list_view_spans(
+    offsets::Vector{O},
+    sizes::Vector{O},
+    data;
+    len=nothing,
+) where {O}
+    if len !== nothing
+        logical_len = Int(len)
+        logical_len >= 0 || throw(ArgumentError("list-view length must be non-negative"))
+        length(offsets) == logical_len || throw(
+            ArgumentError(
+                "list-view offsets length $(length(offsets)) does not match logical length $logical_len",
+            ),
+        )
+    end
+    length(offsets) == length(sizes) ||
+        throw(ArgumentError("list-view offsets and sizes must have the same length"))
+    for i in eachindex(offsets)
+        offset = Int(@inbounds offsets[i])
+        size = Int(@inbounds sizes[i])
+        offset >= 0 || throw(ArgumentError("list-view offsets must be non-negative"))
+        size >= 0 || throw(ArgumentError("list-view sizes must be non-negative"))
+        offset + size <= length(data) ||
+            throw(ArgumentError("list-view span exceeds child value length"))
+    end
+    return nothing
+end
+
+function ListView(
+    offsets::Vector{O},
+    sizes::Vector{O},
+    data::A;
+    validity::ValidityBitmap=ValidityBitmap(fill(true, length(offsets))),
+    metadata=nothing,
+    arrow::Vector{UInt8}=UInt8[],
+    sizesarrow::Vector{UInt8}=arrow,
+) where {O<:Union{Int32,Int64},A<:AbstractVector}
+    length(validity) == length(offsets) ||
+        throw(ArgumentError("list-view validity length must match offsets length"))
+    _assert_list_view_spans(offsets, sizes, data)
+    item = AbstractVector{eltype(data)}
+    T = nullcount(validity) == 0 ? item : Union{Missing,item}
+    return ListView{T,O,A}(
+        arrow,
+        sizesarrow,
+        validity,
+        offsets,
+        sizes,
+        data,
+        length(offsets),
+        metadata,
+    )
+end
+
+@propagate_inbounds function Base.getindex(l::ListView, i::Integer)
+    @boundscheck checkbounds(l, i)
+    @inbounds l.validity[i] || return missing
+    @inbounds start = Int(l.offsets[i]) + 1
+    @inbounds stop = start + Int(l.sizes[i]) - 1
+    return @view l.data[start:stop]
+end
 
 @propagate_inbounds function Base.getindex(l::List{T}, i::Integer) where {T}
     @boundscheck checkbounds(l, i)
@@ -356,6 +478,7 @@ function writearray(io::IO, ::Type{T}, col::ToList{T,stringtype}) where {T,strin
 end
 
 arrowvector(::ListKind, x::List, i, nl, fi, de, ded, meta; kw...) = x
+arrowvector(x::ListView, i, nl, fi, de, ded, meta; kw...) = x
 
 function arrowvector(::ListKind, x, i, nl, fi, de, ded, meta; largelists::Bool=false, kw...)
     len = length(x)
@@ -393,4 +516,53 @@ function compress(Z::Meta.CompressionType.T, comp, x::List{T,O,A}) where {T,O,A}
         push!(children, compress(Z, comp, x.data))
     end
     return Compressed{Z,typeof(x)}(x, buffers, len, nc, children)
+end
+
+function compress(Z::Meta.CompressionType.T, comp, x::ListView{T,O,A}) where {T,O,A}
+    len = length(x)
+    nc = nullcount(x)
+    validity = compress(Z, comp, x.validity)
+    offsets = compress(Z, comp, x.offsets)
+    sizes = compress(Z, comp, x.sizes)
+    children = Compressed[compress(Z, comp, x.data)]
+    return Compressed{Z,typeof(x)}(x, [validity, offsets, sizes], len, nc, children)
+end
+
+function makenodesbuffers!(
+    col::ListView{T,O,A},
+    fieldnodes,
+    fieldbuffers,
+    bufferoffset,
+    alignment,
+) where {T,O,A}
+    len = length(col)
+    nc = nullcount(col)
+    push!(fieldnodes, FieldNode(len, nc))
+    @debug "made field node: nodeidx = $(length(fieldnodes)), col = $(typeof(col)), len = $(fieldnodes[end].length), nc = $(fieldnodes[end].null_count)"
+    blen = nc == 0 ? 0 : bitpackedbytes(len, alignment)
+    push!(fieldbuffers, Buffer(bufferoffset, blen))
+    @debug "made field buffer: bufferidx = $(length(fieldbuffers)), offset = $(fieldbuffers[end].offset), len = $(fieldbuffers[end].length), padded = $(padding(fieldbuffers[end].length, alignment))"
+    bufferoffset += blen
+    blen = sizeof(O) * len
+    push!(fieldbuffers, Buffer(bufferoffset, blen))
+    @debug "made field buffer: bufferidx = $(length(fieldbuffers)), offset = $(fieldbuffers[end].offset), len = $(fieldbuffers[end].length), padded = $(padding(fieldbuffers[end].length, alignment))"
+    bufferoffset += padding(blen, alignment)
+    push!(fieldbuffers, Buffer(bufferoffset, blen))
+    @debug "made field buffer: bufferidx = $(length(fieldbuffers)), offset = $(fieldbuffers[end].offset), len = $(fieldbuffers[end].length), padded = $(padding(fieldbuffers[end].length, alignment))"
+    bufferoffset += padding(blen, alignment)
+    return makenodesbuffers!(col.data, fieldnodes, fieldbuffers, bufferoffset, alignment)
+end
+
+function writebuffer(io, col::ListView{T,O,A}, alignment) where {T,O,A}
+    @debug "writebuffer: col = $(typeof(col))"
+    @debug col
+    writebitmap(io, col, alignment)
+    n = writearray(io, O, col.offsets)
+    @debug "writing array: col = $(typeof(col.offsets)), n = $n, padded = $(padding(n, alignment))"
+    writezeros(io, paddinglength(n, alignment))
+    n = writearray(io, O, col.sizes)
+    @debug "writing array: col = $(typeof(col.sizes)), n = $n, padded = $(padding(n, alignment))"
+    writezeros(io, paddinglength(n, alignment))
+    writebuffer(io, col.data, alignment)
+    return
 end

@@ -124,6 +124,17 @@ function _builtinvariableshapetensormetadata(;
     return isempty(body) ? "" : JSON3.write(body)
 end
 _validatebuiltinextension(
+    ::Val{ArrowTypes.UUIDSYMBOL},
+    field::Meta.Field,
+    metadata::String,
+) = _validateuuid(field, metadata)
+_validatebuiltinextension(::Val{JSON_SYMBOL}, field::Meta.Field, metadata::String) =
+    _validatejsonextension(field, metadata)
+_validatebuiltinextension(::Val{BOOL8_SYMBOL}, field::Meta.Field, metadata::String) =
+    _validatebool8(field, metadata)
+_validatebuiltinextension(::Val{OPAQUE_SYMBOL}, field::Meta.Field, metadata::String) =
+    _validateopaque(field, metadata)
+_validatebuiltinextension(
     ::Val{PARQUET_VARIANT_SYMBOL},
     field::Meta.Field,
     metadata::String,
@@ -138,6 +149,11 @@ _validatebuiltinextension(
     field::Meta.Field,
     metadata::String,
 ) = _validatevariableshapetensor(field, metadata)
+_validatebuiltinextension(
+    ::Val{TIMESTAMP_WITH_OFFSET_SYMBOL},
+    field::Meta.Field,
+    metadata::String,
+) = _validatetimestampwithoffset(field, metadata)
 
 _builtinextensionspec(::Type{ZonedDateTime}) = ExtensionTypeSpec(ZONEDDATETIME_SYMBOL, "")
 _builtinarrowtype(::Type{ZonedDateTime}) = Timestamp

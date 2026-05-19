@@ -26,10 +26,12 @@ This implementation supports the 1.0 version of the specification, including sup
   * Extension types
   * Streaming, file, record batch, and replacement and isdelta dictionary messages
   * Buffer compression/decompression via the standard LZ4 frame and Zstd formats
+  * In-process C Data Interface producer/import surfaces for standard `Arrow.Table` column layouts, including nested, dictionary, union, run-end encoded, and logical scalar physical storage
+  * C Stream Interface producer/import surfaces over `Arrow.CData.ArrowArrayStream`
 
 It currently doesn't include support for:
   * Tensors or sparse tensors
-  * C data interface
+  * C Device Interface or PyCapsule protocol surfaces
 
 Flight RPC status:
   * Experimental `Arrow.Flight` support is available in-tree
@@ -38,17 +40,16 @@ Flight RPC status:
   * Keeps the top-level Flight module shell thin, with exports and generated-protocol setup split out of `src/flight/Flight.jl`
   * Includes high-level `FlightData <-> Arrow IPC` helpers for `Arrow.Table`, `Arrow.Stream`, and DoPut payload generation
   * Keeps the Flight IPC conversion layer modular under `src/flight/convert/`, with `src/flight/convert.jl` retained as a thin entrypoint
-  * Owns Flight protocol, descriptor, IPC, and server/runtime surfaces only; package-owned interop and performance proofs run through external Python clients instead of a Julia Flight client runtime
+  * Owns Flight protocol, descriptor, IPC, and server/runtime surfaces only; `flight_client_runtime_capabilities()` records that package-owned interop and performance proofs run through external Python clients instead of a Julia Flight client runtime
   * Includes a transport-agnostic server core (`Service`, `ServerCallContext`, `ServiceDescriptor`, `MethodDescriptor`) for local Flight method dispatch, path lookup, handler testing, packaged backend capability checks through `flight_server_backend_capabilities(...)`, and shared gRPC-over-HTTP/2 framing helpers for lower-level backends
   * Keeps the transport-agnostic server core modular under `src/flight/server/`, with `src/flight/server.jl` retained as a thin entrypoint
   * Treats `gRPCServer.jl` as the packaged Flight listener transport owner, exposing `Flight.grpcserver_flight_server(...)` once the `gRPCServer.jl` extension is loaded while keeping the core server/runtime layer transport-agnostic
   * Treats `:grpcserver` as the only packaged live Flight backend profile while also exposing an optional weakdep-backed `Nghttp2Wrapper.jl` listener through `Flight.nghttp2_flight_server(...)` for unary plus buffered server-streaming gRPC-over-HTTP/2 proofs
-  * Includes package-owned live Python-client coverage for authenticated `ListFlights`, `GetFlightInfo`, `GetSchema`, `DoGet`, `DoPut`, `DoExchange`, `ListActions`, and `DoAction`
+  * Includes package-owned live Python-client coverage for authenticated `Handshake`, `ListFlights`, `GetFlightInfo`, `PollFlightInfo`, `GetSchema`, `DoGet`, `DoPut`, `DoExchange`, `ListActions`, and `DoAction`, including low-level generated-stub `Handshake` token propagation and `PollFlightInfo` proofs
   * Keeps targeted Flight verification modular under `test/flight/`, with `test/flight.jl` retained as the shared default entrypoint for generated protocol, server-core, and IPC coverage, and dedicated listener proofs isolated in the PureHTTP2/nghttp2 runner files
   * Includes `test/flight_purehttp2.jl` as the PureHTTP2-wire temporary-environment runner for shared Flight interop coverage against the gRPCServer-owned listener path
-  * Includes `test/flight_purehttp2_perf.jl` as a focused large-transport runner for the gRPCServer-owned `DoGet` path over the PureHTTP2 substrate, `test/flight_nghttp2_probe.jl` as a substrate probe for the C-wrapper hook surface, and `test/flight_nghttp2.jl` as the focused weakdep-backed nghttp2 listener plus large-transport comparison runner
+  * Includes `test/flight_purehttp2_perf.jl` as a focused large-transport runner for gRPCServer-owned large `DoGet`, `DoPut`, bounded same-client reused `DoPut`, and `DoExchange` paths over the PureHTTP2 substrate, `test/flight_nghttp2_probe.jl` as a substrate probe for the C-wrapper hook surface, and `test/flight_nghttp2.jl` as the focused weakdep-backed nghttp2 listener plus large-transport comparison runner
   * The current `Nghttp2Wrapper.jl` backend proves package-local unary plus buffered server-streaming Flight methods with trailer-borne `grpc-status`, while `Handshake`, `DoPut`, and `DoExchange` remain explicitly unsupported on that backend
-  * `Handshake` token propagation and `PollFlightInfo` currently remain server-core/local proofs because the current external Python client surfaces used in tests do not cover those contracts directly
   * Dedicated CI jobs now exercise the Flight interop suite on stable and nightly Linux through the gRPCServer-owned listener path, including Python-client smoke proofs against the same HTTP/2 runtime surface
 
 Third-party data formats:
@@ -75,7 +76,7 @@ using DataAPI,
     ConcurrentUtilities,
     StringViews
 
-export ArrowTypes, Flight
+export ArrowTypes, CData, Flight
 
 using Base: @propagate_inbounds
 import Base: ==
@@ -104,6 +105,7 @@ include("metadata/overlay.jl")
 include("write.jl")
 include("append.jl")
 include("show.jl")
+include("cdata.jl")
 include("flight/Flight.jl")
 
 const ZSTD_COMPRESSOR = Lockable{ZstdCompressor}[]

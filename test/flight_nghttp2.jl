@@ -139,6 +139,7 @@ Pkg.instantiate()
 using Test
 using Nghttp2Wrapper
 using Arrow
+using gRPCServer
 using PureHTTP2
 using Tables
 

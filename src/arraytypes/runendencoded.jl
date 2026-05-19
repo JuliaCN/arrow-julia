@@ -17,8 +17,8 @@
 """
     Arrow.RunEndEncoded
 
-A read-only `ArrowVector` for Arrow Run-End Encoded arrays. Logical indexing is
-resolved by binary searching the physical `run_ends` child and then indexing the
+An `ArrowVector` for Arrow Run-End Encoded arrays. Logical indexing is resolved
+by binary searching the physical `run_ends` child and then indexing the
 corresponding `values` child.
 """
 struct RunEndEncoded{T,R,A} <: ArrowVector{T}
@@ -30,10 +30,22 @@ end
 
 Base.size(r::RunEndEncoded) = (r.ℓ,)
 Base.copy(r::RunEndEncoded) = collect(r)
+nullcount(::RunEndEncoded) = 0
 
 @inline _reephysicalindex(r::RunEndEncoded, i::Integer) = searchsortedfirst(r.run_ends, i)
 
+function _validaterunendtype(::Type{T}) where {T}
+    R = Base.nonmissingtype(T)
+    (R === Int16 || R === Int32 || R === Int64) || throw(
+        ArgumentError(
+            "invalid Run-End Encoded array: run_ends must use Int16, Int32, or Int64",
+        ),
+    )
+    return
+end
+
 function _validaterunendencoded(run_ends, values, len)
+    _validaterunendtype(eltype(run_ends))
     nruns = length(run_ends)
     nvals = length(values)
     nruns == nvals || throw(
@@ -56,6 +68,9 @@ function _validaterunendencoded(run_ends, values, len)
     end
     last_end = 0
     for (idx, run_end) in enumerate(run_ends)
+        run_end === missing && throw(
+            ArgumentError("invalid Run-End Encoded array: run_ends cannot contain nulls"),
+        )
         current_end = Int(run_end)
         current_end > last_end || throw(
             ArgumentError(
@@ -96,14 +111,71 @@ end
     return @inbounds ArrowTypes.fromarrow(T, r.values[physical])
 end
 
-function toarrowvector(
+function arrowvector(
     x::RunEndEncoded,
-    i=1,
-    de=Dict{Int64,Any}(),
-    ded=DictEncoding[],
-    meta=getmetadata(x);
-    compression::Union{Nothing,Symbol,LZ4FrameCompressor,ZstdCompressor}=nothing,
+    i,
+    nl,
+    fi,
+    de,
+    ded,
+    meta;
+    dictencode::Bool=false,
+    dictencoding::Bool=false,
+    maxdepth::Int=DEFAULT_MAX_DEPTH,
     kw...,
 )
-    throw(ArgumentError(RUN_END_ENCODED_UNSUPPORTED))
+    run_ends = arrowvector(
+        x.run_ends,
+        i,
+        nl + 1,
+        1,
+        de,
+        ded,
+        nothing;
+        dictencode=false,
+        dictencoding=false,
+        maxdepth=maxdepth,
+        kw...,
+    )
+    values = arrowvector(
+        x.values,
+        i,
+        nl + 1,
+        2,
+        de,
+        ded,
+        nothing;
+        dictencode=dictencode,
+        dictencoding=dictencoding,
+        maxdepth=maxdepth,
+        kw...,
+    )
+    return RunEndEncoded(run_ends, values, length(x), _normalizemeta(meta))
+end
+
+function compress(Z::Meta.CompressionType.T, comp, x::RunEndEncoded)
+    children = Compressed[compress(Z, comp, x.run_ends), compress(Z, comp, x.values)]
+    return Compressed{Z,typeof(x)}(x, CompressedBuffer[], length(x), 0, children)
+end
+
+function makenodesbuffers!(
+    col::RunEndEncoded,
+    fieldnodes,
+    fieldbuffers,
+    bufferoffset,
+    alignment,
+)
+    push!(fieldnodes, FieldNode(length(col), 0))
+    @debug "made field node: nodeidx = $(length(fieldnodes)), col = $(typeof(col)), len = $(fieldnodes[end].length), nc = $(fieldnodes[end].null_count)"
+    bufferoffset =
+        makenodesbuffers!(col.run_ends, fieldnodes, fieldbuffers, bufferoffset, alignment)
+    return makenodesbuffers!(col.values, fieldnodes, fieldbuffers, bufferoffset, alignment)
+end
+
+function writebuffer(io, col::RunEndEncoded, alignment)
+    @debug "writebuffer: col = $(typeof(col))"
+    @debug col
+    writebuffer(io, col.run_ends, alignment)
+    writebuffer(io, col.values, alignment)
+    return
 end

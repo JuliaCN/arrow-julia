@@ -22,7 +22,7 @@
 # Arrow.jl
 
 ```@contents
-Pages = ["manual.md", "reference.md"]
+Pages = ["manual.md", "security.md", "arrow_alignment_audit.md", "cdata_alignment.md", "reference.md"]
 Depth = 3
 ```
 

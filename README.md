@@ -56,10 +56,12 @@ Current write-path notes:
   * `Arrow.tobuffer(Tables.partitioner(...))` also includes a targeted direct multi-record-batch path for single-column top-level strings and single-column non-missing binary/code-units columns
   * `Arrow.write(io, Tables.partitioner(...))` now reuses that same targeted direct multi-record-batch path instead of always going through the legacy `Writer` orchestration
   * multi-column partitions, dictionary-encoded top-level columns, map-heavy inputs, and missing-binary partitions retain the existing writer path
+  * `test/ipc_performance_report.jl` reports warmed IPC stream/file write, metadata-read, and scan timings plus allocation receipts for the core IPC path
 
 ## Format Support
 
-This implementation supports the 1.0 version of the specification, including support for:
+This implementation supports the core Apache Arrow columnar and IPC formats,
+including support for:
   * All primitive data types
   * All nested data types
   * Dictionary encodings and messages
@@ -68,34 +70,35 @@ This implementation supports the 1.0 version of the specification, including sup
   * Lightweight schema/field metadata overlays via `Arrow.withmetadata(...)` for Tables.jl-compatible sources before serialization
   * Base Julia `Enum` logical types via the `JuliaLang.Enum` extension label, with native Julia roundtrips back to the original enum type while `convert=false` and non-Julia consumers still see the primitive storage type
   * View-backed Utf8/Binary columns, including recovery from under-reported variadic buffer counts by inferring the required external buffers from valid view elements
+  * Run-End Encoded arrays, including native `Arrow.RunEndEncoded` IPC read/write roundtrips and compressed child-buffer payloads
   * Streaming, file, record batch, and replacement and isdelta dictionary messages
+  * In-process C Data Interface export and import through `Arrow.CData`, including nested, dictionary, union, run-end encoded, logical scalar, metadata, and release-governed same-process zero-copy surfaces
+  * C Stream Interface export and import through `Arrow.CData`, using `ArrowArrayStream` callbacks over the same C Data layouts
 
 It currently doesn't include support for:
   * Tensor or sparse tensor IPC payload semantics; Arrow.jl now recognizes those message headers explicitly and rejects them with precise errors instead of falling through to a generic unsupported-message path
-  * C data interface
-  * Writing Run-End Encoded arrays; Arrow.jl now reads REE arrays and exposes them as read-only vectors, but still rejects REE on write paths
+  * C Device Interface or PyCapsule protocol surfaces
 
 Flight RPC status:
   * Experimental `Arrow.Flight` support is available in-tree
   * Requires Julia `1.12+`
-  * Includes generated protocol bindings for the `FlightService` RPC surface while keeping the gRPC client constructors in the modular client boundary under `src/flight/client/` instead of in the generated protocol module
+  * Includes generated protocol bindings for the `FlightService` RPC surface while keeping generated Julia gRPC client constructors out of the protocol module and out of the current package-owned runtime
   * Keeps the top-level Flight module shell thin, with exports and generated-protocol setup split out of `src/flight/Flight.jl`
-  * Includes high-level `FlightData <-> Arrow IPC` helpers for `Arrow.Table`, `Arrow.Stream`, and DoPut/DoExchange payload generation, `Arrow.Flight.pathdescriptor(...)` for PATH descriptors without manual proto assembly, opt-in `app_metadata` surfacing through `include_app_metadata=true` on `Arrow.Flight.stream(...)` / `Arrow.Flight.table(...)`, explicit batch-wise `app_metadata=...` emission on `Arrow.Flight.flightdata(...)`, `Arrow.Flight.putflightdata!(...)`, and source-based `Arrow.Flight.doexchange(...)`, and a reusable `Arrow.Flight.withappmetadata(...)` wrapper so source-level batch metadata can stay attached without manual keyword threading
+  * Includes high-level `FlightData <-> Arrow IPC` helpers for `Arrow.Table`, `Arrow.Stream`, and DoPut/DoExchange payload generation, `Arrow.Flight.pathdescriptor(...)` for PATH descriptors without manual proto assembly, `Arrow.Flight.cancelflightinfoaction(...)` / `Arrow.Flight.cancelflightinforesult(...)` helpers for the official `CancelFlightInfo` `DoAction` payloads, opt-in `app_metadata` surfacing through `include_app_metadata=true` on `Arrow.Flight.stream(...)` / `Arrow.Flight.table(...)`, explicit batch-wise `app_metadata=...` emission on `Arrow.Flight.flightdata(...)`, `Arrow.Flight.putflightdata!(...)`, and source-based `Arrow.Flight.doexchange(...)`, and a reusable `Arrow.Flight.withappmetadata(...)` wrapper so source-level batch metadata can stay attached without manual keyword threading
   * Keeps the Flight IPC conversion layer modular under `src/flight/convert/`, with `src/flight/convert.jl` retained as a thin entrypoint
-  * Owns Flight protocol, descriptor, IPC, and server/runtime surfaces only; package-owned interop and performance proofs run through external Python clients instead of a Julia Flight client runtime
+  * Owns Flight protocol, descriptor, IPC, and server/runtime surfaces only; `Arrow.Flight.flight_client_runtime_capabilities()` records that package-owned interop and performance proofs run through external Python clients instead of a Julia Flight client runtime
   * Includes a transport-agnostic server core (`Service`, `ServerCallContext`, `ServiceDescriptor`, `MethodDescriptor`) for local Flight method dispatch, path lookup, handler testing, packaged backend capability checks through `Arrow.Flight.flight_server_backend_capabilities(...)`, transport-neutral gRPC-over-HTTP/2 framing helpers, high-level `DoExchange` assembly through `Arrow.Flight.exchangeservice(...)`, `Arrow.Flight.tableservice(...)`, and `Arrow.Flight.streamservice(...)`, and source-based local invocation through `Arrow.Flight.doexchange(service, context, source; ...)`, `Arrow.Flight.table(service, context, source; ...)`, and `Arrow.Flight.stream(service, context, source; ...)`
   * Keeps the transport-agnostic server core modular under `src/flight/server/`, with `src/flight/server.jl` retained as a thin entrypoint
   * Treats `gRPCServer.jl` as the packaged Flight listener transport owner, exposing `Arrow.Flight.grpcserver_flight_server(...)` once the `gRPCServer.jl` extension is loaded while keeping the core server/runtime layer transport-agnostic
   * The packaged Flight server backend contract now reports `:grpcserver` as the only packaged live listener profile and exposes a weakdep-backed `:nghttp2` profile only when `Nghttp2Wrapper.jl` is loaded; the grpcserver path reaches the latest `gRPCServer.jl` server stack while the nghttp2 backend is still limited to unary plus buffered server-streaming methods with trailer-borne `grpc-status`
-  * Includes package-owned live Python-client coverage for authenticated `ListFlights`, `GetFlightInfo`, `GetSchema`, `DoGet`, `DoPut`, `DoExchange`, `ListActions`, and `DoAction` through `test/flight_purehttp2.jl`
+  * Includes package-owned live Python-client coverage for authenticated `Handshake`, `ListFlights`, `GetFlightInfo`, `PollFlightInfo`, `GetSchema`, `DoGet`, `DoPut`, `DoExchange`, `ListActions`, and `DoAction`, including low-level generated-stub `Handshake` token propagation and `PollFlightInfo` proofs plus the official `CancelFlightInfo` action payload, through `test/flight_purehttp2.jl`
   * Keeps targeted Flight verification modular under `test/flight/`, with `test/flight.jl` retained as the shared default entrypoint for generated protocol, server-core, and IPC coverage, and the PureHTTP2/nghttp2 listener proofs isolated in dedicated runner files
   * Includes `test/flight_purehttp2.jl` as the PureHTTP2-wire temporary-environment runner for shared Flight interop coverage against the gRPCServer-owned listener path
-  * Includes `test/flight_purehttp2_perf.jl` as a focused large-transport runner that benchmarks large-response `DoGet` on the gRPCServer-owned listener path over the PureHTTP2 substrate through a reusable backend-factory seam, and also replays env-tunable concurrent soak rounds through `ARROW_FLIGHT_PYARROW_CONCURRENT_CLIENTS`, `ARROW_FLIGHT_PYARROW_REQUESTS_PER_CLIENT`, and `ARROW_FLIGHT_PYARROW_SOAK_ROUNDS`
+  * Includes `test/flight_purehttp2_perf.jl` as a focused large-transport runner that benchmarks large-response `DoGet` plus large request-streaming `DoPut`, bounded same-client reused `DoPut`, and `DoExchange` on the gRPCServer-owned listener path over the PureHTTP2 substrate through a reusable backend-factory seam, and also replays env-tunable concurrent `DoGet`, connection-isolated concurrent `DoPut`, and concurrent `DoExchange` soak rounds through `ARROW_FLIGHT_PYARROW_CONCURRENT_CLIENTS`, `ARROW_FLIGHT_PYARROW_REQUESTS_PER_CLIENT`, `ARROW_FLIGHT_PYARROW_REUSED_DOPUT_REQUESTS`, and `ARROW_FLIGHT_PYARROW_SOAK_ROUNDS`
   * Includes `test/flight_nghttp2_probe.jl` as a substrate probe that verifies `Nghttp2Wrapper.jl` exports the low-level session / callback / submit hooks needed for the Flight adapter, proves a small `PureHTTP2` client interop smoke against `Nghttp2Wrapper.HTTP2Server`, and measures a raw 2 MiB h2c response on the C-wrapper server without widening default CI
   * Includes `test/flight_nghttp2.jl` as the focused weakdep-backed nghttp2 listener runner; it proves live Python-client unary plus server-streaming Flight calls over `Nghttp2Wrapper.jl` and prints same-harness large `DoGet` comparison numbers against the default `PureHTTP2` backend
   * Includes `test/flight_grpcserver.jl` as the focused weakdep-backed grpcserver transport runner; it proves descriptor bridging plus live Python-client Flight smoke over the packaged listener backend
   * The current nghttp2 backend still does not support request-streaming `Handshake`, `DoPut`, or `DoExchange`, so the gRPCServer-owned listener path remains the canonical packaged backend and `test/flight_purehttp2_perf.jl` remains the default large-transport proof for the product lane
-  * `Handshake` token propagation and `PollFlightInfo` currently remain server-core/local proofs because the current external Python client surfaces used in tests do not cover those contracts directly
   * Dedicated CI jobs now exercise the Flight interop suite on stable and nightly Linux through `test/flight_purehttp2.jl`; the gRPCServer-owned listener path is the packaged live backend direction, with Python-client smoke coverage on the same HTTP/2 runtime surface
 
 Third-party data formats:

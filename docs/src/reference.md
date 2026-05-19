@@ -33,6 +33,17 @@ Modules = [Arrow.Flight]
 Order   = [:type, :function]
 ```
 
+## C Data Interface
+
+```@docs
+Arrow.CData
+```
+
+```@autodocs
+Modules = [Arrow.CData]
+Order   = [:type, :function]
+```
+
 ## Internals: `Arrow.FlatBuffers`
 
 The `FlatBuffers` module is not part of Arrow.jl's public API, and these functions may change without notice.

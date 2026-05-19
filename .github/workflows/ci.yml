@@ -236,6 +236,75 @@ jobs:
           ARROW_FLIGHT_DISABLE_AUTO_LOCAL_DEPS: '1'
           JULIA_NUM_THREADS: '2'
         run: julia --color=yes --project=test test/flight_purehttp2.jl
+  cdata_validation:
+    name: C Data validation - Julia 1 - ubuntu-latest
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: '1'
+      - uses: actions/cache@v5
+        env:
+          cache-name: cache-cdata-artifacts
+        with:
+          path: ~/.julia/artifacts
+          key: ${{ runner.os }}-cdata-${{ env.cache-name }}-${{ hashFiles('**/Project.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cdata-${{ env.cache-name }}-
+            ${{ runner.os }}-cdata-
+            ${{ runner.os }}-
+      - uses: julia-actions/julia-buildpkg@v1.6
+        with:
+          project: .
+      - name: Configure C Data validation environment
+        shell: julia --project=test {0}
+        run: |
+          using Pkg
+          Pkg.develop(PackageSpec(path="."))
+          Pkg.develop(PackageSpec(path="src/ArrowTypes"))
+          Pkg.resolve()
+          Pkg.instantiate()
+      - name: Run C Data validation report
+        env:
+          ARROW_CDATA_MAX_EXPORT_ALLOC_BYTES: '6656'
+          ARROW_CDATA_MAX_IMPORT_ALLOC_BYTES: '4096'
+          ARROW_CDATA_MAX_STREAM_EXPORT_ALLOC_BYTES: '6656'
+          ARROW_CDATA_MAX_STREAM_IMPORT_ALLOC_BYTES: '4096'
+        run: julia --color=yes --project=test test/cdata_validation_report.jl
+  ipc_performance:
+    name: IPC performance - Julia 1 - ubuntu-latest
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: '1'
+      - uses: actions/cache@v5
+        env:
+          cache-name: cache-ipc-artifacts
+        with:
+          path: ~/.julia/artifacts
+          key: ${{ runner.os }}-ipc-${{ env.cache-name }}-${{ hashFiles('**/Project.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-ipc-${{ env.cache-name }}-
+            ${{ runner.os }}-ipc-
+            ${{ runner.os }}-
+      - uses: julia-actions/julia-buildpkg@v1.6
+        with:
+          project: .
+      - name: Configure IPC performance environment
+        shell: julia --project=test {0}
+        run: |
+          using Pkg
+          Pkg.develop(PackageSpec(path="."))
+          Pkg.develop(PackageSpec(path="src/ArrowTypes"))
+          Pkg.resolve()
+          Pkg.instantiate()
+      - name: Run IPC performance report
+        run: julia --color=yes --project=test test/ipc_performance_report.jl
   docs:
     name: Documentation
     runs-on: ubuntu-latest
