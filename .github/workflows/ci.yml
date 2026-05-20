@@ -196,6 +196,39 @@ jobs:
         continue-on-error: false
         run: >
           julia --color=yes --project=monorepo -e 'using Pkg; Pkg.test("Arrow")'
+  integration_cli:
+    name: Integration CLI smoke - Julia 1 - ubuntu-latest
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: '1'
+      - uses: actions/cache@v5
+        env:
+          cache-name: cache-integration-cli-artifacts
+        with:
+          path: ~/.julia/artifacts
+          key: ${{ runner.os }}-integration-cli-${{ env.cache-name }}-${{ hashFiles('**/Project.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-integration-cli-${{ env.cache-name }}-
+            ${{ runner.os }}-integration-cli-
+            ${{ runner.os }}-
+      - name: Dev local Arrow packages for integration CLI
+        shell: julia --project=test {0}
+        run: |
+          using Pkg
+          Pkg.develop([PackageSpec(path="."), PackageSpec(path="src/ArrowTypes")])
+          Pkg.instantiate()
+      - name: Check Archery Julia tester syntax
+        run: python3 -m py_compile dev/archery/tester_julia.py
+      - name: Run Archery adapter smoke
+        run: julia --color=yes --project=test test/archery_adapter_smoke.jl
+      - name: Run Archery upstream patch smoke
+        run: julia --color=yes --project=test test/archery_upstream_patch_smoke.jl
+      - name: Run integration CLI smoke
+        run: julia --color=yes --project=test test/integration_cli_smoke.jl
   flight_purehttp2:
     name: Arrow Flight PureHTTP2 interop - Julia 1 - ubuntu-latest
     runs-on: ubuntu-latest

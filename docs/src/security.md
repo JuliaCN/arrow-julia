@@ -35,6 +35,8 @@ lead to unsafe indexing or misleading semantic interpretation:
 
 - unsupported Tensor and SparseTensor IPC message headers are recognized and
   rejected explicitly;
+- IPC field nodes validate non-negative lengths, non-negative null counts, and
+  null counts bounded by their logical lengths before buffer materialization;
 - variable-size List, LargeList, Binary, Utf8, Map, ListView, BinaryView, and
   Utf8View IPC layouts validate offset or view span counts, monotonicity where
   required, non-negative spans, and child/data bounds before materialization;
@@ -42,8 +44,9 @@ lead to unsafe indexing or misleading semantic interpretation:
   non-null slots before exposing Julia strings;
 - IPC dictionary-encoded columns validate non-null index slots against the
   dictionary length before exposing borrowed `DictEncoded` vectors;
-- IPC dense and sparse union columns validate type ids, and dense unions also
-  validate child offsets before exposing borrowed union vectors;
+- IPC dense and sparse union columns validate type ids, dense unions validate
+  child offsets, and sparse unions validate child array lengths before
+  exposing borrowed union vectors;
 - canonical extension metadata and storage contracts are parsed and validated
   for the supported canonical extension names before Arrow.jl returns
   converted semantic values;

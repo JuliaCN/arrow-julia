@@ -206,7 +206,7 @@ end
 
 Type(::Base.Type{NamedTuple{names,types}}) where {names,types} = Struct("struct")
 children(::Base.Type{NamedTuple{names,types}}) where {names,types} =
-    [Field(names[i], fieldtype(types, i), nothing) for i = 1:length(names)]
+    [Field(String(names[i]), fieldtype(types, i), nothing) for i = 1:length(names)]
 StructTypes.StructType(::Base.Type{Struct}) = StructTypes.Struct()
 juliatype(f, x::Struct) = NamedTuple{
     Tuple(Symbol(x.name) for x in f.children),

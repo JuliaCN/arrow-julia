@@ -111,7 +111,8 @@ function append(
         end
         write(io, tbl; kwargs...)
     else
-        isstream, arrow_schema, compress = stream_properties(io; convert=convert)
+        isstream, arrow_schema, field_hints, compress =
+            stream_properties(io; convert=convert, include_field_hints=true)
         if !isstream
             throw(ArgumentError("append is supported only to files in arrow stream format"))
         end
@@ -136,6 +137,7 @@ function append(
             ntasks,
             metadata,
             colmetadata,
+            field_hints,
         )
     end
 
@@ -156,6 +158,7 @@ function append(
     ntasks,
     meta,
     colmeta,
+    field_hints,
 )
     seekend(io)
     skip(io, -8) # overwrite last 8 bytes of last empty message footer
@@ -209,6 +212,7 @@ function append(
                 anyerror,
                 meta,
                 colmeta,
+                field_hints,
             )
         else
             @async process_partition(
@@ -229,6 +233,7 @@ function append(
                 anyerror,
                 meta,
                 colmeta,
+                field_hints,
             )
         end
     end
@@ -253,7 +258,7 @@ function append(
     return io
 end
 
-function stream_properties(io::IO; convert::Bool=true)
+function stream_properties(io::IO; convert::Bool=true, include_field_hints::Bool=false)
     startpos = position(io)
     buff = similar(FILE_FORMAT_MAGIC_BYTES)
     start_magic = read!(io, buff) == FILE_FORMAT_MAGIC_BYTES
@@ -271,8 +276,14 @@ function stream_properties(io::IO; convert::Bool=true)
             (stream.compression[] !== nothing) && break
         end
         seek(io, startpos) # leave the stream position unchanged
-        return isstream, Tables.Schema(stream.names, stream.types), stream.compression[]
+        schema = Tables.Schema(stream.names, stream.types)
+        if include_field_hints
+            field_hints = stream.schema === nothing ? nothing : stream.schema.fields
+            return isstream, schema, field_hints, stream.compression[]
+        end
+        return isstream, schema, stream.compression[]
     else
+        include_field_hints && return isstream, nothing, nothing, nothing
         return isstream, nothing, nothing
     end
 end

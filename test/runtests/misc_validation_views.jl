@@ -386,7 +386,7 @@
 
     @test Arrow._assert_sparse_union_layout!(
         UInt8[0x00, 0x01, 0x00],
-        (Int64[1, 3], Float64[0, 2, 0]),
+        (Int64[1, 3, 5], Float64[0, 2, 0]),
         nothing,
         3,
         :values,

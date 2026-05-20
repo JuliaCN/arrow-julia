@@ -357,6 +357,14 @@ function _assert_sparse_union_layout!(
 )
     child_by_type_id = _union_child_map(declared_type_ids, length(data), name)
     _assert_union_type_id_buffer!(type_ids, len, child_by_type_id, name)
+    for (child_index, child) in enumerate(data)
+        child_len = length(child)
+        child_len == len || throw(
+            ArgumentError(
+                "sparse union column $name child $child_index length $child_len must match row count $len",
+            ),
+        )
+    end
     return nothing
 end
 

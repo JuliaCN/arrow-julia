@@ -72,6 +72,7 @@ including support for:
   * View-backed Utf8/Binary columns, including recovery from under-reported variadic buffer counts by inferring the required external buffers from valid view elements
   * Run-End Encoded arrays, including native `Arrow.RunEndEncoded` IPC read/write roundtrips and compressed child-buffer payloads
   * Streaming, file, record batch, and replacement and isdelta dictionary messages
+  * A package-local Archery-style integration executable in `test/integrationtest.jl`, a tested Archery adapter surface under `dev/archery/`, an Apache Arrow monorepo registration patch artifact for the upstream `--with-julia` tester hook, and a focused subprocess smoke runner in `test/integration_cli_smoke.jl` for JSON-to-Arrow, validation, Arrow-to-JSON, file-to-stream, and stream-to-file modes across baseline, modern physical-layout, and canonical extension fixtures
   * In-process C Data Interface export and import through `Arrow.CData`, including nested, dictionary, union, run-end encoded, logical scalar, metadata, and release-governed same-process zero-copy surfaces
   * C Stream Interface export and import through `Arrow.CData`, using `ArrowArrayStream` callbacks over the same C Data layouts
 

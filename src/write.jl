@@ -473,6 +473,7 @@ function process_partition(
     anyerror,
     meta,
     colmeta,
+    field_hints=nothing,
 )
     try
         cols = toarrowtable(
@@ -486,6 +487,7 @@ function process_partition(
             maxdepth,
             meta,
             colmeta,
+            field_hints,
         )
         dictmsgs = nothing
         if !isempty(cols.dictencodingdeltas)
@@ -529,6 +531,7 @@ function toarrowtable(
     maxdepth,
     meta,
     colmeta,
+    field_hints=nothing,
 )
     @debug "converting input table to arrow formatted columns"
     sch = Tables.schema(cols)
@@ -540,6 +543,8 @@ function toarrowtable(
     Tables.eachcolumn(sch, cols) do col, i, nm
         oldcolmeta = getmetadata(col)
         newcolmeta = isnothing(colmeta) ? oldcolmeta : get(colmeta, nm, oldcolmeta)
+        field_hint = isnothing(field_hints) || i > length(field_hints) ? nothing : field_hints[i]
+        column_denseunions = _field_denseunions(field_hint, denseunions)
         newcol = toarrowvector(
             col,
             i,
@@ -548,7 +553,7 @@ function toarrowtable(
             newcolmeta;
             compression=compress,
             largelists=largelists,
-            denseunions=denseunions,
+            denseunions=column_denseunions,
             dictencode=dictencode,
             dictencodenested=dictencodenested,
             maxdepth=maxdepth,
@@ -566,6 +571,12 @@ function toarrowtable(
         meta,
         dictencodingdeltas,
     )
+end
+
+function _field_denseunions(field, default::Bool)
+    field === nothing && return default
+    field.type isa Meta.Union || return default
+    return field.type.mode == Meta.UnionMode.Dense
 end
 
 Tables.columns(x::ToArrowTable) = x

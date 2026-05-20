@@ -52,7 +52,7 @@ function DataFile(source)
                     end
                     dictencodings[String(nm)] = (T, DictEncoding(id, IT, false))
                 end
-                field = Field(String(nm), T, dictencodings)
+                field = Field(String(nm), T, dictencodings, col)
                 field.metadata = _metadata_pairs(Arrow.getmetadata(col))
                 push!(fields, field)
             end

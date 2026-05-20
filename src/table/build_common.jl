@@ -60,7 +60,18 @@ end
     return count
 end
 
+function _assert_field_node_shape(node, name::Symbol)
+    node.length >= 0 || throw(ArgumentError("field $name has negative length"))
+    node.null_count >= 0 || throw(ArgumentError("field $name has negative null count"))
+    node.null_count <= node.length ||
+        throw(ArgumentError("field $name null count exceeds length"))
+    return nothing
+end
+
 function build(field::Meta.Field, batch, rb, de, nodeidx, bufferidx, varbufferidx, convert)
+    name = Symbol(field.name)
+    nodeidx <= length(rb.nodes) || throw(ArgumentError("field $name is missing a field node"))
+    _assert_field_node_shape(rb.nodes[nodeidx], name)
     d = field.dictionary
     if d !== nothing
         validity = buildbitmap(batch, rb, nodeidx, bufferidx)
