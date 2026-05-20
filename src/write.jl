@@ -543,7 +543,8 @@ function toarrowtable(
     Tables.eachcolumn(sch, cols) do col, i, nm
         oldcolmeta = getmetadata(col)
         newcolmeta = isnothing(colmeta) ? oldcolmeta : get(colmeta, nm, oldcolmeta)
-        field_hint = isnothing(field_hints) || i > length(field_hints) ? nothing : field_hints[i]
+        field_hint =
+            isnothing(field_hints) || i > length(field_hints) ? nothing : field_hints[i]
         column_denseunions = _field_denseunions(field_hint, denseunions)
         newcol = toarrowvector(
             col,

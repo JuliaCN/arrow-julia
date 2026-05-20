@@ -120,8 +120,9 @@ end
 function Field(nm, ::Base.Type{T}, dictencodings, col::Arrow.ListView) where {T}
     name = String(nm)
     S = Arrow.maybemissing(T)
-    type = eltype(getfield(col, :offsets)) === Int64 ? LargeListView("largelistview") :
-           ListView("listview")
+    type =
+        eltype(getfield(col, :offsets)) === Int64 ? LargeListView("largelistview") :
+        ListView("listview")
     child = Field("item", eltype(getfield(col, :data)), nothing, getfield(col, :data))
     return Field(name, T !== S, type, [child], nothing, nothing)
 end
@@ -223,20 +224,15 @@ function FieldData(nm, ::Base.Type{T}, col, dictencodings) where {T}
             end
             OFFSET = Offsets(OFFSET)
             flat_values = [item for value in skipmissing(col) for item in value]
-            push!(
-                children,
-                FieldData("item", eltype(S), flat_values, dictencodings),
-            )
+            push!(children, FieldData("item", eltype(S), flat_values, dictencodings))
         elseif S <: NTuple
             if Arrow.ArrowTypes.gettype(Arrow.ArrowTypes.ArrowKind(S)) == UInt8
                 DATA = [
                     ismissing(x) ? _hexstring(Arrow.ArrowTypes.default(S)) : _hexstring(x) for x in col
                 ]
             else
-                flat_values = [
-                    item for x in col for
-                    item in coalesce(x, Arrow.ArrowTypes.default(S))
-                ]
+                flat_values =
+                    [item for x in col for item in coalesce(x, Arrow.ArrowTypes.default(S))]
                 push!(
                     children,
                     FieldData(
@@ -313,13 +309,9 @@ function FieldData(nm, ::Base.Type{T}, col, dictencodings) where {T}
                 ),
             )
         elseif S == Int64 || S == UInt64
-            DATA = [
-                string(ismissing(x) ? Arrow.ArrowTypes.default(S) : x) for x in col
-            ]
+            DATA = [string(ismissing(x) ? Arrow.ArrowTypes.default(S) : x) for x in col]
         elseif S <: Arrow.Decimal
-            DATA = [
-                string(getfield(ismissing(x) ? zero(S) : x, :value)) for x in col
-            ]
+            DATA = [string(getfield(ismissing(x) ? zero(S) : x, :value)) for x in col]
         elseif S <: Arrow.Date || S <: Arrow.Time
             if Arrow.storagetype(S) == Int32
                 DATA = [getfield(ismissing(x) ? zero(S) : x, :x) for x in col]

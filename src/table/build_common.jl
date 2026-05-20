@@ -70,7 +70,8 @@ end
 
 function build(field::Meta.Field, batch, rb, de, nodeidx, bufferidx, varbufferidx, convert)
     name = Symbol(field.name)
-    nodeidx <= length(rb.nodes) || throw(ArgumentError("field $name is missing a field node"))
+    nodeidx <= length(rb.nodes) ||
+        throw(ArgumentError("field $name is missing a field node"))
     _assert_field_node_shape(rb.nodes[nodeidx], name)
     d = field.dictionary
     if d !== nothing

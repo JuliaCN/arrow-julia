@@ -41,7 +41,13 @@ function _emitted_view_data(::Utf8View, col::Arrow.View, index::Integer)
     view = getfield(col, :data)[index]
     len = Base.Int(view.length)
     if Arrow._viewisinline(len)
-        return ViewData(len, String(_inline_view_bytes(col, index, len)), nothing, nothing, nothing)
+        return ViewData(
+            len,
+            String(_inline_view_bytes(col, index, len)),
+            nothing,
+            nothing,
+            nothing,
+        )
     end
     return ViewData(
         len,
@@ -56,7 +62,13 @@ function _emitted_view_data(::BinaryView, col::Arrow.View, index::Integer)
     view = getfield(col, :data)[index]
     len = Base.Int(view.length)
     if Arrow._viewisinline(len)
-        return ViewData(len, _hexstring(_inline_view_bytes(col, index, len)), nothing, nothing, nothing)
+        return ViewData(
+            len,
+            _hexstring(_inline_view_bytes(col, index, len)),
+            nothing,
+            nothing,
+            nothing,
+        )
     end
     return ViewData(
         len,

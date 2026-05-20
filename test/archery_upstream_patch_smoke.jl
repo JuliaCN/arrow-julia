@@ -50,7 +50,10 @@ const LOCAL_TESTER = joinpath(ARCHERY_DIR, "tester_julia.py")
     @test occursin("command=\"JSON_TO_ARROW\"", tester)
     @test occursin("command=\"STREAM_TO_FILE\"", tester)
     @test occursin("command=\"FILE_TO_STREAM\"", tester)
-    @test !occursin("os.environ.get(\"ARROW_JULIA_ROOT\", _default_arrow_julia_root())", tester)
+    @test !occursin(
+        "os.environ.get(\"ARROW_JULIA_ROOT\", _default_arrow_julia_root())",
+        tester,
+    )
     @test !occursin("return self._run(arrow_path, json_path, \"VALIDATE\")", tester)
     @test !occursin("return self._run(arrow_path, json_path, \"JSON_TO_ARROW\")", tester)
 end
