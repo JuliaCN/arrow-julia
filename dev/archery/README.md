@@ -68,10 +68,10 @@ Upstream apply receipt:
 - `rg -n "with_julia|ARCHERY_INTEGRATION_WITH_JULIA|JuliaTester|command=\"FILE_TO_STREAM\"" dev/archery/archery`
   found the expected registration points.
 
-Upstream runner receipt:
+Upstream runner receipts:
 
 - Apache Arrow checkout: `603eeec8f6d75fa3d029be0aefbf1405a0dde69b`.
-- Command shape:
+- Command shape for the focused selectors:
 
   ```sh
   ARROW_JULIA_ROOT=/path/to/arrow-julia \
@@ -83,13 +83,17 @@ Upstream runner receipt:
       --serial \
       --stop-on-error \
       --tempdir /tmp/arrow-julia-archery-primitive \
-      -k primitive
+      -k <selector>
   ```
 
-- Result: `0 failures, 0 skips`.
-- Covered upstream IPC JSON cases:
+- `primitive` selector result: `0 failures, 0 skips`.
+- `primitive` covered upstream IPC JSON cases:
   `generated_primitive_no_batches.json`, `generated_primitive.json`, and
   `generated_primitive_zerolength.json`.
+- `dictionary` selector result: `0 failures, 0 skips`.
+- `dictionary` covered upstream IPC JSON cases:
+  `generated_dictionary.json`, `generated_dictionary_unsigned.json`, and
+  `generated_nested_dictionary.json`.
 - Each covered case executed Julia producer plus Julia consumer validation
   through file and stream paths.
 
