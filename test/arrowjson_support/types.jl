@@ -69,6 +69,8 @@ end
 
 Decimal(name::String, precision::Integer, scale::Integer) =
     Decimal(name, Int32(precision), Int32(scale), Int32(128))
+Decimal(name::String, precision::Integer, scale::Integer, ::Nothing) =
+    Decimal(name, precision, scale)
 
 Type(::Base.Type{Arrow.Decimal{P,S,T}}) where {P,S,T} =
     Decimal("decimal", P, S, T === Arrow.Int256 ? Int32(256) : Int32(128))
