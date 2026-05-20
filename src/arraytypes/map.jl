@@ -29,6 +29,9 @@ end
 
 Base.size(l::Map) = (l.ℓ,)
 
+_mapentrykey(entry) = getfield(entry, 1)
+_mapentryvalue(entry) = getfield(entry, 2)
+
 @propagate_inbounds function Base.getindex(l::Map{T}, i::Integer) where {T}
     @boundscheck checkbounds(l, i)
     @inbounds lo, hi = l.offsets[i]
@@ -36,10 +39,13 @@ Base.size(l::Map) = (l.ℓ,)
         return l.validity[i] ?
                ArrowTypes.fromarrow(
             T,
-            Dict(x.key => x.value for x in view(l.data, lo:hi)),
+            Dict(_mapentrykey(x) => _mapentryvalue(x) for x in view(l.data, lo:hi)),
         ) : missing
     else
-        return ArrowTypes.fromarrow(T, Dict(x.key => x.value for x in view(l.data, lo:hi)))
+        return ArrowTypes.fromarrow(
+            T,
+            Dict(_mapentrykey(x) => _mapentryvalue(x) for x in view(l.data, lo:hi)),
+        )
     end
 end
 
@@ -146,7 +152,14 @@ function mapoffsetsandvalues(
     return offsets, values
 end
 
-keyvaluetypes(::Type{NamedTuple{(:key, :value),Tuple{K,V}}}) where {K,V} = (K, V)
+function keyvaluetypes(::Type{T}) where {T}
+    fieldcount(T) == 2 || throw(
+        ArgumentError(
+            "Arrow Map entries must be struct-like values with exactly two children",
+        ),
+    )
+    return fieldtype(T, 1), fieldtype(T, 2)
+end
 
 arrowvector(::MapKind, x::Map, i, nl, fi, de, ded, meta; kw...) = x
 

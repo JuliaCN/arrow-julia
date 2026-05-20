@@ -99,6 +99,9 @@ Upstream runner receipts:
   `generated_nested.json`, `generated_recursive_nested.json`,
   `generated_nested_large_offsets.json`, and
   `generated_nested_dictionary.json`.
+- `map` selector result: `0 failures, 0 skips`.
+- `map` covered upstream IPC JSON cases:
+  `generated_map.json` and `generated_map_non_canonical.json`.
 - Each covered case executed Julia producer plus Julia consumer validation
   through file and stream paths.
 

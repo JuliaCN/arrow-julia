@@ -167,5 +167,10 @@ end
             dir;
             basename="nested",
         )
+        assert_json_ipc_validate(
+            joinpath(ARROW_JSON_DIR, "map-non-canonical.json"),
+            dir;
+            basename="map-non-canonical",
+        )
     end
 end

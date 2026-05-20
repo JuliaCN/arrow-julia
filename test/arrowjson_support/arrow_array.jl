@@ -14,6 +14,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+_mapentrykey(entry) = getfield(entry, 1)
+_mapentryvalue(entry) = getfield(entry, 2)
+
 function Base.getindex(x::ArrowArray{T}, i::Base.Int) where {T}
     @boundscheck checkbounds(x, i)
     S = Base.nonmissingtype(T)
@@ -82,7 +85,7 @@ function Base.getindex(x::ArrowArray{T}, i::Base.Int) where {T}
         offs = x.fielddata.OFFSET
         A = ArrowArray(x.field.children[1], x.fielddata.children[1], x.dictionaries)
         return Dict(
-            y.key => y.value for
+            _mapentrykey(y) => _mapentryvalue(y) for
             y in A[(_offsetvalue(offs[i]) + 1):_offsetvalue(offs[i + 1])]
         )
     elseif S <: Tuple
