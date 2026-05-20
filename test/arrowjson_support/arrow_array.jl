@@ -126,6 +126,8 @@ function Base.getindex(x::ArrowArray{T}, i::Base.Int) where {T}
         return Arrow.storagetype(S) == Int32 ? S(val) : S(parse(Int64, val))
     elseif S <: Arrow.Timestamp
         return S(parse(Int64, x.fielddata.DATA[i]))
+    elseif S <: Arrow.Duration
+        return S(parse(Int64, x.fielddata.DATA[i]))
     elseif S <: Arrow.Interval
         return _intervalvalue(S, x.fielddata.DATA[i])
     else

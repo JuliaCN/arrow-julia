@@ -106,7 +106,7 @@ end
 
 Type(::Base.Type{Arrow.Duration{U}}) where {U} = Duration("duration", unit(U))
 StructTypes.StructType(::Base.Type{Duration}) = StructTypes.Struct()
-juliatype(f, x::Duration) = Arrow.Duration{unit % (x.unit)}
+juliatype(f, x::Duration) = Arrow.Duration{unitT(x.unit)}
 
 struct Date <: Type
     name::String
