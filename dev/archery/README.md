@@ -141,6 +141,9 @@ Upstream runner receipts:
 - `duplicate_fieldnames` selector result: `0 failures, 0 skips`.
 - `duplicate_fieldnames` covered upstream IPC JSON cases:
   `generated_duplicate_fieldnames.json`.
+- No-selector generated IPC suite result: `0 failures, 0 skips`.
+- The generated-suite receipt covered all 32 upstream generated IPC JSON cases
+  present in the pinned checkout, including `generated_nested_dictionary.json`.
 - Each covered case executed Julia producer plus Julia consumer validation
   through file and stream paths.
 

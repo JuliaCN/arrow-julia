@@ -317,6 +317,7 @@ function _native_union(field::Field, fielddata::FieldData, dictionaries)
 end
 
 function _physical_column(field::Field, fielddata::FieldData, dictionaries)
+    field.dictionary !== nothing && return nothing
     field.type isa Union{Utf8View,BinaryView} && return _native_view(field, fielddata)
     field.type isa Union{ListView,LargeListView} &&
         return _native_list_view(field, fielddata, dictionaries)
