@@ -126,6 +126,9 @@ Upstream runner receipts:
 - `null` selector result: `0 failures, 0 skips`.
 - `null` covered upstream IPC JSON cases:
   `generated_null.json` and `generated_null_trivial.json`.
+- `list_view` selector result: `0 failures, 0 skips`.
+- `list_view` covered upstream IPC JSON cases:
+  `generated_list_view.json`.
 - Each covered case executed Julia producer plus Julia consumer validation
   through file and stream paths.
 
