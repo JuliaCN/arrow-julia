@@ -152,7 +152,7 @@ juliatype(f, x::Interval) = Arrow.Interval{
 struct UnionT <: Type
     name::String
     mode::String
-    typIds::Vector{Int64}
+    typeIds::Vector{Int64}
 end
 
 Type(::Base.Type{Arrow.UnionT{T,typeIds,U}}) where {T,typeIds,U} =
@@ -160,11 +160,7 @@ Type(::Base.Type{Arrow.UnionT{T,typeIds,U}}) where {T,typeIds,U} =
 children(::Base.Type{Arrow.UnionT{T,typeIds,U}}) where {T,typeIds,U} =
     Field[Field("", fieldtype(U, i), nothing) for i = 1:fieldcount(U)]
 StructTypes.StructType(::Base.Type{UnionT}) = StructTypes.Struct()
-juliatype(f, x::UnionT) = Arrow.UnionT{
-    x.mode == "DENSE" ? Arrow.Meta.UnionMode.DENSE : Arrow.Meta.UnionMode.SPARSE,
-    Tuple(x.typeIds),
-    Tuple{(juliatype(y) for y in f.children)...},
-}
+juliatype(f, x::UnionT) = Union{(juliatype(y) for y in f.children)...}
 
 struct List <: Type
     name::String

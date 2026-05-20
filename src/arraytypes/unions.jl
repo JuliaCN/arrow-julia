@@ -28,6 +28,19 @@ Base.eltype(::Type{UnionT{T,typeIds,U}}) where {T,typeIds,U} = U
 uniontypewith(::Type{UnionT{T,typeIds,U}}, ::Type{U2}) where {T,typeIds,U,U2<:Tuple} =
     UnionT{T,typeIds,U2}
 
+_uniontypeids(::Type{UnionT{T,typeIds,U}}) where {T,typeIds,U} =
+    typeIds === nothing ? (0:(fieldcount(U) - 1)) : typeIds
+
+function _unionchildindex(
+    ::Type{UnionT{T,typeIds,U}},
+    rawtypeid::Integer,
+) where {T,typeIds,U}
+    ids = _uniontypeids(UnionT{T,typeIds,U})
+    index = findfirst(==(Int(rawtypeid)), ids)
+    index === nothing && throw(ArgumentError("union type id $rawtypeid is not declared"))
+    return index
+end
+
 ArrowTypes.ArrowKind(::Type{<:UnionT}) = ArrowTypes.UnionKind()
 
 # iterate a Julia Union{...} type, producing an array of unioned types
@@ -76,9 +89,10 @@ nullcount(x::DenseUnion) = 0 # DenseUnion has no validity bitmap; only children 
 ) where {T,M,typeIds,U}
     @boundscheck checkbounds(s, i)
     @inbounds typeId = s.typeIds[i]
+    childidx = _unionchildindex(UnionT{M,typeIds,U}, typeId)
     @inbounds off = s.offsets[i]
-    @inbounds x = s.data[typeId + 1][off + 1]
-    return ArrowTypes.fromarrow(fieldtype(U, typeId + 1), x)
+    @inbounds x = s.data[childidx][off + 1]
+    return ArrowTypes.fromarrow(fieldtype(U, childidx), x)
 end
 
 # @propagate_inbounds function Base.setindex!(s::DenseUnion{UnionT{T, typeIds, U}}, v, i::Integer) where {T, typeIds, U}
@@ -108,7 +122,7 @@ Base.iterate(x::DenseUnionVector, st...) = iterate(x.itr, st...)
 Base.getindex(x::DenseUnionVector, i::Int) = getindex(x.itr, i)
 
 function todense(::Type{UnionT{T,typeIds,U}}, x) where {T,typeIds,U}
-    typeids = typeIds === nothing ? (0:(fieldcount(U) - 1)) : typeIds
+    typeids = _uniontypeids(UnionT{T,typeIds,U})
     len = length(x)
     types = Vector{UInt8}(undef, len)
     offsets = Vector{Int32}(undef, len)
@@ -117,10 +131,11 @@ function todense(::Type{UnionT{T,typeIds,U}}, x) where {T,typeIds,U}
         i = 1:fieldcount(U)
     )
     for (i, y) in enumerate(x)
-        typeid = y === missing ? 0x00 : UInt8(typeids[isatypeid(y, U)])
+        childidx = y === missing ? 1 : isatypeid(y, U)
+        typeid = UInt8(typeids[childidx])
         @inbounds types[i] = typeid
-        @inbounds offsets[i] = length(data[typeid + 1])
-        push!(data[typeid + 1], y)
+        @inbounds offsets[i] = length(data[childidx])
+        push!(data[childidx], y)
     end
     return types, offsets, data
 end
@@ -142,11 +157,12 @@ Base.getindex(x::SparseUnionVector, i::Int) = getindex(x.itr, i)
 # should include the elements from parent of its type
 # and other elements can be missing/default
 function sparsetypeids(::Type{UnionT{T,typeIds,U}}, x) where {T,typeIds,U}
-    typeids = typeIds === nothing ? (0:(fieldcount(U) - 1)) : typeIds
+    typeids = _uniontypeids(UnionT{T,typeIds,U})
     len = length(x)
     types = Vector{UInt8}(undef, len)
     for (i, y) in enumerate(x)
-        typeid = y === missing ? 0x00 : UInt8(typeids[isatypeid(y, U)])
+        childidx = y === missing ? 1 : isatypeid(y, U)
+        typeid = UInt8(typeids[childidx])
         @inbounds types[i] = typeid
     end
     return types
@@ -204,8 +220,9 @@ nullcount(x::SparseUnion) = 0
 ) where {T,M,typeIds,U}
     @boundscheck checkbounds(s, i)
     @inbounds typeId = s.typeIds[i]
-    @inbounds x = s.data[typeId + 1][i]
-    return ArrowTypes.fromarrow(fieldtype(U, typeId + 1), x)
+    childidx = _unionchildindex(UnionT{M,typeIds,U}, typeId)
+    @inbounds x = s.data[childidx][i]
+    return ArrowTypes.fromarrow(fieldtype(U, childidx), x)
 end
 
 # @propagate_inbounds function Base.setindex!(s::SparseUnion{UnionT{T, typeIds, U}}, v, i::Integer) where {T, typeIds, U}
@@ -243,7 +260,7 @@ arrowvector(
 ) = x
 
 function arrowvector(::UnionKind, x, i, nl, fi, de, ded, meta; kw...)
-    UT = eltype(x)
+    UT = Base.nonmissingtype(eltype(x))
     if unionmode(UT) == Meta.UnionMode.Dense
         x = x isa DenseUnionVector ? x.itr : x
         typeids, offsets, data = todense(UT, x)

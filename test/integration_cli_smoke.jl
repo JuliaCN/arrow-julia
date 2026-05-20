@@ -177,5 +177,10 @@ end
             dir;
             basename="decimal256",
         )
+        assert_json_ipc_validate(
+            joinpath(ARROW_JSON_DIR, "union-custom-ids.json"),
+            dir;
+            basename="union-custom-ids",
+        )
     end
 end

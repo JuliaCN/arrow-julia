@@ -157,7 +157,7 @@ function arrowtype(
     if typeIds !== nothing
         Meta.unionStartTypeIdsVector(b, length(typeIds))
         for id in Iterators.reverse(typeIds)
-            FlatBuffers.prepend!(b, id)
+            FlatBuffers.prepend!(b, Int32(id))
         end
         TI = FlatBuffers.endvector!(b, length(typeIds))
     end

@@ -17,6 +17,15 @@
 _mapentrykey(entry) = getfield(entry, 1)
 _mapentryvalue(entry) = getfield(entry, 2)
 _decimalstoragetype(::Base.Type{<:Arrow.Decimal{P,S,T}}) where {P,S,T} = T
+_uniontypeids(::Base.Type{<:Arrow.UnionT{T,typeIds,U}}) where {T,typeIds,U} =
+    typeIds === nothing ? (0:(fieldcount(U) - 1)) : typeIds
+
+function _unionchildindex(::Base.Type{UT}, rawtypeid::Integer) where {UT<:Arrow.UnionT}
+    ids = _uniontypeids(UT)
+    index = findfirst(==(Base.Int(rawtypeid)), ids)
+    index === nothing && error("union type id $rawtypeid is not declared")
+    return index
+end
 
 function Base.getindex(x::ArrowArray{T}, i::Base.Int) where {T}
     @boundscheck checkbounds(x, i)
@@ -36,21 +45,19 @@ function Base.getindex(x::ArrowArray{T}, i::Base.Int) where {T}
         values = ArrowArray(x.field.children[2], x.fielddata.children[2], x.dictionaries)
         physical = searchsortedfirst(run_ends, i)
         return values[physical]
-    elseif S <: UnionT
-        U = eltype(S)
-        tids = Arrow.typeids(S) === nothing ? (0:fieldcount(U)) : Arrow.typeids(S)
-        typeid = tids[x.fielddata.TYPE_ID[i]]
-        if Arrow.unionmode(S) == Arrow.Meta.UnionMode.DENSE
+    elseif x.field.type isa UnionT
+        childidx = _unionchildindex(x.field.type.typeIds, x.fielddata.TYPE_ID[i])
+        if x.field.type.mode == "DENSE"
             off = x.fielddata.OFFSET[i]
             return ArrowArray(
-                x.field.children[typeid + 1],
-                x.fielddata.children[typeid + 1],
+                x.field.children[childidx],
+                x.fielddata.children[childidx],
                 x.dictionaries,
-            )[off]
+            )[off + 1]
         else
             return ArrowArray(
-                x.field.children[typeid + 1],
-                x.fielddata.children[typeid + 1],
+                x.field.children[childidx],
+                x.fielddata.children[childidx],
                 x.dictionaries,
             )[i]
         end
@@ -124,4 +131,10 @@ function Base.getindex(x::ArrowArray{T}, i::Base.Int) where {T}
     else
         return S(x.fielddata.DATA[i])
     end
+end
+
+function _unionchildindex(typeids::AbstractVector, rawtypeid::Integer)
+    index = findfirst(==(Base.Int(rawtypeid)), typeids)
+    index === nothing && error("union type id $rawtypeid is not declared")
+    return index
 end

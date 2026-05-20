@@ -1,0 +1,164 @@
+{
+  "schema": {
+    "fields": [
+      {
+        "name": "sparse_union",
+        "type": {
+          "name": "union",
+          "mode": "SPARSE",
+          "typeIds": [
+            5,
+            7
+          ]
+        },
+        "nullable": true,
+        "children": [
+          {
+            "name": "ints",
+            "type": {
+              "name": "int",
+              "isSigned": true,
+              "bitWidth": 32
+            },
+            "nullable": true,
+            "children": []
+          },
+          {
+            "name": "labels",
+            "type": {
+              "name": "utf8"
+            },
+            "nullable": true,
+            "children": []
+          }
+        ]
+      },
+      {
+        "name": "dense_union",
+        "type": {
+          "name": "union",
+          "mode": "DENSE",
+          "typeIds": [
+            10,
+            20
+          ]
+        },
+        "nullable": true,
+        "children": [
+          {
+            "name": "codes",
+            "type": {
+              "name": "int",
+              "isSigned": false,
+              "bitWidth": 8
+            },
+            "nullable": true,
+            "children": []
+          },
+          {
+            "name": "payloads",
+            "type": {
+              "name": "binary"
+            },
+            "nullable": true,
+            "children": []
+          }
+        ]
+      }
+    ]
+  },
+  "batches": [
+    {
+      "count": 3,
+      "columns": [
+        {
+          "name": "sparse_union",
+          "count": 3,
+          "TYPE_ID": [
+            5,
+            7,
+            5
+          ],
+          "children": [
+            {
+              "name": "ints",
+              "count": 3,
+              "VALIDITY": [
+                1,
+                1,
+                1
+              ],
+              "DATA": [
+                1,
+                0,
+                2
+              ]
+            },
+            {
+              "name": "labels",
+              "count": 3,
+              "VALIDITY": [
+                1,
+                1,
+                1
+              ],
+              "OFFSET": [
+                0,
+                0,
+                5,
+                5
+              ],
+              "DATA": [
+                "",
+                "hello",
+                ""
+              ]
+            }
+          ]
+        },
+        {
+          "name": "dense_union",
+          "count": 3,
+          "TYPE_ID": [
+            10,
+            20,
+            10
+          ],
+          "OFFSET": [
+            0,
+            0,
+            1
+          ],
+          "children": [
+            {
+              "name": "codes",
+              "count": 2,
+              "VALIDITY": [
+                1,
+                1
+              ],
+              "DATA": [
+                4,
+                8
+              ]
+            },
+            {
+              "name": "payloads",
+              "count": 1,
+              "VALIDITY": [
+                1
+              ],
+              "OFFSET": [
+                0,
+                2
+              ],
+              "DATA": [
+                "AABB"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

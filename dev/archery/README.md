@@ -106,6 +106,9 @@ Upstream runner receipts:
 - `decimal` covered upstream IPC JSON cases:
   `generated_decimal.json`, `generated_decimal256.json`,
   `generated_decimal32.json`, and `generated_decimal64.json`.
+- `union` selector result: `0 failures, 0 skips`.
+- `union` covered upstream IPC JSON cases:
+  `generated_union.json`.
 - Each covered case executed Julia producer plus Julia consumer validation
   through file and stream paths.
 

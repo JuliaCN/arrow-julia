@@ -268,6 +268,39 @@ function _native_run_end_encoded(field::Field, fielddata::FieldData, dictionarie
     )
 end
 
+function _union_arrow_type(field::Field, data::Tuple)
+    mode =
+        field.type.mode == "DENSE" ? Arrow.Meta.UnionMode.Dense :
+        Arrow.Meta.UnionMode.Sparse
+    ids = Tuple(Base.Int.(field.type.typeIds))
+    child_types = Tuple{(eltype(child) for child in data)...}
+    return Arrow.UnionT{mode,ids,child_types}
+end
+
+function _native_union(field::Field, fielddata::FieldData, dictionaries)
+    data = Tuple(
+        _native_arrowvector(field.children[i], fielddata.children[i], dictionaries) for
+        i = 1:length(field.children)
+    )
+    typeids = UInt8.(fielddata.TYPE_ID)
+    UT = _union_arrow_type(field, data)
+    T = Union{(eltype(child) for child in data)...}
+    metadata = _arrow_metadata_dict(field.metadata)
+    if field.type.mode == "DENSE"
+        offsets = Int32.(_offsetvalue.(fielddata.OFFSET))
+        return Arrow.DenseUnion{T,UT,typeof(data)}(
+            UInt8[],
+            UInt8[],
+            typeids,
+            offsets,
+            data,
+            metadata,
+        )
+    else
+        return Arrow.SparseUnion{T,UT,typeof(data)}(UInt8[], typeids, data, metadata)
+    end
+end
+
 function _physical_column(field::Field, fielddata::FieldData, dictionaries)
     field.type isa Union{Utf8View,BinaryView} && return _native_view(field, fielddata)
     field.type isa Union{ListView,LargeListView} &&
@@ -276,6 +309,7 @@ function _physical_column(field::Field, fielddata::FieldData, dictionaries)
         return _native_fixed_size_list(field, fielddata, dictionaries)
     field.type isa RunEndEncoded &&
         return _native_run_end_encoded(field, fielddata, dictionaries)
+    field.type isa UnionT && return _native_union(field, fielddata, dictionaries)
     return nothing
 end
 
