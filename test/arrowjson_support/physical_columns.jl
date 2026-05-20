@@ -338,8 +338,7 @@ function _intervalvalue(::Base.Type{S}, value) where {S}
                 _jsonint(_jsonfield(value, :nanoseconds)),
             ),
         )
-    elseif S <: Arrow.Interval{Arrow.Meta.IntervalUnit.DAY_TIME} &&
-           hasproperty(value, :days)
+    elseif S <: Arrow.Interval{Arrow.Meta.IntervalUnit.DAY_TIME} && _hasjsonfield(value, :days)
         days = Int32(_jsonint(_jsonfield(value, :days)))
         milliseconds = Int32(_jsonint(_jsonfield(value, :milliseconds)))
         return S(reinterpret(Int64, [days, milliseconds])[1])

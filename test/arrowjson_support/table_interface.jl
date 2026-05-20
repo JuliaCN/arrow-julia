@@ -113,5 +113,7 @@ Base.size(x::ArrowArray) = (x.fielddata.count,)
 _jsonint(x::Integer) = Base.Int(x)
 _jsonint(x::AbstractString) = parse(Base.Int, x)
 _offsetvalue(x) = _jsonint(x)
+_hasjsonfield(x::AbstractDict, key::Symbol) = haskey(x, String(key)) || haskey(x, key)
+_hasjsonfield(x, key::Symbol) = hasproperty(x, key)
 _jsonfield(x::AbstractDict, key::Symbol) = haskey(x, String(key)) ? x[String(key)] : x[key]
 _jsonfield(x, key::Symbol) = getproperty(x, key)
