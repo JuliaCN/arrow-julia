@@ -64,11 +64,17 @@ struct Decimal <: Type
     name::String
     precision::Int32
     scale::Int32
+    bitWidth::Int32
 end
 
-Type(::Base.Type{Arrow.Decimal{P,S,T}}) where {P,S,T} = Decimal("decimal", P, S)
+Decimal(name::String, precision::Integer, scale::Integer) =
+    Decimal(name, Int32(precision), Int32(scale), Int32(128))
+
+Type(::Base.Type{Arrow.Decimal{P,S,T}}) where {P,S,T} =
+    Decimal("decimal", P, S, T === Arrow.Int256 ? Int32(256) : Int32(128))
 StructTypes.StructType(::Base.Type{Decimal}) = StructTypes.Struct()
-juliatype(f, x::Decimal) = Arrow.Decimal{x.precision,x.scale,Int128}
+juliatype(f, x::Decimal) =
+    Arrow.Decimal{x.precision,x.scale,x.bitWidth == 256 ? Arrow.Int256 : Int128}
 
 mutable struct Timestamp <: Type
     name::String

@@ -102,6 +102,10 @@ Upstream runner receipts:
 - `map` selector result: `0 failures, 0 skips`.
 - `map` covered upstream IPC JSON cases:
   `generated_map.json` and `generated_map_non_canonical.json`.
+- `decimal` selector result: `0 failures, 0 skips`.
+- `decimal` covered upstream IPC JSON cases:
+  `generated_decimal.json`, `generated_decimal256.json`,
+  `generated_decimal32.json`, and `generated_decimal64.json`.
 - Each covered case executed Julia producer plus Julia consumer validation
   through file and stream paths.
 

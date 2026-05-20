@@ -172,5 +172,10 @@ end
             dir;
             basename="map-non-canonical",
         )
+        assert_json_ipc_validate(
+            joinpath(ARROW_JSON_DIR, "decimal256.json"),
+            dir;
+            basename="decimal256",
+        )
     end
 end

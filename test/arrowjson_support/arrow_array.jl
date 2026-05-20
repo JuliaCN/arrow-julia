@@ -16,6 +16,7 @@
 
 _mapentrykey(entry) = getfield(entry, 1)
 _mapentryvalue(entry) = getfield(entry, 2)
+_decimalstoragetype(::Base.Type{<:Arrow.Decimal{P,S,T}}) where {P,S,T} = T
 
 function Base.getindex(x::ArrowArray{T}, i::Base.Int) where {T}
     @boundscheck checkbounds(x, i)
@@ -112,7 +113,7 @@ function Base.getindex(x::ArrowArray{T}, i::Base.Int) where {T}
         return parse(S, x.fielddata.DATA[i])
     elseif S <: Arrow.Decimal
         str = x.fielddata.DATA[i]
-        return S(parse(Int128, str))
+        return S(parse(_decimalstoragetype(S), str))
     elseif S <: Arrow.Date || S <: Arrow.Time
         val = x.fielddata.DATA[i]
         return Arrow.storagetype(S) == Int32 ? S(val) : S(parse(Int64, val))
