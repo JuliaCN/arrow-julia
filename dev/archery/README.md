@@ -109,6 +109,11 @@ Upstream runner receipts:
 - `union` selector result: `0 failures, 0 skips`.
 - `union` covered upstream IPC JSON cases:
   `generated_union.json`.
+- `binary` selector result: `0 failures, 0 skips`.
+- `binary` covered upstream IPC JSON cases:
+  `generated_binary_no_batches.json`, `generated_binary.json`,
+  `generated_binary_zerolength.json`, `generated_large_binary.json`, and
+  `generated_binary_view.json`.
 - Each covered case executed Julia producer plus Julia consumer validation
   through file and stream paths.
 
