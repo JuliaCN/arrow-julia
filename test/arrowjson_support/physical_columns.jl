@@ -24,6 +24,11 @@ end
 
 _hexstring(bytes) = uppercase(bytes2hex(collect(UInt8, bytes)))
 
+function _arrow_metadata_dict(meta)
+    dict = _metadata_dict(meta)
+    return dict === nothing ? nothing : Arrow.toidict(dict)
+end
+
 function _validity_values(validity, len)
     return Int8[validity[i] for i = 1:len]
 end
@@ -218,7 +223,7 @@ function _native_view(field::Field, fielddata::FieldData)
         inline,
         buffers,
         fielddata.count,
-        _metadata_dict(field.metadata),
+        _arrow_metadata_dict(field.metadata),
     )
 end
 
@@ -236,7 +241,19 @@ function _native_list_view(field::Field, fielddata::FieldData, dictionaries)
         sizes,
         data;
         validity=_validity_bitmap(fielddata),
-        metadata=_metadata_dict(field.metadata),
+        metadata=_arrow_metadata_dict(field.metadata),
+    )
+end
+
+function _native_fixed_size_list(field::Field, fielddata::FieldData, dictionaries)
+    data = _native_arrowvector(field.children[1], fielddata.children[1], dictionaries)
+    T = juliatype(field)
+    return Arrow.FixedSizeList{T,typeof(data)}(
+        UInt8[],
+        _validity_bitmap(fielddata),
+        data,
+        fielddata.count,
+        _arrow_metadata_dict(field.metadata),
     )
 end
 
@@ -247,7 +264,7 @@ function _native_run_end_encoded(field::Field, fielddata::FieldData, dictionarie
         run_ends,
         values,
         fielddata.count,
-        _metadata_dict(field.metadata),
+        _arrow_metadata_dict(field.metadata),
     )
 end
 
@@ -255,6 +272,8 @@ function _physical_column(field::Field, fielddata::FieldData, dictionaries)
     field.type isa Union{Utf8View,BinaryView} && return _native_view(field, fielddata)
     field.type isa Union{ListView,LargeListView} &&
         return _native_list_view(field, fielddata, dictionaries)
+    field.type isa FixedSizeList &&
+        return _native_fixed_size_list(field, fielddata, dictionaries)
     field.type isa RunEndEncoded &&
         return _native_run_end_encoded(field, fielddata, dictionaries)
     return nothing

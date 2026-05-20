@@ -145,6 +145,7 @@ function writearray(io::IO, ::Type{UInt8}, col::ToFixedSizeList{UInt8,N}) where 
     return n
 end
 
+arrowvector(x::FixedSizeList, i, nl, fi, de, ded, meta; kw...) = x
 arrowvector(::FixedSizeListKind, x::FixedSizeList, i, nl, fi, de, ded, meta; kw...) = x
 
 function arrowvector(

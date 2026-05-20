@@ -162,5 +162,10 @@ end
             dir;
             basename="canonical-extensions",
         )
+        assert_json_ipc_validate(
+            joinpath(ARROW_JSON_DIR, "nested.json"),
+            dir;
+            basename="nested",
+        )
     end
 end
