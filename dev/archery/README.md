@@ -68,6 +68,31 @@ Upstream apply receipt:
 - `rg -n "with_julia|ARCHERY_INTEGRATION_WITH_JULIA|JuliaTester|command=\"FILE_TO_STREAM\"" dev/archery/archery`
   found the expected registration points.
 
+Upstream runner receipt:
+
+- Apache Arrow checkout: `603eeec8f6d75fa3d029be0aefbf1405a0dde69b`.
+- Command shape:
+
+  ```sh
+  ARROW_JULIA_ROOT=/path/to/arrow-julia \
+    ARCHERY_INTEGRATION_WITH_JULIA=true \
+    archery integration \
+      --run-ipc \
+      --target-implementations=julia \
+      --with-julia=true \
+      --serial \
+      --stop-on-error \
+      --tempdir /tmp/arrow-julia-archery-primitive \
+      -k primitive
+  ```
+
+- Result: `0 failures, 0 skips`.
+- Covered upstream IPC JSON cases:
+  `generated_primitive_no_batches.json`, `generated_primitive.json`, and
+  `generated_primitive_zerolength.json`.
+- Each covered case executed Julia producer plus Julia consumer validation
+  through file and stream paths.
+
 Local validation:
 
 ```sh
