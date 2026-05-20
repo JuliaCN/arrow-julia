@@ -179,6 +179,166 @@ function write_null_trivial_json(path)
     return path
 end
 
+function write_nested_dictionary_json(path)
+    write(
+        path,
+        """
+        {
+          "schema": {
+            "fields": [
+              {
+                "name": "struct_dict",
+                "type": {
+                  "name": "struct"
+                },
+                "nullable": true,
+                "children": [
+                  {
+                    "name": "str_dict_a",
+                    "type": {
+                      "name": "utf8"
+                    },
+                    "nullable": true,
+                    "children": [],
+                    "dictionary": {
+                      "id": 0,
+                      "indexType": {
+                        "name": "int",
+                        "isSigned": true,
+                        "bitWidth": 8
+                      },
+                      "isOrdered": false
+                    }
+                  },
+                  {
+                    "name": "str_dict_b",
+                    "type": {
+                      "name": "utf8"
+                    },
+                    "nullable": true,
+                    "children": [],
+                    "dictionary": {
+                      "id": 0,
+                      "indexType": {
+                        "name": "int",
+                        "isSigned": true,
+                        "bitWidth": 8
+                      },
+                      "isOrdered": false
+                    }
+                  }
+                ],
+                "dictionary": {
+                  "id": 1,
+                  "indexType": {
+                    "name": "int",
+                    "isSigned": true,
+                    "bitWidth": 8
+                  },
+                  "isOrdered": false
+                }
+              }
+            ]
+          },
+          "dictionaries": [
+            {
+              "id": 0,
+              "data": {
+                "count": 3,
+                "columns": [
+                  {
+                    "name": "DICT0",
+                    "count": 3,
+                    "VALIDITY": [
+                      1,
+                      1,
+                      0
+                    ],
+                    "OFFSET": [
+                      0,
+                      5,
+                      9,
+                      9
+                    ],
+                    "DATA": [
+                      "alpha",
+                      "beta",
+                      ""
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "id": 1,
+              "data": {
+                "count": 2,
+                "columns": [
+                  {
+                    "name": "DICT1",
+                    "count": 2,
+                    "VALIDITY": [
+                      1,
+                      1
+                    ],
+                    "children": [
+                      {
+                        "name": "str_dict_a",
+                        "count": 2,
+                        "VALIDITY": [
+                          1,
+                          1
+                        ],
+                        "DATA": [
+                          0,
+                          1
+                        ]
+                      },
+                      {
+                        "name": "str_dict_b",
+                        "count": 2,
+                        "VALIDITY": [
+                          1,
+                          0
+                        ],
+                        "DATA": [
+                          1,
+                          2
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          ],
+          "batches": [
+            {
+              "count": 3,
+              "columns": [
+                {
+                  "name": "struct_dict",
+                  "count": 3,
+                  "VALIDITY": [
+                    1,
+                    1,
+                    0
+                  ],
+                  "DATA": [
+                    0,
+                    1,
+                    0
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+        """,
+    )
+    return path
+end
+
 @testset "integration CLI subprocess smoke" begin
     mktempdir() do dir
         assert_json_ipc_roundtrip(
@@ -220,6 +380,11 @@ end
             joinpath(ARROW_JSON_DIR, "union-custom-ids.json"),
             dir;
             basename="union-custom-ids",
+        )
+        assert_json_ipc_validate(
+            write_nested_dictionary_json(joinpath(dir, "nested-dictionary.json")),
+            dir;
+            basename="nested-dictionary",
         )
     end
 end
