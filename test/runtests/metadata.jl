@@ -54,3 +54,23 @@
         colmetadata!(df, :c, "cckey", "ccvalue")
     end
 end # @testset "DataAPI.metadata"
+
+@testset "DataAPI.colmetadata partitioned read" begin
+    source = Tables.partitioner(((a=[1, 2],), (a=[3],)))
+    colmeta = Dict(:a => Dict("test:metadata" => "partitioned"))
+
+    io = IOBuffer()
+    Arrow.write(io, source; colmetadata=colmeta)
+    seekstart(io)
+    tbl = Arrow.Table(io)
+
+    @test tbl.a == [1, 2, 3]
+    @test DataAPI.colmetadata(tbl, :a, "test:metadata") == "partitioned"
+
+    parts = collect(Tables.partitions(tbl))
+    @test length(parts) == 2
+    @test parts[1].a == [1, 2]
+    @test parts[2].a == [3]
+    @test DataAPI.colmetadata(parts[1], :a, "test:metadata") == "partitioned"
+    @test DataAPI.colmetadata(parts[2], :a, "test:metadata") == "partitioned"
+end

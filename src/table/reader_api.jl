@@ -170,6 +170,11 @@ function Table(blobs::Vector{ArrowBlob}; convert::Bool=true)
             end
         end
     end
+    if sch !== nothing
+        foreach(enumerate(sch.fields)) do (i, field)
+            columns(t)[i] = _wrapfieldmetadata(columns(t)[i], field)
+        end
+    end
     for (nm, col) in zip(names(t), columns(t))
         lu[nm] = col
         push!(ty, eltype(col))
@@ -266,3 +271,10 @@ buildmetadata(f::Union{Meta.Field,Meta.Schema}) = buildmetadata(f.custom_metadat
 buildmetadata(meta) = toidict(String(kv.key) => String(kv.value) for kv in meta)
 buildmetadata(::Nothing) = nothing
 buildmetadata(x::AbstractDict) = x
+
+function _wrapfieldmetadata(col, field::Meta.Field)
+    metadata = buildmetadata(field.custom_metadata)
+    metadata === nothing && return col
+    getmetadata(col) == metadata && return col
+    return _wrapmetadata(_metadatavectordata(col), metadata)
+end

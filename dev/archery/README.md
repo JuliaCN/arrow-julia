@@ -132,6 +132,9 @@ Upstream runner receipts:
 - `run_end_encoded` selector result: `0 failures, 0 skips`.
 - `run_end_encoded` covered upstream IPC JSON cases:
   `generated_run_end_encoded.json`.
+- `extension` selector result: `0 failures, 0 skips`.
+- `extension` covered upstream IPC JSON cases:
+  `generated_extension.json`.
 - Each covered case executed Julia producer plus Julia consumer validation
   through file and stream paths.
 
