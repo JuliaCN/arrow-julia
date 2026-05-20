@@ -145,8 +145,47 @@ function assert_json_ipc_validate(jsonfile, dir; basename)
     return
 end
 
+function write_null_trivial_json(path)
+    write(
+        path,
+        """
+        {
+          "schema": {
+            "fields": [
+              {
+                "name": "f0",
+                "type": {
+                  "name": "null"
+                },
+                "nullable": true,
+                "children": []
+              }
+            ]
+          },
+          "batches": [
+            {
+              "count": 0,
+              "columns": [
+                {
+                  "name": "f0",
+                  "count": 0
+                }
+              ]
+            }
+          ]
+        }
+        """,
+    )
+    return path
+end
+
 @testset "integration CLI subprocess smoke" begin
     mktempdir() do dir
+        assert_json_ipc_roundtrip(
+            write_null_trivial_json(joinpath(dir, "null-trivial.json")),
+            dir;
+            basename="null-trivial",
+        )
         assert_json_ipc_roundtrip(
             joinpath(ARROW_JSON_DIR, "primitive-empty.json"),
             dir;

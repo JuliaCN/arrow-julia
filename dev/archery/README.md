@@ -123,6 +123,9 @@ Upstream runner receipts:
 - `interval` selector result: `0 failures, 0 skips`.
 - `interval` covered upstream IPC JSON cases:
   `generated_interval.json` and `generated_interval_mdn.json`.
+- `null` selector result: `0 failures, 0 skips`.
+- `null` covered upstream IPC JSON cases:
+  `generated_null.json` and `generated_null_trivial.json`.
 - Each covered case executed Julia producer plus Julia consumer validation
   through file and stream paths.
 

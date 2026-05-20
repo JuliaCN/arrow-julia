@@ -210,7 +210,7 @@ function TablePartitions(table::Table)
     npartitions = if length(cols) == 0
         0
     elseif (arrays = _partitionarrays(cols[1])) !== nothing
-        length(arrays)
+        isempty(arrays) ? 1 : length(arrays)
     else
         1
     end
