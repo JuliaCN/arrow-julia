@@ -1,3 +1,4 @@
+#
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
 # distributed with this work for additional information
@@ -19,7 +20,7 @@
 # Apply from the Apache Arrow repository root after reviewing against the
 # current dev/archery sources.
 diff --git a/dev/archery/archery/cli.py b/dev/archery/archery/cli.py
-index 0000000000..0000000000 100644
+index e70cc38..1a48358 100644
 --- a/dev/archery/archery/cli.py
 +++ b/dev/archery/archery/cli.py
 @@ -681,6 +681,9 @@ def _set_default(opt, default):
@@ -33,7 +34,7 @@ index 0000000000..0000000000 100644
                help='Include nanoarrow in integration tests',
                envvar="ARCHERY_INTEGRATION_WITH_NANOARROW")
 diff --git a/dev/archery/archery/integration/runner.py b/dev/archery/archery/integration/runner.py
-index 0000000000..0000000000 100644
+index 9c0fda3..7e58639 100644
 --- a/dev/archery/archery/integration/runner.py
 +++ b/dev/archery/archery/integration/runner.py
 @@ -594,7 +594,7 @@ def get_static_json_files():
@@ -45,7 +46,7 @@ index 0000000000..0000000000 100644
      target_implementations = (target_implementations.split(",")
                                if target_implementations else [])
 
-@@ -630,6 +630,10 @@ def select_testers(with_cpp=True, with_java=True, with_js=True,
+@@ -631,6 +631,10 @@ def select_testers(with_cpp=True, with_java=True, with_js=True,
          from .tester_nanoarrow import NanoarrowTester
          append_tester("nanoarrow", NanoarrowTester(**kwargs))
 
@@ -58,10 +59,10 @@ index 0000000000..0000000000 100644
          append_tester("ruby", RubyTester(**kwargs))
 diff --git a/dev/archery/archery/integration/tester_julia.py b/dev/archery/archery/integration/tester_julia.py
 new file mode 100644
-index 0000000000..0000000000
+index 0000000..2338b07
 --- /dev/null
 +++ b/dev/archery/archery/integration/tester_julia.py
-@@ -0,0 +1,88 @@
+@@ -0,0 +1,100 @@
 +# Licensed to the Apache Software Foundation (ASF) under one
 +# or more contributor license agreements.  See the NOTICE file
 +# distributed with this work for additional information
@@ -87,21 +88,21 @@ index 0000000000..0000000000
 +
 +
 +def _default_arrow_julia_root():
-+    root = os.environ.get("ARROW_JULIA_ROOT")
-+    if root:
-+        return root
-+
++    local_root = Path(__file__).resolve().parents[2]
++    if (local_root / "test" / "integrationtest.jl").is_file():
++        return str(local_root)
 +    cwd = Path.cwd()
 +    if (cwd / "test" / "integrationtest.jl").is_file():
 +        return str(cwd)
-+
 +    raise RuntimeError(
 +        "Set ARROW_JULIA_ROOT to an Arrow.jl checkout containing "
 +        "test/integrationtest.jl"
 +    )
 +
 +
-+_ARROW_JULIA_ROOT = _default_arrow_julia_root()
++_ARROW_JULIA_ROOT = os.environ.get("ARROW_JULIA_ROOT")
++if _ARROW_JULIA_ROOT is None:
++    _ARROW_JULIA_ROOT = _default_arrow_julia_root()
 +_INTEGRATION_EXE = os.environ.get(
 +    "ARROW_JULIA_INTEGRATION_EXE",
 +    os.path.join(_ARROW_JULIA_ROOT, "dev", "archery", "arrow-julia-json-integration-test"),

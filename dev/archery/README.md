@@ -56,6 +56,18 @@ This repository keeps the patch as an auditable registration artifact. Actual
 upstream Archery participation is complete only after the patch is applied and
 validated in the Apache Arrow monorepo.
 
+Upstream apply receipt:
+
+- Apache Arrow checkout: `603eeec8f6d75fa3d029be0aefbf1405a0dde69b`.
+- `git apply --check dev/archery/apache-arrow-archery-julia-registration.patch`
+  passed from the Apache Arrow repository root.
+- `git apply dev/archery/apache-arrow-archery-julia-registration.patch`
+  passed from the Apache Arrow repository root.
+- `python -m py_compile dev/archery/archery/integration/tester_julia.py`
+  passed after applying the patch.
+- `rg -n "with_julia|ARCHERY_INTEGRATION_WITH_JULIA|JuliaTester|command=\"FILE_TO_STREAM\"" dev/archery/archery`
+  found the expected registration points.
+
 Local validation:
 
 ```sh
