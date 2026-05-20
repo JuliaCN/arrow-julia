@@ -116,6 +116,12 @@ function Base.getindex(x::ArrowArray{T}, i::Base.Int) where {T}
             j = 1:length(x.field.children)
         )
         return NamedTuple{fieldnames(S)}(Tuple(data))
+    elseif S <: Tuple
+        data = (
+            ArrowArray(x.field.children[j], x.fielddata.children[j], x.dictionaries)[i] for
+            j = 1:length(x.field.children)
+        )
+        return Tuple(data)
     elseif S == Int64 || S == UInt64
         return parse(S, x.fielddata.DATA[i])
     elseif S <: Arrow.Decimal

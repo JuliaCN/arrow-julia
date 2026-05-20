@@ -135,6 +135,12 @@ Upstream runner receipts:
 - `extension` selector result: `0 failures, 0 skips`.
 - `extension` covered upstream IPC JSON cases:
   `generated_extension.json`.
+- `custom_metadata` selector result: `0 failures, 0 skips`.
+- `custom_metadata` covered upstream IPC JSON cases:
+  `generated_custom_metadata.json`.
+- `duplicate_fieldnames` selector result: `0 failures, 0 skips`.
+- `duplicate_fieldnames` covered upstream IPC JSON cases:
+  `generated_duplicate_fieldnames.json`.
 - Each covered case executed Julia producer plus Julia consumer validation
   through file and stream paths.
 

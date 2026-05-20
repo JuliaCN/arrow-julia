@@ -268,6 +268,21 @@ function _native_run_end_encoded(field::Field, fielddata::FieldData, dictionarie
     )
 end
 
+function _native_struct(field::Field, fielddata::FieldData, dictionaries)
+    data = Tuple(
+        _native_arrowvector(field.children[i], fielddata.children[i], dictionaries) for
+        i = 1:length(field.children)
+    )
+    names = Tuple(Symbol(child.name) for child in field.children)
+    T = juliatype(field)
+    return Arrow.Struct{T,typeof(data),names}(
+        _validity_bitmap(fielddata),
+        data,
+        fielddata.count,
+        _arrow_metadata_dict(field.metadata),
+    )
+end
+
 function _union_arrow_type(field::Field, data::Tuple)
     mode =
         field.type.mode == "DENSE" ? Arrow.Meta.UnionMode.Dense :
@@ -309,6 +324,7 @@ function _physical_column(field::Field, fielddata::FieldData, dictionaries)
         return _native_fixed_size_list(field, fielddata, dictionaries)
     field.type isa RunEndEncoded &&
         return _native_run_end_encoded(field, fielddata, dictionaries)
+    field.type isa Struct && return _native_struct(field, fielddata, dictionaries)
     field.type isa UnionT && return _native_union(field, fielddata, dictionaries)
     return nothing
 end

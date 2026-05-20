@@ -70,6 +70,13 @@ end
 
 Tables.columns(x::DataFile) = x
 
+function Tables.eachcolumn(f, sch::Tables.Schema, x::DataFile)
+    for i = 1:length(x.schema.fields)
+        f(Tables.getcolumn(x, i), i, Symbol(x.schema.fields[i].name))
+    end
+    return
+end
+
 function Tables.schema(x::DataFile)
     names = map(x -> x.name, x.schema.fields)
     types = map(x -> juliatype(x), x.schema.fields)

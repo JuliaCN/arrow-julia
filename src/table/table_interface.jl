@@ -147,6 +147,13 @@ Tables.columnnames(t::Table) = names(t)
 Tables.getcolumn(t::Table, i::Int) = columns(t)[i]
 Tables.getcolumn(t::Table, nm::Symbol) = lookup(t)[nm]
 
+function Tables.eachcolumn(f, sch::Tables.Schema, cols::Tables.CopiedColumns{Table})
+    for i = 1:length(sch.names)
+        f(Tables.getcolumn(cols, i), i, sch.names[i])
+    end
+    return
+end
+
 struct MetadataVector{T,A<:AbstractVector{T},M} <: AbstractVector{T}
     data::A
     metadata::M

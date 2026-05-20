@@ -212,10 +212,11 @@ Type(::Base.Type{NamedTuple{names,types}}) where {names,types} = Struct("struct"
 children(::Base.Type{NamedTuple{names,types}}) where {names,types} =
     [Field(String(names[i]), fieldtype(types, i), nothing) for i = 1:length(names)]
 StructTypes.StructType(::Base.Type{Struct}) = StructTypes.Struct()
-juliatype(f, x::Struct) = NamedTuple{
-    Tuple(Symbol(x.name) for x in f.children),
-    Tuple{(juliatype(y) for y in f.children)...},
-}
+function juliatype(f, x::Struct)
+    names = Tuple(Symbol(x.name) for x in f.children)
+    types = Tuple(juliatype(y) for y in f.children)
+    return allunique(names) ? NamedTuple{names,Tuple{types...}} : Tuple{types...}
+end
 
 struct Map <: Type
     name::String

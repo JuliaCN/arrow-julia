@@ -126,11 +126,11 @@ end
 function juliaeltype(f::Meta.Field, list::Meta.Struct, convert)
     names = Tuple(Symbol(x.name) for x in f.children)
     types = Tuple(juliaeltype(x, buildmetadata(x), convert) for x in f.children)
-    return NamedTuple{names,Tuple{types...}}
+    return allunique(names) ? NamedTuple{names,Tuple{types...}} : Tuple{types...}
 end
 
-function arrowtype(b, x::Struct{T,S}) where {T,S}
-    names = fieldnames(Base.nonmissingtype(T))
+function arrowtype(b, x::Struct{T,S,fnames}) where {T,S,fnames}
+    names = fnames
     children = [fieldoffset(b, names[i], x.data[i]) for i = 1:length(names)]
     Meta.structStart(b)
     return Meta.Struct, Meta.structEnd(b), children
