@@ -114,6 +114,9 @@ Upstream runner receipts:
   `generated_binary_no_batches.json`, `generated_binary.json`,
   `generated_binary_zerolength.json`, `generated_large_binary.json`, and
   `generated_binary_view.json`.
+- `datetime` selector result: `0 failures, 0 skips`.
+- `datetime` covered upstream IPC JSON cases:
+  `generated_datetime.json`.
 - Each covered case executed Julia producer plus Julia consumer validation
   through file and stream paths.
 
