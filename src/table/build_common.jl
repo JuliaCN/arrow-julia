@@ -145,6 +145,34 @@ function _record_batch_variadic_count(rb, varbufferidx::Integer)
     return counts[varbufferidx]
 end
 
+function _assert_record_batch_fully_consumed(rb, nodeidx, bufferidx, varbufferidx)
+    declared_nodes = rb.nodes === nothing ? 0 : length(rb.nodes)
+    consumed_nodes = Int(nodeidx) - 1
+    consumed_nodes == declared_nodes || throw(
+        ArgumentError(
+            "record batch declares $declared_nodes field nodes but schema consumed $consumed_nodes",
+        ),
+    )
+
+    declared_buffers = rb.buffers === nothing ? 0 : length(rb.buffers)
+    consumed_buffers = Int(bufferidx) - 1
+    consumed_buffers == declared_buffers || throw(
+        ArgumentError(
+            "record batch declares $declared_buffers buffers but schema consumed $consumed_buffers",
+        ),
+    )
+
+    declared_variadic_counts =
+        rb.variadicBufferCounts === nothing ? 0 : length(rb.variadicBufferCounts)
+    consumed_variadic_counts = Int(varbufferidx) - 1
+    consumed_variadic_counts == declared_variadic_counts || throw(
+        ArgumentError(
+            "record batch declares $declared_variadic_counts variadic buffer counts but schema consumed $consumed_variadic_counts",
+        ),
+    )
+    return nothing
+end
+
 function _assert_reinterp_element_width(::Type{T}, len::Integer) where {T}
     width = sizeof(T)
     width == 1 && return nothing

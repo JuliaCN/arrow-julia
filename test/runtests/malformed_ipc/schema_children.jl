@@ -60,4 +60,17 @@
         () -> Arrow.validate(missing_list_child; stream=true),
         "field values is missing child 1",
     )
+
+    missing_struct_children = truncate_first_field_children!(
+        read(Arrow.tobuffer((values=[(a=1, b=2)],); ntasks=0)),
+        UInt32(0),
+    )
+    assert_argument_error(
+        () -> Arrow.validate(missing_struct_children),
+        "record batch declares 3 field nodes but schema consumed 1",
+    )
+    assert_argument_error(
+        () -> Arrow.validate(missing_struct_children; stream=true),
+        "record batch declares 3 field nodes but schema consumed 1",
+    )
 end

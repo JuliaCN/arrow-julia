@@ -268,9 +268,12 @@ function Base.iterate(x::Stream, (pos, id)=(1, 0))
             if header.compression !== nothing
                 compression = header.compression
             end
-            for vec in VectorIterator(x.schema, batch, x.dictencodings, x.convert)
-                push!(columns, vec)
-            end
+            append!(
+                columns,
+                materializecolumns(
+                    VectorIterator(x.schema, batch, x.dictencodings, x.convert),
+                ),
+            )
             break
         elseif header isa Meta.Tensor
             throw(ArgumentError(TENSOR_UNSUPPORTED))

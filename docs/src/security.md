@@ -51,6 +51,9 @@ lead to unsafe indexing or misleading semantic interpretation:
 - missing IPC schema child declarations and RecordBatch field-node,
   variadic-count, and buffer declarations are rejected with stable diagnostics
   before low-level bounds errors can escape;
+- RecordBatch field-node, buffer, and variadic-count declarations must be
+  fully consumed by the schema traversal so malformed schema/batch mismatches
+  cannot hide trailing layout data;
 - compressed IPC buffers validate their encoded body length, 8-byte
   uncompressed-length header, and allowed uncompressed length sentinel before
   decompression;
