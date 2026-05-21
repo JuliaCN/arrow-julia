@@ -22,6 +22,7 @@ const REPORT_SCRIPTS = (
     cdata="cdata_validation_report.jl",
     flight="flight_purehttp2_perf.jl",
     flightsql="flight_sql_performance_report.jl",
+    flightsqlendpoint="flight_sql_endpoint_report.jl",
 )
 
 function selected_reports()

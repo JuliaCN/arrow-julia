@@ -17,10 +17,12 @@
 
 include("purehttp2_extension/support.jl")
 include("purehttp2_extension/live_listener_tests.jl")
+include("purehttp2_extension/sql_endpoint_tests.jl")
 
 @testset "Flight gRPCServer transport over PureHTTP2 wire" begin
     fixture = purehttp2_extension_fixture()
     purehttp2_extension_test_live_listener(fixture)
+    purehttp2_extension_test_flight_sql_endpoint()
     purehttp2_extension_test_large_pyarrow_doexchange_listener(fixture)
     purehttp2_extension_test_concurrent_large_doget_listener()
     purehttp2_extension_test_concurrent_listener(fixture)

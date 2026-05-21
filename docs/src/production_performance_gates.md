@@ -26,7 +26,7 @@ wall-clock timing is noisy. Production readiness should instead be proven on
 the deployment class of hardware with explicit environment floors and retained
 receipts.
 
-The current production gate profile has four layers:
+The current production gate profile has five layers:
 
 1. C Data and C Stream same-process FFI receipts prove allocation bounds,
    release behavior, and pointer identity for CPU buffers.
@@ -37,16 +37,20 @@ The current production gate profile has four layers:
 4. Flight SQL protocol receipts prove command/action `google.protobuf.Any`
    packing, decode, and DoPut metadata helper allocation bounds for the
    package-owned protocol helper layer.
+5. Flight SQL endpoint receipts prove the same command/action surface over a
+   real Flight listener with external Python/protobuf clients for query,
+   prepared-statement, and ingestion paths.
 
-Run the whole profile with:
+Run the default FFI, IPC, and Flight transport profile with:
 
 ```sh
 julia --project=test test/production_performance_gates.jl
 ```
 
-Set `ARROW_PRODUCTION_PERFORMANCE_REPORTS=ipc,cdata` or another comma-separated
-subset of `ipc`, `cdata`, `flight`, and `flightsql` when a production
-environment wants to run only part of the profile.
+Set `ARROW_PRODUCTION_PERFORMANCE_REPORTS=ipc,cdata,flight,flightsql,flightsqlendpoint`
+to run every current report, or provide another comma-separated subset of
+`ipc`, `cdata`, `flight`, `flightsql`, and `flightsqlendpoint` when a
+production environment wants to run only part of the profile.
 
 ## IPC Gate
 
@@ -121,10 +125,22 @@ The Flight SQL report is a protocol-helper gate, not an external database
 benchmark. It measures typed command descriptors, action payloads, malformed
 decode-sensitive envelopes, `DoPutUpdateResult`, and optional prepared
 statement DoPut result metadata. Shared CI gates allocation regressions with
-`ARROW_FLIGHT_SQL_MAX_*_ALLOC_BYTES` variables. Deployment profiles that depend
-on a real Flight SQL endpoint should retain a separate endpoint benchmark for
-metadata commands, query execution, prepared statements, ingestion, and session
-actions.
+`ARROW_FLIGHT_SQL_MAX_*_ALLOC_BYTES` variables.
+
+Run the endpoint proof with:
+
+```sh
+julia --project=test test/flight_sql_endpoint_report.jl
+```
+
+The endpoint report starts the packaged gRPCServer/PureHTTP2 listener and uses
+an external Python client that generates protobuf messages from the vendored
+`FlightSql.proto`. It exercises statement query, `CreatePreparedStatement`,
+prepared-statement DoPut binding, prepared-statement query, `ClosePreparedStatement`,
+and `CommandStatementIngest`. Set `ARROW_FLIGHT_SQL_ENDPOINT_MAX_QUERY_MS`,
+`ARROW_FLIGHT_SQL_ENDPOINT_MAX_PREPARED_MS`, and
+`ARROW_FLIGHT_SQL_ENDPOINT_MAX_INGEST_MS` only after collecting a stable
+target-hardware baseline.
 
 ## ADBC
 

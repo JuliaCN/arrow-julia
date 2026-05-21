@@ -16,8 +16,10 @@
 # under the License.
 
 include(joinpath(@__DIR__, "live_service_support", "smoke_scripts.jl"))
+include(joinpath(@__DIR__, "live_service_support", "sql_scripts.jl"))
 include(joinpath(@__DIR__, "live_service_support", "performance_scripts.jl"))
 include(joinpath(@__DIR__, "live_service_support", "service_fixture.jl"))
+include(joinpath(@__DIR__, "live_service_support", "sql_endpoint.jl"))
 include(joinpath(@__DIR__, "live_service_support", "transport_fixture.jl"))
 include(joinpath(@__DIR__, "live_service_support", "runtime_config.jl"))
 include(joinpath(@__DIR__, "live_service_support", "pyarrow_metrics.jl"))

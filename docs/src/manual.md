@@ -536,8 +536,11 @@ updated handle.
 
 This is a generated protocol and packing surface, not a high-level database
 client. The helper surface has command/action stability fixtures and a
-protocol-helper performance report, but external Flight SQL endpoint interop
-and high-level SQL client/server APIs remain follow-up production-core work in
+protocol-helper performance report. The live Flight interop suite also includes
+an external Python/protobuf Flight SQL endpoint proof for statement query,
+prepared-statement bind/query, and statement ingestion against the packaged
+gRPCServer listener. High-level SQL client/server APIs remain follow-up
+production-core work in
 [Full Arrow Alignment Audit](arrow_alignment_audit.md).
 
 ### ADBC ABI Boundary
