@@ -293,12 +293,14 @@ client test design.
 The focused IPC performance receipt is `test/ipc_performance_report.jl`. It
 generates a representative primitive, boolean, UTF-8, and binary table, warms
 the runtime path, then reports Arrow IPC stream and file write timings,
-metadata-read timings, scan timings, allocations, byte sizes, throughput, row
-counts, and checksums. Metadata-read and scan timings are intentionally
+metadata-read timings, physical buffer-scan timings, materialized element-scan
+timings, allocations, byte sizes, throughput, row counts, and checksums.
+Metadata-read, physical scan, and materialized scan timings are intentionally
 separate: constructing `Arrow.Table` or `Arrow.Stream` is a lightweight
-metadata-wrapping path, while the scan receipt proves the columns can be
-visited and checked without changing the IPC support claim into a full
-application benchmark.
+metadata-wrapping path, the physical scan receipt proves borrowed buffers can be
+visited without element materialization, and the materialized scan receipt keeps
+ordinary consumer access visible without turning the IPC support claim into a
+full application benchmark.
 
 ```julia
 julia --project=test test/ipc_performance_report.jl
@@ -306,7 +308,8 @@ julia --project=test test/ipc_performance_report.jl
 
 Set `ARROW_IPC_REPORT_ROWS` to change the row count. Optional
 `ARROW_IPC_MAX_*` environment variables can enforce local timing or allocation
-limits, but the default CI receipt keeps wall-clock timing informational.
+limits. CI gates IPC read and physical-scan allocation regressions while
+keeping wall-clock timing informational by default.
 
 ### C Data Interface
 

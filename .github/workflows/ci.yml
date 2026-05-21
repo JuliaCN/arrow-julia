@@ -337,6 +337,11 @@ jobs:
           Pkg.resolve()
           Pkg.instantiate()
       - name: Run IPC performance report
+        env:
+          ARROW_IPC_MAX_STREAM_READ_ALLOC_BYTES: '32768'
+          ARROW_IPC_MAX_FILE_READ_ALLOC_BYTES: '32768'
+          ARROW_IPC_MAX_STREAM_PHYSICAL_SCAN_ALLOC_BYTES: '1024'
+          ARROW_IPC_MAX_FILE_PHYSICAL_SCAN_ALLOC_BYTES: '1024'
         run: julia --color=yes --project=test test/ipc_performance_report.jl
   docs:
     name: Documentation

@@ -54,6 +54,10 @@ function table_checksum(table)
     flags = Tables.getcolumn(table, :flag)
     names = Tables.getcolumn(table, :name)
     blobs = Tables.getcolumn(table, :blob)
+    return table_checksum_columns(ids, scores, flags, names, blobs)
+end
+
+function table_checksum_columns(ids, scores, flags, names, blobs)
     total = 0
     @inbounds for i in eachindex(ids)
         total += Int(ids[i])
@@ -62,6 +66,36 @@ function table_checksum(table)
         total += ncodeunits(names[i])
         total += length(blobs[i])
     end
+    return total
+end
+
+function list_payload_widths(column)
+    offsets = column.offsets.offsets
+    total = 0
+    @inbounds for i = 1:(length(offsets) - 1)
+        total += Int(offsets[i + 1]) - Int(offsets[i])
+    end
+    return total
+end
+
+function table_physical_checksum(table)
+    ids = Tables.getcolumn(table, :id)
+    scores = Tables.getcolumn(table, :score)
+    flags = Tables.getcolumn(table, :flag)
+    names = Tables.getcolumn(table, :name)
+    blobs = Tables.getcolumn(table, :blob)
+    return table_physical_checksum_columns(ids, scores, flags, names, blobs)
+end
+
+function table_physical_checksum_columns(ids, scores, flags, names, blobs)
+    total = 0
+    @inbounds for i in eachindex(ids)
+        total += Int(ids[i])
+        total += round(Int, scores[i] * 10)
+        total += flags[i] ? 1 : 0
+    end
+    total += list_payload_widths(names)
+    total += list_payload_widths(blobs)
     return total
 end
 
@@ -74,6 +108,16 @@ function checksum(batches::AbstractVector)
 end
 
 checksum(table) = table_checksum(table)
+
+function physical_checksum(batches::AbstractVector)
+    total = 0
+    for batch in batches
+        total += table_physical_checksum(batch)
+    end
+    return total
+end
+
+physical_checksum(table) = table_physical_checksum(table)
 
 function print_measure(label::AbstractString, elapsed_ms, allocated)
     @printf("%s_ms=%.3f\n", label, elapsed_ms)
@@ -140,6 +184,8 @@ function warmup_ipc()
     file_bytes = write_ipc_bytes(source; file=true)
     stream_batches = stream_to_batches(stream_bytes)
     file_table = Arrow.Table(file_bytes; convert=false)
+    physical_checksum(stream_batches)
+    physical_checksum(file_table)
     checksum(stream_batches)
     checksum(file_table)
     return nothing
@@ -167,9 +213,19 @@ function main()
     assert_row_count(stream_batches, rows, "stream_read")
     assert_row_count(file_table, rows, "file_read")
 
+    stream_physical_checksum, stream_physical_scan_ms, stream_physical_scan_alloc =
+        measure(() -> physical_checksum(stream_batches))
+    file_physical_checksum, file_physical_scan_ms, file_physical_scan_alloc =
+        measure(() -> physical_checksum(file_table))
     stream_checksum, stream_scan_ms, stream_scan_alloc =
         measure(() -> checksum(stream_batches))
     file_checksum, file_scan_ms, file_scan_alloc = measure(() -> checksum(file_table))
+    stream_physical_checksum == expected_checksum || error(
+        "stream_physical_checksum=$(stream_physical_checksum) did not match $(expected_checksum)",
+    )
+    file_physical_checksum == expected_checksum || error(
+        "file_physical_checksum=$(file_physical_checksum) did not match $(expected_checksum)",
+    )
     stream_checksum == expected_checksum ||
         error("stream_checksum=$(stream_checksum) did not match $(expected_checksum)")
     file_checksum == expected_checksum ||
@@ -180,6 +236,8 @@ function main()
     println("stream_bytes=$(length(stream_bytes))")
     println("file_bytes=$(length(file_bytes))")
     println("expected_checksum=$(expected_checksum)")
+    println("stream_physical_checksum=$(stream_physical_checksum)")
+    println("file_physical_checksum=$(file_physical_checksum)")
     println("stream_checksum=$(stream_checksum)")
     println("file_checksum=$(file_checksum)")
     print_measure("prepare", prepare_ms, prepare_alloc)
@@ -191,6 +249,14 @@ function main()
     print_throughput("stream_read", length(stream_bytes), stream_read_ms)
     print_measure("file_read", file_read_ms, file_read_alloc)
     print_throughput("file_read", length(file_bytes), file_read_ms)
+    print_measure(
+        "stream_physical_scan",
+        stream_physical_scan_ms,
+        stream_physical_scan_alloc,
+    )
+    print_throughput("stream_physical_scan", length(stream_bytes), stream_physical_scan_ms)
+    print_measure("file_physical_scan", file_physical_scan_ms, file_physical_scan_alloc)
+    print_throughput("file_physical_scan", length(file_bytes), file_physical_scan_ms)
     print_measure("stream_scan", stream_scan_ms, stream_scan_alloc)
     print_throughput("stream_scan", length(stream_bytes), stream_scan_ms)
     print_measure("file_scan", file_scan_ms, file_scan_alloc)
@@ -215,6 +281,16 @@ function main()
         "file_read_alloc_bytes",
         file_read_alloc,
         optional_int_limit("ARROW_IPC_MAX_FILE_READ_ALLOC_BYTES"),
+    )
+    enforce_max(
+        "stream_physical_scan_alloc_bytes",
+        stream_physical_scan_alloc,
+        optional_int_limit("ARROW_IPC_MAX_STREAM_PHYSICAL_SCAN_ALLOC_BYTES"),
+    )
+    enforce_max(
+        "file_physical_scan_alloc_bytes",
+        file_physical_scan_alloc,
+        optional_int_limit("ARROW_IPC_MAX_FILE_PHYSICAL_SCAN_ALLOC_BYTES"),
     )
     enforce_max(
         "stream_scan_alloc_bytes",
@@ -245,6 +321,16 @@ function main()
         "file_read_ms",
         file_read_ms,
         optional_float_limit("ARROW_IPC_MAX_FILE_READ_MS"),
+    )
+    enforce_max(
+        "stream_physical_scan_ms",
+        stream_physical_scan_ms,
+        optional_float_limit("ARROW_IPC_MAX_STREAM_PHYSICAL_SCAN_MS"),
+    )
+    enforce_max(
+        "file_physical_scan_ms",
+        file_physical_scan_ms,
+        optional_float_limit("ARROW_IPC_MAX_FILE_PHYSICAL_SCAN_MS"),
     )
     enforce_max(
         "stream_scan_ms",
