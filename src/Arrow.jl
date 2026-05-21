@@ -106,6 +106,7 @@ include("write.jl")
 include("append.jl")
 include("show.jl")
 include("cdata.jl")
+include("adbc.jl")
 include("flight/Flight.jl")
 
 const ZSTD_COMPRESSOR = Lockable{ZstdCompressor}[]

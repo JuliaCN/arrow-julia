@@ -535,6 +535,26 @@ client. SQL metadata schemas, external Flight SQL interop, and ADBC driver APIs
 are tracked as follow-up production-core protocol work in
 [Full Arrow Alignment Audit](arrow_alignment_audit.md).
 
+### ADBC ABI Boundary
+
+Arrow.jl exposes a low-level `Arrow.ADBC` module for the ADBC constants and C
+ABI handle layouts that future database driver work will need:
+
+```julia
+Arrow.ADBC.STATUS_OK
+Arrow.ADBC.OPTION_URI
+Arrow.ADBC.CONNECTION_OPTION_AUTOCOMMIT
+Arrow.ADBC.INGEST_OPTION_TARGET_TABLE
+Arrow.ADBC.Database()
+Arrow.ADBC.Connection()
+Arrow.ADBC.Statement()
+```
+
+This is an ABI and constants surface only. It does not load ADBC drivers,
+execute statements, or provide a high-level database client. Query execution,
+bulk ingestion, cancellation, partitioned result reads, and external driver
+interop remain dedicated ADBC follow-up work.
+
 ## Writing arrow data
 
 Ok, so that's a pretty good rundown of *reading* arrow data, but how do you *produce* arrow data? Enter `Arrow.write`.
