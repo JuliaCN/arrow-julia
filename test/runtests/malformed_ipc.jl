@@ -15,6 +15,7 @@
 # limitations under the License.
 
 @testset "Malformed IPC regression corpus" begin
+    include(joinpath(@__DIR__, "malformed_ipc", "views_offsets.jl"))
     include(joinpath(@__DIR__, "malformed_ipc", "field_nodes.jl"))
     include(joinpath(@__DIR__, "malformed_ipc", "unions.jl"))
 end
