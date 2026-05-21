@@ -79,7 +79,24 @@ lead to unsafe indexing or misleading semantic interpretation:
 ## Current Limits
 
 These checks are not a complete malicious-input certification. The remaining
-tracked work is to add a larger regression corpus for malformed IPC files,
-C Data soundness cases, and future official extension combinations, then decide
-whether Arrow.jl should expose a public validation API separate from normal read
-paths.
+tracked work is to add compact regression fixtures for malformed IPC files,
+C Data soundness cases, and future official extension combinations.
+
+## Malformed Regression Fixture Policy
+
+Malformed regression fixtures must be deterministic, checked in, and routed
+through the narrow corpus entry point for their surface:
+
+- malformed IPC fixtures belong under `test/runtests/malformed_ipc/` and are
+  included by `test/runtests/malformed_ipc.jl`;
+- malformed C Data import fixtures belong under
+  `test/cdata/import_malformed/` and are included by
+  `test/cdata/import_malformed_tests.jl`;
+- each fixture module should describe one failure class, not a broad grab bag;
+- default CI fixtures should not rely on random generation or timing-sensitive
+  fuzz loops;
+- generated fuzz discoveries should be minimized into stable checked-in
+  regressions before they become part of the default suite.
+
+The fixture-policy tests in each corpus directory keep the file registry,
+entry-point includes, and deterministic default-suite rule synchronized.

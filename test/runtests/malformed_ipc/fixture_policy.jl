@@ -14,9 +14,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-@testset "Malformed IPC regression corpus" begin
-    include(joinpath(@__DIR__, "malformed_ipc", "views_offsets.jl"))
-    include(joinpath(@__DIR__, "malformed_ipc", "field_nodes.jl"))
-    include(joinpath(@__DIR__, "malformed_ipc", "unions.jl"))
-    include(joinpath(@__DIR__, "malformed_ipc", "fixture_policy.jl"))
+@testset "malformed IPC corpus fixture policy" begin
+    expected_files =
+        sort(["field_nodes.jl", "fixture_policy.jl", "unions.jl", "views_offsets.jl"])
+    actual_files = sort(basename.(filter(endswith(".jl"), readdir(@__DIR__; join=true))))
+    @test actual_files == expected_files
+
+    entrypoint = read(joinpath(dirname(@__DIR__), "malformed_ipc.jl"), String)
+    for file in expected_files
+        @test occursin(file, entrypoint)
+    end
+
+    for file in setdiff(expected_files, ["fixture_policy.jl"])
+        source = read(joinpath(@__DIR__, file), String)
+        @test occursin("@testset", source)
+        @test !occursin("Random.", source)
+        @test !occursin("rand(", source)
+    end
 end
