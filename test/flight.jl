@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+using PooledArrays
 using Tables
 
 include("flight/support.jl")
@@ -31,4 +32,8 @@ end
 
 @testset "Flight SQL protocol helpers" begin
     flight_test_sql_protocol_helpers()
+end
+
+@testset "Flight SQL stability fixtures" begin
+    flight_test_sql_stability_fixtures()
 end

@@ -343,6 +343,44 @@ jobs:
           ARROW_IPC_MAX_STREAM_PHYSICAL_SCAN_ALLOC_BYTES: '1024'
           ARROW_IPC_MAX_FILE_PHYSICAL_SCAN_ALLOC_BYTES: '1024'
         run: julia --color=yes --project=test test/ipc_performance_report.jl
+  flight_sql_performance:
+    name: Flight SQL performance - Julia 1 - ubuntu-latest
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: '1'
+      - uses: actions/cache@v5
+        env:
+          cache-name: cache-flight-sql-artifacts
+        with:
+          path: ~/.julia/artifacts
+          key: ${{ runner.os }}-flight-sql-${{ env.cache-name }}-${{ hashFiles('**/Project.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-flight-sql-${{ env.cache-name }}-
+            ${{ runner.os }}-flight-sql-
+            ${{ runner.os }}-
+      - uses: julia-actions/julia-buildpkg@v1.6
+        with:
+          project: .
+      - name: Configure Flight SQL performance environment
+        shell: julia --project=test {0}
+        run: |
+          using Pkg
+          Pkg.develop(PackageSpec(path="."))
+          Pkg.develop(PackageSpec(path="src/ArrowTypes"))
+          Pkg.resolve()
+          Pkg.instantiate()
+      - name: Run Flight SQL performance report
+        env:
+          ARROW_FLIGHT_SQL_MAX_COMMAND_PACK_ALLOC_BYTES: '16384'
+          ARROW_FLIGHT_SQL_MAX_COMMAND_DECODE_ALLOC_BYTES: '8192'
+          ARROW_FLIGHT_SQL_MAX_ACTION_PACK_ALLOC_BYTES: '12288'
+          ARROW_FLIGHT_SQL_MAX_ACTION_DECODE_ALLOC_BYTES: '8192'
+          ARROW_FLIGHT_SQL_MAX_PUT_RESULT_ALLOC_BYTES: '4096'
+        run: julia --color=yes --project=test test/flight_sql_performance_report.jl
   docs:
     name: Documentation
     runs-on: ubuntu-latest

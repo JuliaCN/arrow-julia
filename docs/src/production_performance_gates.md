@@ -26,7 +26,7 @@ wall-clock timing is noisy. Production readiness should instead be proven on
 the deployment class of hardware with explicit environment floors and retained
 receipts.
 
-The current production gate profile has three layers:
+The current production gate profile has four layers:
 
 1. C Data and C Stream same-process FFI receipts prove allocation bounds,
    release behavior, and pointer identity for CPU buffers.
@@ -34,6 +34,9 @@ The current production gate profile has three layers:
    behavior, physical buffer scans, and materialized consumer scans.
 3. Flight receipts prove end-to-end large and concurrent DoGet, DoPut, and
    DoExchange transport on the package-owned listener path.
+4. Flight SQL protocol receipts prove command/action `google.protobuf.Any`
+   packing, decode, and DoPut metadata helper allocation bounds for the
+   package-owned protocol helper layer.
 
 Run the whole profile with:
 
@@ -42,8 +45,8 @@ julia --project=test test/production_performance_gates.jl
 ```
 
 Set `ARROW_PRODUCTION_PERFORMANCE_REPORTS=ipc,cdata` or another comma-separated
-subset of `ipc`, `cdata`, and `flight` when a production environment wants to
-run only part of the profile.
+subset of `ipc`, `cdata`, `flight`, and `flightsql` when a production
+environment wants to run only part of the profile.
 
 ## IPC Gate
 
@@ -106,13 +109,29 @@ Network Flight receipts are transport receipts, not end-to-end zero-copy
 claims. Flight serializes Arrow IPC payloads over the wire. Same-process
 zero-copy claims belong to C Data and C Stream receipts.
 
-## Flight SQL and ADBC
+## Flight SQL Gate
 
-Flight SQL and ADBC need separate performance gates after their APIs exist.
-Flight SQL should measure metadata commands, query execution, prepared
-statement binding, ingestion, and session actions against an external Flight
-SQL endpoint. ADBC should measure query streams, bulk ingestion, cancellation,
+Run:
+
+```sh
+julia --project=test test/flight_sql_performance_report.jl
+```
+
+The Flight SQL report is a protocol-helper gate, not an external database
+benchmark. It measures typed command descriptors, action payloads, malformed
+decode-sensitive envelopes, `DoPutUpdateResult`, and optional prepared
+statement DoPut result metadata. Shared CI gates allocation regressions with
+`ARROW_FLIGHT_SQL_MAX_*_ALLOC_BYTES` variables. Deployment profiles that depend
+on a real Flight SQL endpoint should retain a separate endpoint benchmark for
+metadata commands, query execution, prepared statements, ingestion, and session
+actions.
+
+## ADBC
+
+ADBC needs a separate performance gate after its database/connection/statement
+wrappers exist. It should measure query streams, bulk ingestion, cancellation,
 partitioned result sets, and driver-manager overhead across accepted drivers.
 
-Until those protocol surfaces are implemented, the production performance gate
-for this PR is limited to C Data, C Stream, IPC, and Flight transport.
+Until the high-level ADBC execution surface is implemented, the production
+performance gate for ADBC remains limited to driver ABI/loading and C Stream
+result-boundary tests.

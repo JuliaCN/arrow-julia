@@ -528,11 +528,16 @@ actions and derives the official action type from names such as
 
 `Arrow.Flight.SQL.doputupdateresult(count)` builds a Flight `PutResult` whose
 `app_metadata` contains the Flight SQL update count result; use
-`Arrow.Flight.SQL.doputupdatecount(result)` to decode it.
+`Arrow.Flight.SQL.doputupdatecount(result)` to decode it. `count = -1` is
+accepted for the official unknown-row-count sentinel. Prepared-statement query
+DoPut responses can use `Arrow.Flight.SQL.doputpreparedstatementresult(handle)`
+and `Arrow.Flight.SQL.doputpreparedstatementhandle(result)` for the optional
+updated handle.
 
 This is a generated protocol and packing surface, not a high-level database
-client. SQL metadata schemas, external Flight SQL interop, and ADBC driver APIs
-are tracked as follow-up production-core protocol work in
+client. The helper surface has command/action stability fixtures and a
+protocol-helper performance report, but external Flight SQL endpoint interop
+and high-level SQL client/server APIs remain follow-up production-core work in
 [Full Arrow Alignment Audit](arrow_alignment_audit.md).
 
 ### ADBC ABI Boundary

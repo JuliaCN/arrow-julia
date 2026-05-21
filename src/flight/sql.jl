@@ -32,6 +32,8 @@ export FLIGHT_SQL_TYPE_URL_PREFIX,
     anytypeurl,
     commanddescriptor,
     decodeany,
+    doputpreparedstatementhandle,
+    doputpreparedstatementresult,
     doputupdatecount,
     doputupdateresult,
     typeurl
@@ -46,6 +48,7 @@ const Generated = Protocol.sql
 Generated Flight SQL `DoPutUpdateResult` payload type.
 """
 const DoPutUpdateResult = Generated.DoPutUpdateResult
+const DoPutPreparedStatementResult = Generated.DoPutPreparedStatementResult
 
 """
     Arrow.Flight.SQL.AnyMessage
@@ -91,7 +94,8 @@ function PB._encoded_size(x::AnyMessage)
     return encoded_size
 end
 
-_bytes(payload::AbstractVector{UInt8}) = Vector{UInt8}(payload)
+_bytes(payload::AbstractVector{UInt8}; own::Bool=true) = Vector{UInt8}(payload)
+_bytes(payload::Vector{UInt8}; own::Bool=true) = own ? Base.copy(payload) : payload
 _messagename(message) = String(nameof(typeof(message)))
 
 """
@@ -112,11 +116,16 @@ end
 Build a minimal `google.protobuf.Any` message for a serialized Flight SQL
 command or action payload.
 """
-function anymessage(message_name::AbstractString, payload::AbstractVector{UInt8}=UInt8[])
-    return AnyMessage(typeurl(message_name), _bytes(payload))
+function anymessage(
+    message_name::AbstractString,
+    payload::AbstractVector{UInt8}=UInt8[];
+    copy_payload::Bool=true,
+)
+    return AnyMessage(typeurl(message_name), _bytes(payload; own=copy_payload))
 end
 
-anymessage(message) = anymessage(_messagename(message), _protocolbytes(message))
+anymessage(message) =
+    anymessage(_messagename(message), _protocolbytes(message); copy_payload=false)
 
 """
     Arrow.Flight.SQL.decodeany(payload)
@@ -140,17 +149,19 @@ Build a Flight `CMD` descriptor whose `cmd` field contains a Flight SQL
 function commanddescriptor(
     message_name::AbstractString,
     payload::AbstractVector{UInt8}=UInt8[],
+    ;
+    copy_payload::Bool=true,
 )
     descriptor_type = FlightProtocol.var"FlightDescriptor.DescriptorType"
     return FlightProtocol.FlightDescriptor(
         descriptor_type.CMD,
-        _protocolbytes(anymessage(message_name, payload)),
+        _protocolbytes(anymessage(message_name, payload; copy_payload=copy_payload)),
         String[],
     )
 end
 
 commanddescriptor(message) =
-    commanddescriptor(_messagename(message), _protocolbytes(message))
+    commanddescriptor(_messagename(message), _protocolbytes(message); copy_payload=false)
 
 function _default_action_type(message_name::AbstractString)
     name = String(message_name)
@@ -178,17 +189,18 @@ function action(
     message_name::AbstractString,
     payload::AbstractVector{UInt8}=UInt8[];
     type::Union{Nothing,AbstractString}=nothing,
+    copy_payload::Bool=true,
 )
     action_type = isnothing(type) ? actiontype(message_name) : String(type)
     isempty(action_type) && throw(ArgumentError("Flight SQL action type must not be empty"))
     return FlightProtocol.Action(
         action_type,
-        _protocolbytes(anymessage(message_name, payload)),
+        _protocolbytes(anymessage(message_name, payload; copy_payload=copy_payload)),
     )
 end
 
 action(message; type::Union{Nothing,AbstractString}=nothing) =
-    action(_messagename(message), _protocolbytes(message); type=type)
+    action(_messagename(message), _protocolbytes(message); type=type, copy_payload=false)
 
 """
     Arrow.Flight.SQL.doputupdateresult(record_count)
@@ -197,8 +209,9 @@ Build a Flight `PutResult` whose `app_metadata` contains a Flight SQL
 `DoPutUpdateResult`.
 """
 function doputupdateresult(record_count::Integer)
-    record_count >= 0 ||
-        throw(ArgumentError("Flight SQL DoPut update record count must be non-negative"))
+    record_count >= -1 || throw(
+        ArgumentError("Flight SQL DoPut update record count must be -1 or non-negative"),
+    )
     return FlightProtocol.PutResult(_protocolbytes(DoPutUpdateResult(Int64(record_count))))
 end
 
@@ -209,6 +222,28 @@ Decode the Flight SQL update row count from a Flight `PutResult`.
 """
 function doputupdatecount(result::FlightProtocol.PutResult)
     return _decodeprotocolbytes(DoPutUpdateResult, result.app_metadata).record_count
+end
+
+"""
+    Arrow.Flight.SQL.doputpreparedstatementresult(handle)
+
+Build a Flight `PutResult` whose `app_metadata` contains the optional Flight SQL
+prepared-statement query DoPut response.
+"""
+function doputpreparedstatementresult(handle::AbstractVector{UInt8})
+    return FlightProtocol.PutResult(
+        _protocolbytes(DoPutPreparedStatementResult(_bytes(handle))),
+    )
+end
+
+"""
+    Arrow.Flight.SQL.doputpreparedstatementhandle(result)
+
+Decode the optional updated prepared-statement handle from a Flight SQL DoPut
+prepared-statement query `PutResult`.
+"""
+function doputpreparedstatementhandle(result::FlightProtocol.PutResult)
+    return _decodeprotocolbytes(DoPutPreparedStatementResult, result.app_metadata).prepared_statement_handle
 end
 
 end # module SQL

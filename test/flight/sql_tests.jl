@@ -67,11 +67,99 @@ function flight_test_sql_protocol_helpers()
     update_result = Arrow.Flight.SQL.doputupdateresult(42)
     @test update_result isa protocol.PutResult
     @test Arrow.Flight.SQL.doputupdatecount(update_result) == 42
+    @test Arrow.Flight.SQL.doputupdatecount(Arrow.Flight.SQL.doputupdateresult(-1)) == -1
     decoded_update = Arrow.Flight._decodeprotocolbytes(
         Arrow.Flight.SQL.Generated.DoPutUpdateResult,
         update_result.app_metadata,
     )
     @test decoded_update.record_count == 42
-    @test_throws ArgumentError Arrow.Flight.SQL.doputupdateresult(-1)
+    @test_throws ArgumentError Arrow.Flight.SQL.doputupdateresult(-2)
     @test_throws ArgumentError Arrow.Flight.SQL.commanddescriptor("", UInt8[])
+end
+
+function assert_flight_sql_command_roundtrip(message)
+    descriptor = Arrow.Flight.SQL.commanddescriptor(message)
+    any = Arrow.Flight.SQL.decodeany(descriptor.cmd)
+    @test any.type_url == Arrow.Flight.SQL.typeurl(String(nameof(typeof(message))))
+    decoded = Arrow.Flight._decodeprotocolbytes(typeof(message), any.value)
+    @test Arrow.Flight._protocolbytes(decoded) == Arrow.Flight._protocolbytes(message)
+end
+
+function assert_flight_sql_action_roundtrip(message, expected_type::AbstractString)
+    action = Arrow.Flight.SQL.action(message)
+    @test getfield(action, Symbol("#type")) == expected_type
+    any = Arrow.Flight.SQL.decodeany(action.body)
+    @test any.type_url == Arrow.Flight.SQL.typeurl(String(nameof(typeof(message))))
+    decoded = Arrow.Flight._decodeprotocolbytes(typeof(message), any.value)
+    @test Arrow.Flight._protocolbytes(decoded) == Arrow.Flight._protocolbytes(message)
+end
+
+function flight_sql_command_fixtures()
+    generated = Arrow.Flight.SQL.Generated
+    return (
+        generated.CommandGetCatalogs(),
+        generated.CommandGetSqlInfo(UInt32[0, 4, 8]),
+        generated.CommandGetTables(
+            "catalog",
+            "schema%",
+            "table%",
+            ["BASE TABLE", "VIEW"],
+            true,
+        ),
+        generated.CommandStatementQuery("select * from t", UInt8[0x01]),
+        generated.CommandStatementUpdate("update t set x = 1", UInt8[]),
+        generated.CommandPreparedStatementQuery(UInt8[0x10, 0x20]),
+        generated.CommandPreparedStatementUpdate(UInt8[0x30, 0x40]),
+        generated.CommandStatementIngest(
+            nothing,
+            "target_table",
+            "target_schema",
+            "target_catalog",
+            true,
+            UInt8[0x55],
+            Dict("mode" => "append"),
+        ),
+    )
+end
+
+function flight_sql_action_fixtures()
+    generated = Arrow.Flight.SQL.Generated
+    return (
+        (
+            generated.ActionCreatePreparedStatementRequest("select ?", UInt8[0x01]),
+            "CreatePreparedStatement",
+        ),
+        (
+            generated.ActionClosePreparedStatementRequest(UInt8[0x02]),
+            "ClosePreparedStatement",
+        ),
+        (generated.ActionBeginTransactionRequest(), "BeginTransaction"),
+        (
+            generated.ActionBeginSavepointRequest(UInt8[0x03], "savepoint_1"),
+            "BeginSavepoint",
+        ),
+        (generated.ActionCancelQueryRequest(UInt8[0x04]), "CancelQuery"),
+    )
+end
+
+function flight_test_sql_stability_fixtures()
+    for message in flight_sql_command_fixtures()
+        assert_flight_sql_command_roundtrip(message)
+    end
+    for (message, expected_type) in flight_sql_action_fixtures()
+        assert_flight_sql_action_roundtrip(message, expected_type)
+    end
+
+    prepared = Arrow.Flight.SQL.doputpreparedstatementresult(UInt8[0xaa, 0xbb])
+    @test Arrow.Flight.SQL.doputpreparedstatementhandle(prepared) == UInt8[0xaa, 0xbb]
+
+    @test_throws Exception Arrow.Flight.SQL.decodeany(UInt8[0xff])
+    @test_throws Exception Arrow.Flight.SQL.anytypeurl(UInt8[0xff])
+    @test_throws Exception Arrow.Flight.SQL.doputupdatecount(
+        Arrow.Flight.Protocol.PutResult(UInt8[0xff]),
+    )
+    @test_throws Exception Arrow.Flight.SQL.doputpreparedstatementhandle(
+        Arrow.Flight.Protocol.PutResult(UInt8[0xff]),
+    )
+    @test_throws ArgumentError Arrow.Flight.SQL.action("ActionRequest", UInt8[])
 end
