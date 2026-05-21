@@ -80,6 +80,13 @@
         return bytes
     end
 
+    function ipc_prefix(message_length::Int32)
+        return vcat(
+            collect(reinterpret(UInt8, UInt32[Arrow.CONTINUATION_INDICATOR_BYTES])),
+            collect(reinterpret(UInt8, Int32[message_length])),
+        )
+    end
+
     item = Tables.getcolumn(Arrow.Table(Arrow.tobuffer((item=Int32[1, 2, 3],))), :item)
     validity = Arrow.ValidityBitmap(fill(true, 2))
 
@@ -88,6 +95,23 @@
     @test isnothing(Arrow.validate(IOBuffer(valid_bytes)))
     @test isnothing(Arrow.validate([valid_bytes]))
     @test isnothing(Arrow.validate(valid_bytes; stream=true))
+
+    assert_argument_error(
+        () -> Arrow.validate(UInt8[0xff, 0xff, 0xff, 0xff, 0x08]),
+        "truncated arrow ipc message length",
+    )
+    assert_argument_error(
+        () -> Arrow.validate(ipc_prefix(Int32(-1))),
+        "arrow ipc message length must be non-negative",
+    )
+    assert_argument_error(
+        () -> Arrow.validate(vcat(ipc_prefix(Int32(64)), zeros(UInt8, 4))),
+        "truncated arrow ipc message metadata",
+    )
+    assert_argument_error(
+        () -> Arrow.validate(UInt8[0xff, 0xff, 0xff, 0xff, 0x08]; stream=true),
+        "truncated arrow ipc message length",
+    )
 
     descending = Arrow.List{Vector{Int32},Int32,typeof(item)}(
         UInt8[],

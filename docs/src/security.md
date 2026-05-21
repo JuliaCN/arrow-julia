@@ -40,6 +40,8 @@ lead to unsafe indexing or misleading semantic interpretation:
 
 - unsupported Tensor and SparseTensor IPC message headers are recognized and
   rejected explicitly;
+- truncated IPC message length, metadata, and body sections are rejected after
+  a continuation marker has started a message;
 - IPC field nodes validate non-negative lengths, non-negative null counts, and
   null counts bounded by their logical lengths before buffer materialization;
 - variable-size List, LargeList, Binary, Utf8, Map, ListView, BinaryView, and

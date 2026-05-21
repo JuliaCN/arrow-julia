@@ -236,26 +236,34 @@ function Base.iterate(x::BatchIterator, (pos, id)=(x.startpos, 0))
     end
     pos += 4
     if pos + 3 > length(x.bytes)
-        @debug "not enough bytes left to read length of another batch message"
-        return nothing
+        throw(ArgumentError("truncated arrow ipc message length"))
     end
     msglen = readbuffer(x.bytes, pos, Int32)
+    msglen < 0 && throw(ArgumentError("arrow ipc message length must be non-negative"))
     if msglen == 0
         @debug "message has 0 length; terminating message parsing"
         return nothing
     end
     pos += 4
     if pos + msglen - 1 > length(x.bytes)
-        @debug "not enough bytes left to read Meta.Message"
-        return nothing
+        throw(
+            ArgumentError(
+                "truncated arrow ipc message metadata: declared length $msglen exceeds remaining bytes $(length(x.bytes) - pos + 1)",
+            ),
+        )
     end
     msg = FlatBuffers.getrootas(Meta.Message, x.bytes, pos - 1)
     pos += msglen
     # pos now points to message body
     @debug "parsing message: pos = $pos, msglen = $msglen, bodyLength = $(msg.bodyLength)"
+    msg.bodyLength < 0 &&
+        throw(ArgumentError("arrow ipc message body length must be non-negative"))
     if pos + msg.bodyLength - 1 > length(x.bytes)
-        @debug "not enough bytes left to read message body"
-        return nothing
+        throw(
+            ArgumentError(
+                "truncated arrow ipc message body: declared length $(msg.bodyLength) exceeds remaining bytes $(length(x.bytes) - pos + 1)",
+            ),
+        )
     end
     return Batch(msg, x.bytes, pos, id), (pos + msg.bodyLength, id + 1)
 end
