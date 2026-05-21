@@ -70,16 +70,17 @@ function build(
     if rb.compression === nothing
         decodedbytes = batch.bytes
         pos = voff
+        _assert_bool_value_byte_count(buffer.length, node.length, Symbol(f.name))
         # return ValidityBitmap(batch.bytes, voff, node.length, node.null_count)
     else
         # compressed
         ptr = pointer(batch.bytes, voff)
         _, decodedbytes = uncompress(ptr, buffer, rb.compression)
         pos = 1
+        _assert_bool_value_bytes(decodedbytes, pos, node.length, Symbol(f.name))
         # return ValidityBitmap(decodedbytes, 1, node.length, node.null_count)
     end
-    len = rb.nodes[nodeidx].length
-    _assert_bool_value_bytes(decodedbytes, pos, len, Symbol(f.name))
+    len = node.length
     T = juliaeltype(f, meta, convert)
     return BoolVector{T}(decodedbytes, pos, validity, len, meta),
     nodeidx + 1,

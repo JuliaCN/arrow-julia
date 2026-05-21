@@ -43,6 +43,9 @@ lead to unsafe indexing or misleading semantic interpretation:
   rejected explicitly;
 - truncated IPC message length, metadata, and body sections are rejected after
   a continuation marker has started a message;
+- compressed IPC buffers validate their encoded body length, 8-byte
+  uncompressed-length header, and allowed uncompressed length sentinel before
+  decompression;
 - IPC field nodes validate non-negative lengths, non-negative null counts, and
   null counts bounded by their logical lengths before buffer materialization;
 - IPC primitive and boolean columns validate that value buffers cover their

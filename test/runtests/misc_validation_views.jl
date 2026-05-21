@@ -61,8 +61,23 @@
         validity=Arrow.ValidityBitmap(fill(true, length(indices))),
     ) = native_dictencoded_column(String, indices, validity)
 
-    function patched_record_batch_bytes(column, patcher)
-        bytes = read(Arrow.tobuffer(native_arrow_vector_table(:values, column); ntasks=0))
+    function patched_record_batch_bytes(column, patcher; writekw...)
+        bytes = read(
+            Arrow.tobuffer(
+                native_arrow_vector_table(:values, column);
+                ntasks=0,
+                writekw...,
+            ),
+        )
+        return patch_record_batch_bytes!(bytes, patcher)
+    end
+
+    function patched_table_bytes(table, patcher; writekw...)
+        bytes = read(Arrow.tobuffer(table; ntasks=0, writekw...))
+        return patch_record_batch_bytes!(bytes, patcher)
+    end
+
+    function patch_record_batch_bytes!(bytes, patcher)
         blob = Arrow.ArrowBlob(bytes, 1, nothing)
         for batch in Arrow.BatchIterator(blob)
             rb = batch.msg.header
@@ -82,7 +97,7 @@
 
     function patch_record_batch_buffer_length!(bytes, rb, buffer_index, new_length::Int64)
         buffer = rb.buffers[buffer_index]
-        start = Arrow.FlatBuffers.pos(buffer) + 8
+        start = Arrow.FlatBuffers.pos(buffer) + 9
         raw = collect(reinterpret(UInt8, Int64[new_length]))
         copyto!(bytes, start, raw, 1, length(raw))
         return bytes
@@ -138,7 +153,7 @@
     )
     assert_argument_error(
         () -> Arrow.validate(short_primitive_values),
-        "primitive column values value buffer length 0 is shorter than logical length 2",
+        "primitive column values value buffer length 1 is shorter than logical length 2",
     )
 
     short_bool_values = patched_record_batch_bytes(
@@ -150,7 +165,28 @@
     )
     assert_argument_error(
         () -> Arrow.validate(short_bool_values),
-        "bool column values value buffer length 0 is shorter than required byte length 2",
+        "bool column values value buffer length 1 is shorter than required byte length 2",
+    )
+
+    compressed_short_header = patched_table_bytes(
+        (values=Int32[1, 2],),
+        (bytes, batch, rb) -> patch_record_batch_buffer_length!(bytes, rb, 2, Int64(4));
+        compress=:lz4,
+    )
+    assert_argument_error(
+        () -> Arrow.validate(compressed_short_header),
+        "compressed arrow buffer length 4 is shorter than the 8-byte uncompressed length header",
+    )
+
+    compressed_negative_length = patched_table_bytes(
+        (values=Int32[1, 2],),
+        (bytes, batch, rb) ->
+            patch_record_batch_buffer!(bytes, batch, rb, 2, Int64[-2]);
+        compress=:lz4,
+    )
+    assert_argument_error(
+        () -> Arrow.validate(compressed_negative_length),
+        "compressed arrow buffer has invalid uncompressed length -2",
     )
 
     descending = Arrow.List{Vector{Int32},Int32,typeof(item)}(

@@ -80,6 +80,11 @@ end
 function _assert_bool_value_bytes(bytes, pos::Integer, len::Integer, name::Symbol)
     required = cld(Int(len), 8)
     available = max(length(bytes) - Int(pos) + 1, 0)
+    return _assert_bool_value_byte_count(available, len, name)
+end
+
+function _assert_bool_value_byte_count(available::Integer, len::Integer, name::Symbol)
+    required = cld(Int(len), 8)
     available >= required || throw(
         ArgumentError(
             "bool column $name value buffer length $available is shorter than required byte length $required",
@@ -149,8 +154,17 @@ function buildbitmap(batch, rb, nodeidx, bufferidx)
 end
 
 function uncompress(ptr::Ptr{UInt8}, buffer, compression)
+    buffer.length < 0 &&
+        throw(ArgumentError("compressed arrow buffer length must be non-negative"))
     buffer.length == 0 && return 0, UInt8[]
+    buffer.length < 8 && throw(
+        ArgumentError(
+            "compressed arrow buffer length $(buffer.length) is shorter than the 8-byte uncompressed length header",
+        ),
+    )
     len = unsafe_load(convert(Ptr{Int64}, ptr))
+    len < -1 &&
+        throw(ArgumentError("compressed arrow buffer has invalid uncompressed length $len"))
     len == 0 && return 0, UInt8[]
     ptr += 8 # skip past uncompressed length as Int64
     encodedbytes = unsafe_wrap(Array, ptr, buffer.length - 8)
