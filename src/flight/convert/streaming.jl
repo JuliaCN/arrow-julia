@@ -206,6 +206,7 @@ function _store_dictionary_batch!(
     recordbatch = header.data
     @lock getfield(x, :dictencodings) begin
         dictencodings = getfield(x, :dictencodings)[]
+        ArrowParent._assert_dictionary_delta_has_base(dictencodings, id, header.isDelta)
         if haskey(dictencodings, id) && header.isDelta
             field = ArrowParent._dictionary_encoded_field(getfield(x, :dictencoded), id)
             values = ArrowParent._build_dictionary_values(

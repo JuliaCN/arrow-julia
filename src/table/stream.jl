@@ -220,6 +220,7 @@ function Base.iterate(x::Stream, (pos, id)=(1, 0))
             end
             @lock x.dictencodings begin
                 dictencodings = x.dictencodings[]
+                _assert_dictionary_delta_has_base(dictencodings, id, header.isDelta)
                 if haskey(dictencodings, id) && header.isDelta
                     # delta
                     field = _dictionary_encoded_field(x.dictencoded, id)

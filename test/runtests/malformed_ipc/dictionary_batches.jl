@@ -49,6 +49,47 @@
         error("dictionary batch not found")
     end
 
+    function message_ranges(bytes)
+        ranges = []
+        iterator = Arrow.BatchIterator(Arrow.ArrowBlob(bytes, 1, nothing))
+        state = (iterator.startpos, 0)
+        while true
+            current_pos = state[1]
+            next = iterate(iterator, state)
+            next === nothing && break
+            batch, state = next
+            push!(ranges, (batch.msg.header, current_pos, state[1] - 1))
+        end
+        return ranges
+    end
+
+    function first_delta_dictionary_without_base()
+        first_batch = (
+            col1=Int64[1, 2, 3, 4],
+            col2=Union{String,Missing}["hey", "there", "sailor", missing],
+        )
+        second_batch = (
+            col1=Int64[1, 2, 5, 6],
+            col2=Union{String,Missing}["hey", "there", "sailor2", missing],
+        )
+        bytes = read(
+            Arrow.tobuffer(
+                Tables.partitioner((first_batch, second_batch));
+                dictencode=true,
+                ntasks=0,
+            ),
+        )
+        ranges = message_ranges(bytes)
+        schema = only(filter(range -> range[1] isa Arrow.Meta.Schema, ranges))
+        delta = first(
+            filter(
+                range -> range[1] isa Arrow.Meta.DictionaryBatch && range[1].isDelta,
+                ranges,
+            ),
+        )
+        return vcat(bytes[schema[2]:schema[3]], bytes[delta[2]:delta[3]])
+    end
+
     function patch_first_dictionary_batch_node_count!(bytes, declared_count::UInt32)
         dictionary = first_dictionary_batch_header(bytes)
         raw = collect(reinterpret(UInt8, UInt32[declared_count]))
@@ -86,8 +127,21 @@
         "first arrow ipc message MUST be a schema message",
     )
 
+    delta_without_base = first_delta_dictionary_without_base()
+    assert_argument_error(
+        () -> Arrow.validate(delta_without_base),
+        "dictionary batch id 1 cannot be a delta without an existing dictionary",
+    )
+    assert_argument_error(
+        () -> Arrow.validate(delta_without_base; stream=true),
+        "dictionary batch id 1 cannot be a delta without an existing dictionary",
+    )
+
     @test_throws ArgumentError("dictionary batch id 42 has no schema dictionary field") Arrow._dictionary_encoded_field(
         Dict{Int64,Arrow.Meta.Field}(),
         Int64(42),
     )
+    @test_throws ArgumentError(
+        "dictionary batch id 42 cannot be a delta without an existing dictionary",
+    ) Arrow._assert_dictionary_delta_has_base(Dict{Int64,Any}(), Int64(42), true)
 end

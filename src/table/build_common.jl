@@ -206,6 +206,17 @@ function _dictionary_encoded_field(dictencoded, id)
     return dictencoded[id]
 end
 
+function _assert_dictionary_delta_has_base(dictencodings, id, isdelta)
+    isdelta &&
+        !haskey(dictencodings, id) &&
+        throw(
+            ArgumentError(
+                "dictionary batch id $id cannot be a delta without an existing dictionary",
+            ),
+        )
+    return nothing
+end
+
 function build(field::Meta.Field, batch, rb, de, nodeidx, bufferidx, varbufferidx, convert)
     name = Symbol(field.name)
     node = _record_batch_node(rb, nodeidx)

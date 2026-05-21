@@ -68,6 +68,7 @@ function Table(blobs::Vector{ArrowBlob}; convert::Bool=true)
                 @debug "parsing dictionary batch message: id = $id, compression = $(recordbatch.compression)"
                 @lock dictencodingslockable begin
                     dictencodings = dictencodingslockable[]
+                    _assert_dictionary_delta_has_base(dictencodings, id, header.isDelta)
                     if haskey(dictencodings, id) && header.isDelta
                         # delta
                         field = _dictionary_encoded_field(dictencoded, id)
