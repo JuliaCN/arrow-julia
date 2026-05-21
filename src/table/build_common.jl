@@ -184,6 +184,22 @@ function _assert_reinterp_element_width(::Type{T}, len::Integer) where {T}
     return nothing
 end
 
+function _build_dictionary_values(field, batch, recordbatch, dictencodings, convert)
+    values, nodeidx, bufferidx, varbufferidx = build(
+        field,
+        field.type,
+        batch,
+        recordbatch,
+        dictencodings,
+        Int64(1),
+        Int64(1),
+        Int64(1),
+        convert,
+    )
+    _assert_record_batch_fully_consumed(recordbatch, nodeidx, bufferidx, varbufferidx)
+    return values
+end
+
 function build(field::Meta.Field, batch, rb, de, nodeidx, bufferidx, varbufferidx, convert)
     name = Symbol(field.name)
     node = _record_batch_node(rb, nodeidx)

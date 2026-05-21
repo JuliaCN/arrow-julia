@@ -54,6 +54,8 @@ lead to unsafe indexing or misleading semantic interpretation:
 - RecordBatch field-node, buffer, and variadic-count declarations must be
   fully consumed by the schema traversal so malformed schema/batch mismatches
   cannot hide trailing layout data;
+- DictionaryBatch payloads enforce the same full-consumption rule as ordinary
+  RecordBatch payloads before dictionary values are registered;
 - compressed IPC buffers validate their encoded body length, 8-byte
   uncompressed-length header, and allowed uncompressed length sentinel before
   decompression;

@@ -17,6 +17,7 @@
 @testset "malformed IPC corpus fixture policy" begin
     expected_files = sort([
         "buffer_bounds.jl",
+        "dictionary_batches.jl",
         "field_nodes.jl",
         "fixture_policy.jl",
         "message_framing.jl",

@@ -69,15 +69,11 @@ function Table(blobs::Vector{ArrowBlob}; convert::Bool=true)
                     if haskey(dictencodings, id) && header.isDelta
                         # delta
                         field = dictencoded[id]
-                        values, _, _, _ = build(
+                        values = _build_dictionary_values(
                             field,
-                            field.type,
                             batch,
                             recordbatch,
                             dictencodingslockable,
-                            Int64(1),
-                            Int64(1),
-                            Int64(1),
                             convert,
                         )
                         dictencoding = dictencodings[id]
@@ -99,15 +95,11 @@ function Table(blobs::Vector{ArrowBlob}; convert::Bool=true)
                     end
                     # new dictencoding or replace
                     field = dictencoded[id]
-                    values, _, _, _ = build(
+                    values = _build_dictionary_values(
                         field,
-                        field.type,
                         batch,
                         recordbatch,
                         dictencodingslockable,
-                        Int64(1),
-                        Int64(1),
-                        Int64(1),
                         convert,
                     )
                     A = values
