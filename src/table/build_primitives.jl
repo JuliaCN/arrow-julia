@@ -35,7 +35,7 @@ function build(
     T = juliaeltype(f, nothing, false)
     @debug "storage type for primitive: T = $T"
     bytes, A = reinterp(Base.nonmissingtype(T), batch, buffer, rb.compression)
-    len = rb.nodes[nodeidx].length
+    len = _record_batch_node(rb, nodeidx).length
     _assert_value_count(A, len, Symbol(f.name))
     T = juliaeltype(f, meta, convert)
     @debug "final julia type for primitive: T = $T"
@@ -67,7 +67,7 @@ function build(
     buffer = _record_batch_buffer(rb, bufferidx)
     _assert_record_batch_buffer_bounds(batch, buffer, bufferidx)
     voff = batch.pos + buffer.offset
-    node = rb.nodes[nodeidx]
+    node = _record_batch_node(rb, nodeidx)
     if rb.compression === nothing
         decodedbytes = batch.bytes
         pos = voff

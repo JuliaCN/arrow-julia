@@ -36,7 +36,7 @@ function build(
     bytes, offs = reinterp(OT, batch, buffer, rb.compression)
     offsets = Offsets(bytes, offs)
     bufferidx += 1
-    len = rb.nodes[nodeidx].length
+    len = _record_batch_node(rb, nodeidx).length
     nodeidx += 1
     meta = buildmetadata(f.custom_metadata)
     T = juliaeltype(f, meta, convert)
@@ -91,7 +91,7 @@ function build(
     sizebuffer = _record_batch_buffer(rb, bufferidx)
     sizebytes, sizes = reinterp(OT, batch, sizebuffer, rb.compression)
     bufferidx += 1
-    len = rb.nodes[nodeidx].length
+    len = _record_batch_node(rb, nodeidx).length
     nodeidx += 1
     A, nodeidx, bufferidx, varbufferidx =
         build(f.children[1], batch, rb, de, nodeidx, bufferidx, varbufferidx, convert)
@@ -130,7 +130,7 @@ function build(
     convert,
 )
     @debug "building array: x = $x"
-    len = rb.nodes[nodeidx].length
+    len = _record_batch_node(rb, nodeidx).length
     nodeidx += 1
     meta = buildmetadata(f.custom_metadata)
     T = juliaeltype(f, meta, convert)
@@ -171,7 +171,7 @@ function build(
         bufferidx += 1
     end
     varbufferidx += 1
-    len = rb.nodes[nodeidx].length
+    len = _record_batch_node(rb, nodeidx).length
     nodeidx += 1
     if L isa Meta.Utf8View
         _assert_utf8_view_spans(views, inline, buffers, validity, len, "UTF-8 view")
@@ -200,7 +200,7 @@ function build(
     @debug "building array: L = $L"
     validity = buildbitmap(batch, rb, nodeidx, bufferidx)
     bufferidx += 1
-    len = rb.nodes[nodeidx].length
+    len = _record_batch_node(rb, nodeidx).length
     nodeidx += 1
     if L isa Meta.FixedSizeBinary
         buffer = _record_batch_buffer(rb, bufferidx)
@@ -240,7 +240,7 @@ function build(
     bytes, offs = reinterp(OT, batch, buffer, rb.compression)
     offsets = Offsets(bytes, offs)
     bufferidx += 1
-    len = rb.nodes[nodeidx].length
+    len = _record_batch_node(rb, nodeidx).length
     nodeidx += 1
     A, nodeidx, bufferidx, varbufferidx =
         build(f.children[1], batch, rb, de, nodeidx, bufferidx, varbufferidx, convert)
@@ -267,7 +267,7 @@ function build(
     @debug "building array: L = $L"
     validity = buildbitmap(batch, rb, nodeidx, bufferidx)
     bufferidx += 1
-    len = rb.nodes[nodeidx].length
+    len = _record_batch_node(rb, nodeidx).length
     vecs = []
     nodeidx += 1
     for child in f.children
@@ -390,7 +390,7 @@ function build(
         bufferidx += 1
     end
     vecs = []
-    len = rb.nodes[nodeidx].length
+    len = _record_batch_node(rb, nodeidx).length
     nodeidx += 1
     for child in f.children
         A, nodeidx, bufferidx, varbufferidx =
@@ -426,7 +426,10 @@ function build(
     @debug "building array: L = $L"
     meta = buildmetadata(f.custom_metadata)
     T = juliaeltype(f, meta, convert)
-    return NullVector{maybemissing(T)}(MissingVector(rb.nodes[nodeidx].length), meta),
+    return NullVector{maybemissing(T)}(
+        MissingVector(_record_batch_node(rb, nodeidx).length),
+        meta,
+    ),
     nodeidx + 1,
     bufferidx,
     varbufferidx

@@ -123,6 +123,17 @@ function _record_batch_buffer(rb, bufferidx::Integer)
     return buffers[bufferidx]
 end
 
+function _record_batch_node(rb, nodeidx::Integer)
+    nodes = rb.nodes
+    declared = nodes === nothing ? 0 : length(nodes)
+    1 <= nodeidx <= declared || throw(
+        ArgumentError(
+            "record batch is missing field node $nodeidx; only $declared field nodes are declared",
+        ),
+    )
+    return nodes[nodeidx]
+end
+
 function _assert_reinterp_element_width(::Type{T}, len::Integer) where {T}
     width = sizeof(T)
     width == 1 && return nothing
@@ -136,9 +147,8 @@ end
 
 function build(field::Meta.Field, batch, rb, de, nodeidx, bufferidx, varbufferidx, convert)
     name = Symbol(field.name)
-    nodeidx <= length(rb.nodes) ||
-        throw(ArgumentError("field $name is missing a field node"))
-    _assert_field_node_shape(rb.nodes[nodeidx], name)
+    node = _record_batch_node(rb, nodeidx)
+    _assert_field_node_shape(node, name)
     d = field.dictionary
     if d !== nothing
         validity = buildbitmap(batch, rb, nodeidx, bufferidx)
@@ -184,7 +194,7 @@ function buildbitmap(batch, rb, nodeidx, bufferidx)
     buffer = _record_batch_buffer(rb, bufferidx)
     _assert_record_batch_buffer_bounds(batch, buffer, bufferidx)
     voff = batch.pos + buffer.offset
-    node = rb.nodes[nodeidx]
+    node = _record_batch_node(rb, nodeidx)
     if rb.compression === nothing
         return ValidityBitmap(batch.bytes, voff, node.length, node.null_count)
     else
