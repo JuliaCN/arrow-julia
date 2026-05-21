@@ -78,4 +78,18 @@
         () -> Arrow.validate(buffer_length_beyond_body; stream=true),
         "record batch buffer length",
     )
+
+    buffer_length_not_element_width = patch_first_record_batch_buffer!(
+        read(Arrow.tobuffer((values=Int32[1],); ntasks=0)),
+        2;
+        new_length=Int64(6),
+    )
+    assert_argument_error(
+        () -> Arrow.validate(buffer_length_not_element_width),
+        "not a multiple",
+    )
+    assert_argument_error(
+        () -> Arrow.validate(buffer_length_not_element_width; stream=true),
+        "not a multiple",
+    )
 end

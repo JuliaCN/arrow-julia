@@ -112,6 +112,17 @@ function _assert_record_batch_buffer_bounds(batch, buffer, bufferidx=nothing)
     return nothing
 end
 
+function _assert_reinterp_element_width(::Type{T}, len::Integer) where {T}
+    width = sizeof(T)
+    width == 1 && return nothing
+    len % width == 0 || throw(
+        ArgumentError(
+            "record batch buffer length $len is not a multiple of $width-byte element width for $(T)",
+        ),
+    )
+    return nothing
+end
+
 function build(field::Meta.Field, batch, rb, de, nodeidx, bufferidx, varbufferidx, convert)
     name = Symbol(field.name)
     nodeidx <= length(rb.nodes) ||
@@ -222,6 +233,7 @@ function reinterp(::Type{T}, batch, buf, compression) where {T}
         len, bytes = uncompress(ptr, buf, compression)
         ptr = pointer(bytes)
     end
+    _assert_reinterp_element_width(T, len)
     alignment = Base.datatype_alignment(T)
     if alignment > 1 && (UInt(ptr) & UInt(alignment - 1)) != 0
         # https://github.com/apache/arrow-julia/issues/345

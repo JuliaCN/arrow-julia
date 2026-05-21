@@ -45,8 +45,9 @@ lead to unsafe indexing or misleading semantic interpretation:
   a continuation marker has started a message;
 - negative IPC message body lengths and body lengths larger than the remaining
   payload are rejected before advancing to the message body;
-- IPC RecordBatch buffer offsets and lengths are validated against the
-  declared message body before borrowed buffers are exposed;
+- IPC RecordBatch buffer offsets, lengths, and fixed-width element alignment
+  are validated against the declared message body before borrowed buffers are
+  exposed;
 - compressed IPC buffers validate their encoded body length, 8-byte
   uncompressed-length header, and allowed uncompressed length sentinel before
   decompression;
