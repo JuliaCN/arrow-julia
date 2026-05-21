@@ -51,8 +51,16 @@ function build(
         bufferidx += 1
     else
         bytes = UInt8[]
-        A, nodeidx, bufferidx, varbufferidx =
-            build(f.children[1], batch, rb, de, nodeidx, bufferidx, varbufferidx, convert)
+        A, nodeidx, bufferidx, varbufferidx = build(
+            _field_child(f, 1),
+            batch,
+            rb,
+            de,
+            nodeidx,
+            bufferidx,
+            varbufferidx,
+            convert,
+        )
         # juliaeltype returns Vector for List, translate to SubArray
         S = Base.nonmissingtype(T)
         if S <: Vector
@@ -94,7 +102,7 @@ function build(
     len = _record_batch_node(rb, nodeidx).length
     nodeidx += 1
     A, nodeidx, bufferidx, varbufferidx =
-        build(f.children[1], batch, rb, de, nodeidx, bufferidx, varbufferidx, convert)
+        build(_field_child(f, 1), batch, rb, de, nodeidx, bufferidx, varbufferidx, convert)
     _assert_list_view_spans(offsets, sizes, A; len)
     meta = buildmetadata(f.custom_metadata)
     T = juliaeltype(f, meta, convert)
@@ -135,9 +143,9 @@ function build(
     meta = buildmetadata(f.custom_metadata)
     T = juliaeltype(f, meta, convert)
     run_ends, nodeidx, bufferidx, varbufferidx =
-        build(f.children[1], batch, rb, de, nodeidx, bufferidx, varbufferidx, false)
+        build(_field_child(f, 1), batch, rb, de, nodeidx, bufferidx, varbufferidx, false)
     values, nodeidx, bufferidx, varbufferidx =
-        build(f.children[2], batch, rb, de, nodeidx, bufferidx, varbufferidx, convert)
+        build(_field_child(f, 2), batch, rb, de, nodeidx, bufferidx, varbufferidx, convert)
     return _makerunendencoded(T, run_ends, values, len, meta),
     nodeidx,
     bufferidx,
@@ -209,8 +217,16 @@ function build(
         bufferidx += 1
     else
         bytes = UInt8[]
-        A, nodeidx, bufferidx, varbufferidx =
-            build(f.children[1], batch, rb, de, nodeidx, bufferidx, varbufferidx, convert)
+        A, nodeidx, bufferidx, varbufferidx = build(
+            _field_child(f, 1),
+            batch,
+            rb,
+            de,
+            nodeidx,
+            bufferidx,
+            varbufferidx,
+            convert,
+        )
         _assert_fixed_size_list_child_length(A, L.listSize, len, Symbol(f.name))
     end
     meta = buildmetadata(f.custom_metadata)
@@ -244,7 +260,7 @@ function build(
     len = _record_batch_node(rb, nodeidx).length
     nodeidx += 1
     A, nodeidx, bufferidx, varbufferidx =
-        build(f.children[1], batch, rb, de, nodeidx, bufferidx, varbufferidx, convert)
+        build(_field_child(f, 1), batch, rb, de, nodeidx, bufferidx, varbufferidx, convert)
     _assert_offsets_spans(offsets.offsets, length(validity), length(A), "map")
     meta = buildmetadata(f.custom_metadata)
     T = juliaeltype(f, meta, convert)

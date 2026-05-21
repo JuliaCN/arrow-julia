@@ -20,6 +20,7 @@
         "field_nodes.jl",
         "fixture_policy.jl",
         "message_framing.jl",
+        "schema_children.jl",
         "unions.jl",
         "views_offsets.jl",
     ])

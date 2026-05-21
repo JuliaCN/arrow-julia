@@ -307,7 +307,8 @@ function juliaeltype(f::Meta.Field, x::Meta.Interval, convert)
 end
 
 function juliaeltype(f::Meta.Field, x::Meta.RunEndEncoded, convert)
-    return juliaeltype(f.children[2], buildmetadata(f.children[2]), convert)
+    child = _field_child(f, 2)
+    return juliaeltype(child, buildmetadata(child), convert)
 end
 
 function arrowtype(b, x::RunEndEncoded)
