@@ -33,10 +33,14 @@ export ADBC_VERSION_1_0_0,
     CONNECTION_OPTION_CURRENT_CATALOG,
     CONNECTION_OPTION_CURRENT_DB_SCHEMA,
     CONNECTION_OPTION_READ_ONLY,
+    DRIVER_1_0_0_SIZE,
+    DRIVER_1_1_0_SIZE,
     ERROR_VENDOR_CODE_PRIVATE_DATA,
     Error,
+    ErrorDetail,
     Database,
     Connection,
+    Driver,
     Partitions,
     Statement,
     STATUS_ALREADY_EXISTS,
@@ -86,6 +90,7 @@ export ADBC_VERSION_1_0_0,
     OPTION_VALUE_DISABLED,
     OPTION_VALUE_ENABLED,
     assertok,
+    driverabisize,
     error_message,
     importstream,
     isinitialized,
@@ -180,6 +185,19 @@ Error() = Error(
 )
 
 """
+    Arrow.ADBC.ErrorDetail
+
+ABI-compatible representation of ADBC 1.1.0 `AdbcErrorDetail`.
+"""
+struct ErrorDetail
+    key::Ptr{Cchar}
+    value::Ptr{UInt8}
+    value_length::Csize_t
+end
+
+ErrorDetail() = ErrorDetail(Ptr{Cchar}(C_NULL), Ptr{UInt8}(C_NULL), Csize_t(0))
+
+"""
     Arrow.ADBC.Database
 
 ABI-compatible representation of `AdbcDatabase`.
@@ -236,9 +254,85 @@ Partitions() = Partitions(
     Ptr{Cvoid}(C_NULL),
 )
 
+"""
+    Arrow.ADBC.Driver
+
+ABI-compatible representation of ADBC 1.1.0 `AdbcDriver`. Callback fields are
+stored as raw function pointers so a future driver manager can validate and
+call them through narrow wrappers.
+"""
+struct Driver
+    private_data::Ptr{Cvoid}
+    private_manager::Ptr{Cvoid}
+    release::Ptr{Cvoid}
+    database_init::Ptr{Cvoid}
+    database_new::Ptr{Cvoid}
+    database_set_option::Ptr{Cvoid}
+    database_release::Ptr{Cvoid}
+    connection_commit::Ptr{Cvoid}
+    connection_get_info::Ptr{Cvoid}
+    connection_get_objects::Ptr{Cvoid}
+    connection_get_table_schema::Ptr{Cvoid}
+    connection_get_table_types::Ptr{Cvoid}
+    connection_init::Ptr{Cvoid}
+    connection_new::Ptr{Cvoid}
+    connection_set_option::Ptr{Cvoid}
+    connection_read_partition::Ptr{Cvoid}
+    connection_release::Ptr{Cvoid}
+    connection_rollback::Ptr{Cvoid}
+    statement_bind::Ptr{Cvoid}
+    statement_bind_stream::Ptr{Cvoid}
+    statement_execute_query::Ptr{Cvoid}
+    statement_execute_partitions::Ptr{Cvoid}
+    statement_get_parameter_schema::Ptr{Cvoid}
+    statement_new::Ptr{Cvoid}
+    statement_prepare::Ptr{Cvoid}
+    statement_release::Ptr{Cvoid}
+    statement_set_option::Ptr{Cvoid}
+    statement_set_sql_query::Ptr{Cvoid}
+    statement_set_substrait_plan::Ptr{Cvoid}
+    error_get_detail_count::Ptr{Cvoid}
+    error_get_detail::Ptr{Cvoid}
+    error_from_array_stream::Ptr{Cvoid}
+    database_get_option::Ptr{Cvoid}
+    database_get_option_bytes::Ptr{Cvoid}
+    database_get_option_double::Ptr{Cvoid}
+    database_get_option_int::Ptr{Cvoid}
+    database_set_option_bytes::Ptr{Cvoid}
+    database_set_option_double::Ptr{Cvoid}
+    database_set_option_int::Ptr{Cvoid}
+    connection_cancel::Ptr{Cvoid}
+    connection_get_option::Ptr{Cvoid}
+    connection_get_option_bytes::Ptr{Cvoid}
+    connection_get_option_double::Ptr{Cvoid}
+    connection_get_option_int::Ptr{Cvoid}
+    connection_get_statistics::Ptr{Cvoid}
+    connection_get_statistic_names::Ptr{Cvoid}
+    connection_set_option_bytes::Ptr{Cvoid}
+    connection_set_option_double::Ptr{Cvoid}
+    connection_set_option_int::Ptr{Cvoid}
+    statement_cancel::Ptr{Cvoid}
+    statement_execute_schema::Ptr{Cvoid}
+    statement_get_option::Ptr{Cvoid}
+    statement_get_option_bytes::Ptr{Cvoid}
+    statement_get_option_double::Ptr{Cvoid}
+    statement_get_option_int::Ptr{Cvoid}
+    statement_set_option_bytes::Ptr{Cvoid}
+    statement_set_option_double::Ptr{Cvoid}
+    statement_set_option_int::Ptr{Cvoid}
+end
+
+Driver() = Driver(ntuple(_ -> Ptr{Cvoid}(C_NULL), fieldcount(Driver))...)
+
+const DRIVER_1_0_0_SIZE =
+    fieldoffset(Driver, findfirst(==(:error_get_detail_count), fieldnames(Driver)))
+const DRIVER_1_1_0_SIZE = sizeof(Driver)
+
 isinitialized(x::Union{Database,Connection,Statement}) = x.private_data != C_NULL
 isinitialized(x::Partitions) = x.private_data != C_NULL
+isinitialized(x::Driver) = x.private_data != C_NULL || x.release != C_NULL
 releaseable(x::Union{Error,Partitions}) = x.release != C_NULL
+releaseable(x::Driver) = x.release != C_NULL
 
 statusok(status::StatusCode) = status == STATUS_OK
 statusok(status::Integer) = status == UInt8(STATUS_OK)
@@ -264,6 +358,16 @@ function assertok(status::Union{StatusCode,Integer}, error::Error=Error())
     code = status isa StatusCode ? status : StatusCode(UInt8(status))
     statusok(code) && return nothing
     throw(StatusException(code, error_message(error)))
+end
+
+function driverabisize(version::Integer)
+    if version >= ADBC_VERSION_1_1_0
+        return DRIVER_1_1_0_SIZE
+    elseif version >= ADBC_VERSION_1_0_0
+        return DRIVER_1_0_0_SIZE
+    else
+        throw(ArgumentError("unsupported ADBC driver ABI version: $version"))
+    end
 end
 
 """

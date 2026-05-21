@@ -548,6 +548,8 @@ Arrow.ADBC.INGEST_OPTION_TARGET_TABLE
 Arrow.ADBC.Database()
 Arrow.ADBC.Connection()
 Arrow.ADBC.Statement()
+Arrow.ADBC.Driver()
+Arrow.ADBC.driverabisize(Arrow.ADBC.ADBC_VERSION_1_1_0)
 ```
 
 ADBC statement execution returns an Arrow C Stream plus a rows-affected count.

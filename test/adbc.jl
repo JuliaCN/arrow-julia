@@ -33,29 +33,39 @@ const ADBC = Arrow.ADBC
     @test ADBC.INFO_DRIVER_ADBC_VERSION == UInt32(103)
 
     @test isbitstype(ADBC.Error)
+    @test isbitstype(ADBC.ErrorDetail)
     @test isbitstype(ADBC.Database)
     @test isbitstype(ADBC.Connection)
     @test isbitstype(ADBC.Statement)
     @test isbitstype(ADBC.Partitions)
+    @test isbitstype(ADBC.Driver)
     @test sizeof(ADBC.Database) == 2 * sizeof(Ptr{Cvoid})
     @test sizeof(ADBC.Connection) == 2 * sizeof(Ptr{Cvoid})
     @test sizeof(ADBC.Statement) == 2 * sizeof(Ptr{Cvoid})
+    @test ADBC.DRIVER_1_0_0_SIZE == 29 * sizeof(Ptr{Cvoid})
+    @test ADBC.DRIVER_1_1_0_SIZE == fieldcount(ADBC.Driver) * sizeof(Ptr{Cvoid})
+    @test ADBC.driverabisize(ADBC.ADBC_VERSION_1_0_0) == ADBC.DRIVER_1_0_0_SIZE
+    @test ADBC.driverabisize(ADBC.ADBC_VERSION_1_1_0) == ADBC.DRIVER_1_1_0_SIZE
 
     error = ADBC.Error()
     @test error.vendor_code == ADBC.ERROR_VENDOR_CODE_PRIVATE_DATA
     @test !ADBC.releaseable(error)
     @test ADBC.error_message(error) == ""
+    @test ADBC.ErrorDetail().value_length == 0
 
     @test !ADBC.isinitialized(ADBC.Database())
     @test !ADBC.isinitialized(ADBC.Connection())
     @test !ADBC.isinitialized(ADBC.Statement())
     @test !ADBC.isinitialized(ADBC.Partitions())
+    @test !ADBC.isinitialized(ADBC.Driver())
     @test !ADBC.releaseable(ADBC.Partitions())
+    @test !ADBC.releaseable(ADBC.Driver())
 
     @test ADBC.statusok(ADBC.STATUS_OK)
     @test ADBC.statusok(0)
     @test ADBC.statusname(ADBC.STATUS_NOT_IMPLEMENTED) == "STATUS_NOT_IMPLEMENTED"
     @test_throws ADBC.StatusException ADBC.assertok(ADBC.STATUS_NOT_IMPLEMENTED)
+    @test_throws ArgumentError ADBC.driverabisize(0)
 end
 
 @testset "ADBC statement result stream boundary" begin
