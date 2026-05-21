@@ -278,6 +278,7 @@ function Base.iterate(x::Stream, (pos, id)=(1, 0))
     end
 
     if compression !== nothing
+        _assert_compression_method_supported(compression)
         codec = _compression_codec(compression)
         if codec == Flatbuf.CompressionType.ZSTD
             x.compression[] = :zstd

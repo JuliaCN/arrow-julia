@@ -63,7 +63,7 @@ lead to unsafe indexing or misleading semantic interpretation:
   the same dictionary id;
 - Flight IPC conversion applies the same dictionary-id and delta-base
   validation before accepting dictionary batches from FlightData streams;
-- compressed IPC buffers validate their encoded body length, codec, 8-byte
+- compressed IPC buffers validate their encoded body length, codec, method, 8-byte
   uncompressed-length header, and allowed uncompressed length sentinel before
   decompression;
 - IPC field nodes validate non-negative lengths, non-negative null counts, and

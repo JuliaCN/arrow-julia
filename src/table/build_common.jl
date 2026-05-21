@@ -292,6 +292,7 @@ function uncompress(ptr::Ptr{UInt8}, buffer, compression)
     len == 0 && return 0, UInt8[]
     ptr += 8 # skip past uncompressed length as Int64
     encodedbytes = unsafe_wrap(Array, ptr, buffer.length - 8)
+    _assert_compression_method_supported(compression)
     if len == -1
         # len = -1 means data is not compressed
         # it's unclear why other language implementations allow this
@@ -326,6 +327,23 @@ function _compression_codec(compression)
     catch err
         err isa ArgumentError || rethrow()
         throw(ArgumentError("unsupported compression codec when reading arrow buffers"))
+    end
+end
+
+function _assert_compression_method_supported(compression)
+    method = _compression_method(compression)
+    method === Meta.BodyCompressionMethod.BUFFER || throw(
+        ArgumentError("unsupported compression method when reading arrow buffers: $method"),
+    )
+    return nothing
+end
+
+function _compression_method(compression)
+    try
+        return compression.method
+    catch err
+        err isa ArgumentError || rethrow()
+        throw(ArgumentError("unsupported compression method when reading arrow buffers"))
     end
 end
 

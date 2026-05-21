@@ -111,6 +111,17 @@
         return bytes
     end
 
+    function patch_record_batch_compression_method!(bytes, rb, method::Int8)
+        compression = rb.compression
+        pos = Arrow.FlatBuffers.pos(compression)
+        vtable = pos - Arrow.FlatBuffers.get(compression, pos, Arrow.FlatBuffers.SOffsetT)
+        method_offset = UInt16(6)
+        copyto!(bytes, vtable + 1, collect(reinterpret(UInt8, UInt16[8])), 1, 2)
+        copyto!(bytes, vtable + 7, collect(reinterpret(UInt8, UInt16[method_offset])), 1, 2)
+        bytes[pos + Int(method_offset) + 1] = reinterpret(UInt8, method)
+        return bytes
+    end
+
     function ipc_prefix(message_length::Int32)
         return vcat(
             collect(reinterpret(UInt8, UInt32[Arrow.CONTINUATION_INDICATOR_BYTES])),
@@ -209,6 +220,21 @@
     assert_argument_error(
         () -> Arrow.validate(compressed_unknown_codec; stream=true),
         "unsupported compression codec when reading arrow buffers",
+    )
+
+    compressed_unknown_method = patched_table_bytes(
+        (values=Int32[1, 2],),
+        (bytes, batch, rb) ->
+            patch_record_batch_compression_method!(bytes, rb, Int8(7));
+        compress=:zstd,
+    )
+    assert_argument_error(
+        () -> Arrow.validate(compressed_unknown_method),
+        "unsupported compression method when reading arrow buffers",
+    )
+    assert_argument_error(
+        () -> Arrow.validate(compressed_unknown_method; stream=true),
+        "unsupported compression method when reading arrow buffers",
     )
 
     descending = Arrow.List{Vector{Int32},Int32,typeof(item)}(
