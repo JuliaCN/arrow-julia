@@ -28,8 +28,9 @@ function selected_reports()
     names = Symbol[]
     for item in split(raw, ',')
         name = Symbol(strip(item))
-        haskey(REPORT_SCRIPTS, name) ||
-            error("Unknown production performance report '$item'; expected one of $(keys(REPORT_SCRIPTS))")
+        haskey(REPORT_SCRIPTS, name) || error(
+            "Unknown production performance report '$item'; expected one of $(keys(REPORT_SCRIPTS))",
+        )
         push!(names, name)
     end
     return names
@@ -54,7 +55,8 @@ end
 
 function main()
     names = selected_reports()
-    isempty(names) && error("ARROW_PRODUCTION_PERFORMANCE_REPORTS must select at least one report")
+    isempty(names) &&
+        error("ARROW_PRODUCTION_PERFORMANCE_REPORTS must select at least one report")
     println("production_performance_reports=$(join(String.(names), ','))")
     for name in names
         run_report(name)

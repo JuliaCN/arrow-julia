@@ -34,7 +34,6 @@ export FieldDescriptorProto, EnumValueDescriptorProto, var"DescriptorProto.Exten
 export MethodDescriptorProto, OneofDescriptorProto, EnumDescriptorProto
 export ServiceDescriptorProto, DescriptorProto, FileDescriptorProto, FileDescriptorSet
 
-
 @enumx var"FieldDescriptorProto.Label" LABEL_OPTIONAL=1 LABEL_REQUIRED=2 LABEL_REPEATED=3
 
 @enumx var"FileOptions.OptimizeMode" SPEED=1 CODE_SIZE=2 LITE_RUNTIME=3
@@ -43,8 +42,10 @@ struct var"UninterpretedOption.NamePart"
     name_part::String
     is_extension::Bool
 end
-PB.default_values(::Type{var"UninterpretedOption.NamePart"}) = (;name_part = "", is_extension = false)
-PB.field_numbers(::Type{var"UninterpretedOption.NamePart"}) = (;name_part = 1, is_extension = 2)
+PB.default_values(::Type{var"UninterpretedOption.NamePart"}) =
+    (; name_part="", is_extension=false)
+PB.field_numbers(::Type{var"UninterpretedOption.NamePart"}) =
+    (; name_part=1, is_extension=2)
 
 function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:var"UninterpretedOption.NamePart"})
     name_part = ""
@@ -82,8 +83,15 @@ struct var"SourceCodeInfo.Location"
     trailing_comments::String
     leading_detached_comments::Vector{String}
 end
-PB.default_values(::Type{var"SourceCodeInfo.Location"}) = (;path = Vector{Int32}(), span = Vector{Int32}(), leading_comments = "", trailing_comments = "", leading_detached_comments = Vector{String}())
-PB.field_numbers(::Type{var"SourceCodeInfo.Location"}) = (;path = 1, span = 2, leading_comments = 3, trailing_comments = 4, leading_detached_comments = 6)
+PB.default_values(::Type{var"SourceCodeInfo.Location"}) = (;
+    path=Vector{Int32}(),
+    span=Vector{Int32}(),
+    leading_comments="",
+    trailing_comments="",
+    leading_detached_comments=Vector{String}(),
+)
+PB.field_numbers(::Type{var"SourceCodeInfo.Location"}) =
+    (; path=1, span=2, leading_comments=3, trailing_comments=4, leading_detached_comments=6)
 
 function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:var"SourceCodeInfo.Location"})
     path = PB.BufferedVector{Int32}()
@@ -107,7 +115,13 @@ function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:var"SourceCodeInfo.Locat
             Base.skip(d, wire_type)
         end
     end
-    return var"SourceCodeInfo.Location"(path[], span[], leading_comments, trailing_comments, leading_detached_comments[])
+    return var"SourceCodeInfo.Location"(
+        path[],
+        span[],
+        leading_comments,
+        trailing_comments,
+        leading_detached_comments[],
+    )
 end
 
 function PB.encode(e::PB.AbstractProtoEncoder, x::var"SourceCodeInfo.Location")
@@ -123,9 +137,12 @@ function PB._encoded_size(x::var"SourceCodeInfo.Location")
     encoded_size = 0
     !isempty(x.path) && (encoded_size += PB._encoded_size(x.path, 1))
     !isempty(x.span) && (encoded_size += PB._encoded_size(x.span, 2))
-    !isempty(x.leading_comments) && (encoded_size += PB._encoded_size(x.leading_comments, 3))
-    !isempty(x.trailing_comments) && (encoded_size += PB._encoded_size(x.trailing_comments, 4))
-    !isempty(x.leading_detached_comments) && (encoded_size += PB._encoded_size(x.leading_detached_comments, 6))
+    !isempty(x.leading_comments) &&
+        (encoded_size += PB._encoded_size(x.leading_comments, 3))
+    !isempty(x.trailing_comments) &&
+        (encoded_size += PB._encoded_size(x.trailing_comments, 4))
+    !isempty(x.leading_detached_comments) &&
+        (encoded_size += PB._encoded_size(x.leading_detached_comments, 6))
     return encoded_size
 end
 
@@ -133,10 +150,15 @@ struct var"EnumDescriptorProto.EnumReservedRange"
     start::Int32
     var"#end"::Int32
 end
-PB.default_values(::Type{var"EnumDescriptorProto.EnumReservedRange"}) = (;start = zero(Int32), var"#end" = zero(Int32))
-PB.field_numbers(::Type{var"EnumDescriptorProto.EnumReservedRange"}) = (;start = 1, var"#end" = 2)
+PB.default_values(::Type{var"EnumDescriptorProto.EnumReservedRange"}) =
+    (; start=zero(Int32), var"#end"=zero(Int32))
+PB.field_numbers(::Type{var"EnumDescriptorProto.EnumReservedRange"}) =
+    (; start=1, var"#end"=2)
 
-function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:var"EnumDescriptorProto.EnumReservedRange"})
+function PB.decode(
+    d::PB.AbstractProtoDecoder,
+    ::Type{<:var"EnumDescriptorProto.EnumReservedRange"},
+)
     start = zero(Int32)
     var"#end" = zero(Int32)
     while !PB.message_done(d)
@@ -152,7 +174,10 @@ function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:var"EnumDescriptorProto.
     return var"EnumDescriptorProto.EnumReservedRange"(start, var"#end")
 end
 
-function PB.encode(e::PB.AbstractProtoEncoder, x::var"EnumDescriptorProto.EnumReservedRange")
+function PB.encode(
+    e::PB.AbstractProtoEncoder,
+    x::var"EnumDescriptorProto.EnumReservedRange",
+)
     initpos = position(e.io)
     x.start != zero(Int32) && PB.encode(e, 1, x.start)
     x.var"#end" != zero(Int32) && PB.encode(e, 2, x.var"#end")
@@ -171,8 +196,9 @@ struct var"DescriptorProto.ReservedRange"
     start::Int32
     var"#end"::Int32
 end
-PB.default_values(::Type{var"DescriptorProto.ReservedRange"}) = (;start = zero(Int32), var"#end" = zero(Int32))
-PB.field_numbers(::Type{var"DescriptorProto.ReservedRange"}) = (;start = 1, var"#end" = 2)
+PB.default_values(::Type{var"DescriptorProto.ReservedRange"}) =
+    (; start=zero(Int32), var"#end"=zero(Int32))
+PB.field_numbers(::Type{var"DescriptorProto.ReservedRange"}) = (; start=1, var"#end"=2)
 
 function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:var"DescriptorProto.ReservedRange"})
     start = zero(Int32)
@@ -211,8 +237,10 @@ struct var"GeneratedCodeInfo.Annotation"
     var"#begin"::Int32
     var"#end"::Int32
 end
-PB.default_values(::Type{var"GeneratedCodeInfo.Annotation"}) = (;path = Vector{Int32}(), source_file = "", var"#begin" = zero(Int32), var"#end" = zero(Int32))
-PB.field_numbers(::Type{var"GeneratedCodeInfo.Annotation"}) = (;path = 1, source_file = 2, var"#begin" = 3, var"#end" = 4)
+PB.default_values(::Type{var"GeneratedCodeInfo.Annotation"}) =
+    (; path=Vector{Int32}(), source_file="", var"#begin"=zero(Int32), var"#end"=zero(Int32))
+PB.field_numbers(::Type{var"GeneratedCodeInfo.Annotation"}) =
+    (; path=1, source_file=2, var"#begin"=3, var"#end"=4)
 
 function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:var"GeneratedCodeInfo.Annotation"})
     path = PB.BufferedVector{Int32}()
@@ -266,8 +294,24 @@ struct UninterpretedOption
     string_value::Vector{UInt8}
     aggregate_value::String
 end
-PB.default_values(::Type{UninterpretedOption}) = (;name = Vector{var"UninterpretedOption.NamePart"}(), identifier_value = "", positive_int_value = zero(UInt64), negative_int_value = zero(Int64), double_value = zero(Float64), string_value = UInt8[], aggregate_value = "")
-PB.field_numbers(::Type{UninterpretedOption}) = (;name = 2, identifier_value = 3, positive_int_value = 4, negative_int_value = 5, double_value = 6, string_value = 7, aggregate_value = 8)
+PB.default_values(::Type{UninterpretedOption}) = (;
+    name=Vector{var"UninterpretedOption.NamePart"}(),
+    identifier_value="",
+    positive_int_value=zero(UInt64),
+    negative_int_value=zero(Int64),
+    double_value=zero(Float64),
+    string_value=UInt8[],
+    aggregate_value="",
+)
+PB.field_numbers(::Type{UninterpretedOption}) = (;
+    name=2,
+    identifier_value=3,
+    positive_int_value=4,
+    negative_int_value=5,
+    double_value=6,
+    string_value=7,
+    aggregate_value=8,
+)
 
 function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:UninterpretedOption})
     name = PB.BufferedVector{var"UninterpretedOption.NamePart"}()
@@ -297,7 +341,15 @@ function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:UninterpretedOption})
             Base.skip(d, wire_type)
         end
     end
-    return UninterpretedOption(name[], identifier_value, positive_int_value, negative_int_value, double_value, string_value, aggregate_value)
+    return UninterpretedOption(
+        name[],
+        identifier_value,
+        positive_int_value,
+        negative_int_value,
+        double_value,
+        string_value,
+        aggregate_value,
+    )
 end
 
 function PB.encode(e::PB.AbstractProtoEncoder, x::UninterpretedOption)
@@ -314,10 +366,14 @@ end
 function PB._encoded_size(x::UninterpretedOption)
     encoded_size = 0
     !isempty(x.name) && (encoded_size += PB._encoded_size(x.name, 2))
-    !isempty(x.identifier_value) && (encoded_size += PB._encoded_size(x.identifier_value, 3))
-    x.positive_int_value != zero(UInt64) && (encoded_size += PB._encoded_size(x.positive_int_value, 4))
-    x.negative_int_value != zero(Int64) && (encoded_size += PB._encoded_size(x.negative_int_value, 5))
-    x.double_value !== zero(Float64) && (encoded_size += PB._encoded_size(x.double_value, 6))
+    !isempty(x.identifier_value) &&
+        (encoded_size += PB._encoded_size(x.identifier_value, 3))
+    x.positive_int_value != zero(UInt64) &&
+        (encoded_size += PB._encoded_size(x.positive_int_value, 4))
+    x.negative_int_value != zero(Int64) &&
+        (encoded_size += PB._encoded_size(x.negative_int_value, 5))
+    x.double_value !== zero(Float64) &&
+        (encoded_size += PB._encoded_size(x.double_value, 6))
     !isempty(x.string_value) && (encoded_size += PB._encoded_size(x.string_value, 7))
     !isempty(x.aggregate_value) && (encoded_size += PB._encoded_size(x.aggregate_value, 8))
     return encoded_size
@@ -326,8 +382,9 @@ end
 struct SourceCodeInfo
     location::Vector{var"SourceCodeInfo.Location"}
 end
-PB.default_values(::Type{SourceCodeInfo}) = (;location = Vector{var"SourceCodeInfo.Location"}())
-PB.field_numbers(::Type{SourceCodeInfo}) = (;location = 1)
+PB.default_values(::Type{SourceCodeInfo}) =
+    (; location=Vector{var"SourceCodeInfo.Location"}())
+PB.field_numbers(::Type{SourceCodeInfo}) = (; location=1)
 
 function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:SourceCodeInfo})
     location = PB.BufferedVector{var"SourceCodeInfo.Location"}()
@@ -356,8 +413,9 @@ end
 struct GeneratedCodeInfo
     annotation::Vector{var"GeneratedCodeInfo.Annotation"}
 end
-PB.default_values(::Type{GeneratedCodeInfo}) = (;annotation = Vector{var"GeneratedCodeInfo.Annotation"}())
-PB.field_numbers(::Type{GeneratedCodeInfo}) = (;annotation = 1)
+PB.default_values(::Type{GeneratedCodeInfo}) =
+    (; annotation=Vector{var"GeneratedCodeInfo.Annotation"}())
+PB.field_numbers(::Type{GeneratedCodeInfo}) = (; annotation=1)
 
 function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:GeneratedCodeInfo})
     annotation = PB.BufferedVector{var"GeneratedCodeInfo.Annotation"}()
@@ -392,10 +450,21 @@ struct FieldOptions
     weak::Bool
     uninterpreted_option::Vector{UninterpretedOption}
 end
-PB.reserved_fields(::Type{FieldOptions}) = (names = String[], numbers = Union{Int,UnitRange{Int}}[4])
-PB.extendable_field_numbers(::Type{FieldOptions}) = Union{Int,UnitRange{Int}}[1000:536870911]
-PB.default_values(::Type{FieldOptions}) = (;ctype = var"FieldOptions.CType".STRING, packed = false, jstype = var"FieldOptions.JSType".JS_NORMAL, lazy = false, deprecated = false, weak = false, uninterpreted_option = Vector{UninterpretedOption}())
-PB.field_numbers(::Type{FieldOptions}) = (;ctype = 1, packed = 2, jstype = 6, lazy = 5, deprecated = 3, weak = 10, uninterpreted_option = 999)
+PB.reserved_fields(::Type{FieldOptions}) =
+    (names=String[], numbers=Union{Int,UnitRange{Int}}[4])
+PB.extendable_field_numbers(::Type{FieldOptions}) =
+    Union{Int,UnitRange{Int}}[1000:536870911]
+PB.default_values(::Type{FieldOptions}) = (;
+    ctype=var"FieldOptions.CType".STRING,
+    packed=false,
+    jstype=var"FieldOptions.JSType".JS_NORMAL,
+    lazy=false,
+    deprecated=false,
+    weak=false,
+    uninterpreted_option=Vector{UninterpretedOption}(),
+)
+PB.field_numbers(::Type{FieldOptions}) =
+    (; ctype=1, packed=2, jstype=6, lazy=5, deprecated=3, weak=10, uninterpreted_option=999)
 
 function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:FieldOptions})
     ctype = var"FieldOptions.CType".STRING
@@ -425,7 +494,15 @@ function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:FieldOptions})
             Base.skip(d, wire_type)
         end
     end
-    return FieldOptions(ctype, packed, jstype, lazy, deprecated, weak, uninterpreted_option[])
+    return FieldOptions(
+        ctype,
+        packed,
+        jstype,
+        lazy,
+        deprecated,
+        weak,
+        uninterpreted_option[],
+    )
 end
 
 function PB.encode(e::PB.AbstractProtoEncoder, x::FieldOptions)
@@ -441,13 +518,16 @@ function PB.encode(e::PB.AbstractProtoEncoder, x::FieldOptions)
 end
 function PB._encoded_size(x::FieldOptions)
     encoded_size = 0
-    x.ctype != var"FieldOptions.CType".STRING && (encoded_size += PB._encoded_size(x.ctype, 1))
+    x.ctype != var"FieldOptions.CType".STRING &&
+        (encoded_size += PB._encoded_size(x.ctype, 1))
     x.packed != false && (encoded_size += PB._encoded_size(x.packed, 2))
-    x.jstype != var"FieldOptions.JSType".JS_NORMAL && (encoded_size += PB._encoded_size(x.jstype, 6))
+    x.jstype != var"FieldOptions.JSType".JS_NORMAL &&
+        (encoded_size += PB._encoded_size(x.jstype, 6))
     x.lazy != false && (encoded_size += PB._encoded_size(x.lazy, 5))
     x.deprecated != false && (encoded_size += PB._encoded_size(x.deprecated, 3))
     x.weak != false && (encoded_size += PB._encoded_size(x.weak, 10))
-    !isempty(x.uninterpreted_option) && (encoded_size += PB._encoded_size(x.uninterpreted_option, 999))
+    !isempty(x.uninterpreted_option) &&
+        (encoded_size += PB._encoded_size(x.uninterpreted_option, 999))
     return encoded_size
 end
 
@@ -455,9 +535,11 @@ struct EnumValueOptions
     deprecated::Bool
     uninterpreted_option::Vector{UninterpretedOption}
 end
-PB.extendable_field_numbers(::Type{EnumValueOptions}) = Union{Int,UnitRange{Int}}[1000:536870911]
-PB.default_values(::Type{EnumValueOptions}) = (;deprecated = false, uninterpreted_option = Vector{UninterpretedOption}())
-PB.field_numbers(::Type{EnumValueOptions}) = (;deprecated = 1, uninterpreted_option = 999)
+PB.extendable_field_numbers(::Type{EnumValueOptions}) =
+    Union{Int,UnitRange{Int}}[1000:536870911]
+PB.default_values(::Type{EnumValueOptions}) =
+    (; deprecated=false, uninterpreted_option=Vector{UninterpretedOption}())
+PB.field_numbers(::Type{EnumValueOptions}) = (; deprecated=1, uninterpreted_option=999)
 
 function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:EnumValueOptions})
     deprecated = false
@@ -484,7 +566,8 @@ end
 function PB._encoded_size(x::EnumValueOptions)
     encoded_size = 0
     x.deprecated != false && (encoded_size += PB._encoded_size(x.deprecated, 1))
-    !isempty(x.uninterpreted_option) && (encoded_size += PB._encoded_size(x.uninterpreted_option, 999))
+    !isempty(x.uninterpreted_option) &&
+        (encoded_size += PB._encoded_size(x.uninterpreted_option, 999))
     return encoded_size
 end
 
@@ -493,10 +576,16 @@ struct EnumOptions
     deprecated::Bool
     uninterpreted_option::Vector{UninterpretedOption}
 end
-PB.reserved_fields(::Type{EnumOptions}) = (names = String[], numbers = Union{Int,UnitRange{Int}}[5])
+PB.reserved_fields(::Type{EnumOptions}) =
+    (names=String[], numbers=Union{Int,UnitRange{Int}}[5])
 PB.extendable_field_numbers(::Type{EnumOptions}) = Union{Int,UnitRange{Int}}[1000:536870911]
-PB.default_values(::Type{EnumOptions}) = (;allow_alias = false, deprecated = false, uninterpreted_option = Vector{UninterpretedOption}())
-PB.field_numbers(::Type{EnumOptions}) = (;allow_alias = 2, deprecated = 3, uninterpreted_option = 999)
+PB.default_values(::Type{EnumOptions}) = (;
+    allow_alias=false,
+    deprecated=false,
+    uninterpreted_option=Vector{UninterpretedOption}(),
+)
+PB.field_numbers(::Type{EnumOptions}) =
+    (; allow_alias=2, deprecated=3, uninterpreted_option=999)
 
 function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:EnumOptions})
     allow_alias = false
@@ -528,7 +617,8 @@ function PB._encoded_size(x::EnumOptions)
     encoded_size = 0
     x.allow_alias != false && (encoded_size += PB._encoded_size(x.allow_alias, 2))
     x.deprecated != false && (encoded_size += PB._encoded_size(x.deprecated, 3))
-    !isempty(x.uninterpreted_option) && (encoded_size += PB._encoded_size(x.uninterpreted_option, 999))
+    !isempty(x.uninterpreted_option) &&
+        (encoded_size += PB._encoded_size(x.uninterpreted_option, 999))
     return encoded_size
 end
 
@@ -536,9 +626,11 @@ struct ServiceOptions
     deprecated::Bool
     uninterpreted_option::Vector{UninterpretedOption}
 end
-PB.extendable_field_numbers(::Type{ServiceOptions}) = Union{Int,UnitRange{Int}}[1000:536870911]
-PB.default_values(::Type{ServiceOptions}) = (;deprecated = false, uninterpreted_option = Vector{UninterpretedOption}())
-PB.field_numbers(::Type{ServiceOptions}) = (;deprecated = 33, uninterpreted_option = 999)
+PB.extendable_field_numbers(::Type{ServiceOptions}) =
+    Union{Int,UnitRange{Int}}[1000:536870911]
+PB.default_values(::Type{ServiceOptions}) =
+    (; deprecated=false, uninterpreted_option=Vector{UninterpretedOption}())
+PB.field_numbers(::Type{ServiceOptions}) = (; deprecated=33, uninterpreted_option=999)
 
 function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:ServiceOptions})
     deprecated = false
@@ -565,16 +657,19 @@ end
 function PB._encoded_size(x::ServiceOptions)
     encoded_size = 0
     x.deprecated != false && (encoded_size += PB._encoded_size(x.deprecated, 33))
-    !isempty(x.uninterpreted_option) && (encoded_size += PB._encoded_size(x.uninterpreted_option, 999))
+    !isempty(x.uninterpreted_option) &&
+        (encoded_size += PB._encoded_size(x.uninterpreted_option, 999))
     return encoded_size
 end
 
 struct ExtensionRangeOptions
     uninterpreted_option::Vector{UninterpretedOption}
 end
-PB.extendable_field_numbers(::Type{ExtensionRangeOptions}) = Union{Int,UnitRange{Int}}[1000:536870911]
-PB.default_values(::Type{ExtensionRangeOptions}) = (;uninterpreted_option = Vector{UninterpretedOption}())
-PB.field_numbers(::Type{ExtensionRangeOptions}) = (;uninterpreted_option = 999)
+PB.extendable_field_numbers(::Type{ExtensionRangeOptions}) =
+    Union{Int,UnitRange{Int}}[1000:536870911]
+PB.default_values(::Type{ExtensionRangeOptions}) =
+    (; uninterpreted_option=Vector{UninterpretedOption}())
+PB.field_numbers(::Type{ExtensionRangeOptions}) = (; uninterpreted_option=999)
 
 function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:ExtensionRangeOptions})
     uninterpreted_option = PB.BufferedVector{UninterpretedOption}()
@@ -596,7 +691,8 @@ function PB.encode(e::PB.AbstractProtoEncoder, x::ExtensionRangeOptions)
 end
 function PB._encoded_size(x::ExtensionRangeOptions)
     encoded_size = 0
-    !isempty(x.uninterpreted_option) && (encoded_size += PB._encoded_size(x.uninterpreted_option, 999))
+    !isempty(x.uninterpreted_option) &&
+        (encoded_size += PB._encoded_size(x.uninterpreted_option, 999))
     return encoded_size
 end
 
@@ -605,9 +701,15 @@ struct MethodOptions
     idempotency_level::var"MethodOptions.IdempotencyLevel".T
     uninterpreted_option::Vector{UninterpretedOption}
 end
-PB.extendable_field_numbers(::Type{MethodOptions}) = Union{Int,UnitRange{Int}}[1000:536870911]
-PB.default_values(::Type{MethodOptions}) = (;deprecated = false, idempotency_level = var"MethodOptions.IdempotencyLevel".IDEMPOTENCY_UNKNOWN, uninterpreted_option = Vector{UninterpretedOption}())
-PB.field_numbers(::Type{MethodOptions}) = (;deprecated = 33, idempotency_level = 34, uninterpreted_option = 999)
+PB.extendable_field_numbers(::Type{MethodOptions}) =
+    Union{Int,UnitRange{Int}}[1000:536870911]
+PB.default_values(::Type{MethodOptions}) = (;
+    deprecated=false,
+    idempotency_level=var"MethodOptions.IdempotencyLevel".IDEMPOTENCY_UNKNOWN,
+    uninterpreted_option=Vector{UninterpretedOption}(),
+)
+PB.field_numbers(::Type{MethodOptions}) =
+    (; deprecated=33, idempotency_level=34, uninterpreted_option=999)
 
 function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:MethodOptions})
     deprecated = false
@@ -631,15 +733,18 @@ end
 function PB.encode(e::PB.AbstractProtoEncoder, x::MethodOptions)
     initpos = position(e.io)
     x.deprecated != false && PB.encode(e, 33, x.deprecated)
-    x.idempotency_level != var"MethodOptions.IdempotencyLevel".IDEMPOTENCY_UNKNOWN && PB.encode(e, 34, x.idempotency_level)
+    x.idempotency_level != var"MethodOptions.IdempotencyLevel".IDEMPOTENCY_UNKNOWN &&
+        PB.encode(e, 34, x.idempotency_level)
     !isempty(x.uninterpreted_option) && PB.encode(e, 999, x.uninterpreted_option)
     return position(e.io) - initpos
 end
 function PB._encoded_size(x::MethodOptions)
     encoded_size = 0
     x.deprecated != false && (encoded_size += PB._encoded_size(x.deprecated, 33))
-    x.idempotency_level != var"MethodOptions.IdempotencyLevel".IDEMPOTENCY_UNKNOWN && (encoded_size += PB._encoded_size(x.idempotency_level, 34))
-    !isempty(x.uninterpreted_option) && (encoded_size += PB._encoded_size(x.uninterpreted_option, 999))
+    x.idempotency_level != var"MethodOptions.IdempotencyLevel".IDEMPOTENCY_UNKNOWN &&
+        (encoded_size += PB._encoded_size(x.idempotency_level, 34))
+    !isempty(x.uninterpreted_option) &&
+        (encoded_size += PB._encoded_size(x.uninterpreted_option, 999))
     return encoded_size
 end
 
@@ -666,10 +771,55 @@ struct FileOptions
     ruby_package::String
     uninterpreted_option::Vector{UninterpretedOption}
 end
-PB.reserved_fields(::Type{FileOptions}) = (names = String[], numbers = Union{Int,UnitRange{Int}}[38])
+PB.reserved_fields(::Type{FileOptions}) =
+    (names=String[], numbers=Union{Int,UnitRange{Int}}[38])
 PB.extendable_field_numbers(::Type{FileOptions}) = Union{Int,UnitRange{Int}}[1000:536870911]
-PB.default_values(::Type{FileOptions}) = (;java_package = "", java_outer_classname = "", java_multiple_files = false, java_generate_equals_and_hash = false, java_string_check_utf8 = false, optimize_for = var"FileOptions.OptimizeMode".SPEED, go_package = "", cc_generic_services = false, java_generic_services = false, py_generic_services = false, php_generic_services = false, deprecated = false, cc_enable_arenas = false, objc_class_prefix = "", csharp_namespace = "", swift_prefix = "", php_class_prefix = "", php_namespace = "", php_metadata_namespace = "", ruby_package = "", uninterpreted_option = Vector{UninterpretedOption}())
-PB.field_numbers(::Type{FileOptions}) = (;java_package = 1, java_outer_classname = 8, java_multiple_files = 10, java_generate_equals_and_hash = 20, java_string_check_utf8 = 27, optimize_for = 9, go_package = 11, cc_generic_services = 16, java_generic_services = 17, py_generic_services = 18, php_generic_services = 42, deprecated = 23, cc_enable_arenas = 31, objc_class_prefix = 36, csharp_namespace = 37, swift_prefix = 39, php_class_prefix = 40, php_namespace = 41, php_metadata_namespace = 44, ruby_package = 45, uninterpreted_option = 999)
+PB.default_values(::Type{FileOptions}) = (;
+    java_package="",
+    java_outer_classname="",
+    java_multiple_files=false,
+    java_generate_equals_and_hash=false,
+    java_string_check_utf8=false,
+    optimize_for=var"FileOptions.OptimizeMode".SPEED,
+    go_package="",
+    cc_generic_services=false,
+    java_generic_services=false,
+    py_generic_services=false,
+    php_generic_services=false,
+    deprecated=false,
+    cc_enable_arenas=false,
+    objc_class_prefix="",
+    csharp_namespace="",
+    swift_prefix="",
+    php_class_prefix="",
+    php_namespace="",
+    php_metadata_namespace="",
+    ruby_package="",
+    uninterpreted_option=Vector{UninterpretedOption}(),
+)
+PB.field_numbers(::Type{FileOptions}) = (;
+    java_package=1,
+    java_outer_classname=8,
+    java_multiple_files=10,
+    java_generate_equals_and_hash=20,
+    java_string_check_utf8=27,
+    optimize_for=9,
+    go_package=11,
+    cc_generic_services=16,
+    java_generic_services=17,
+    py_generic_services=18,
+    php_generic_services=42,
+    deprecated=23,
+    cc_enable_arenas=31,
+    objc_class_prefix=36,
+    csharp_namespace=37,
+    swift_prefix=39,
+    php_class_prefix=40,
+    php_namespace=41,
+    php_metadata_namespace=44,
+    ruby_package=45,
+    uninterpreted_option=999,
+)
 
 function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:FileOptions})
     java_package = ""
@@ -741,7 +891,29 @@ function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:FileOptions})
             Base.skip(d, wire_type)
         end
     end
-    return FileOptions(java_package, java_outer_classname, java_multiple_files, java_generate_equals_and_hash, java_string_check_utf8, optimize_for, go_package, cc_generic_services, java_generic_services, py_generic_services, php_generic_services, deprecated, cc_enable_arenas, objc_class_prefix, csharp_namespace, swift_prefix, php_class_prefix, php_namespace, php_metadata_namespace, ruby_package, uninterpreted_option[])
+    return FileOptions(
+        java_package,
+        java_outer_classname,
+        java_multiple_files,
+        java_generate_equals_and_hash,
+        java_string_check_utf8,
+        optimize_for,
+        go_package,
+        cc_generic_services,
+        java_generic_services,
+        py_generic_services,
+        php_generic_services,
+        deprecated,
+        cc_enable_arenas,
+        objc_class_prefix,
+        csharp_namespace,
+        swift_prefix,
+        php_class_prefix,
+        php_namespace,
+        php_metadata_namespace,
+        ruby_package,
+        uninterpreted_option[],
+    )
 end
 
 function PB.encode(e::PB.AbstractProtoEncoder, x::FileOptions)
@@ -749,7 +921,8 @@ function PB.encode(e::PB.AbstractProtoEncoder, x::FileOptions)
     !isempty(x.java_package) && PB.encode(e, 1, x.java_package)
     !isempty(x.java_outer_classname) && PB.encode(e, 8, x.java_outer_classname)
     x.java_multiple_files != false && PB.encode(e, 10, x.java_multiple_files)
-    x.java_generate_equals_and_hash != false && PB.encode(e, 20, x.java_generate_equals_and_hash)
+    x.java_generate_equals_and_hash != false &&
+        PB.encode(e, 20, x.java_generate_equals_and_hash)
     x.java_string_check_utf8 != false && PB.encode(e, 27, x.java_string_check_utf8)
     x.optimize_for != var"FileOptions.OptimizeMode".SPEED && PB.encode(e, 9, x.optimize_for)
     !isempty(x.go_package) && PB.encode(e, 11, x.go_package)
@@ -772,26 +945,41 @@ end
 function PB._encoded_size(x::FileOptions)
     encoded_size = 0
     !isempty(x.java_package) && (encoded_size += PB._encoded_size(x.java_package, 1))
-    !isempty(x.java_outer_classname) && (encoded_size += PB._encoded_size(x.java_outer_classname, 8))
-    x.java_multiple_files != false && (encoded_size += PB._encoded_size(x.java_multiple_files, 10))
-    x.java_generate_equals_and_hash != false && (encoded_size += PB._encoded_size(x.java_generate_equals_and_hash, 20))
-    x.java_string_check_utf8 != false && (encoded_size += PB._encoded_size(x.java_string_check_utf8, 27))
-    x.optimize_for != var"FileOptions.OptimizeMode".SPEED && (encoded_size += PB._encoded_size(x.optimize_for, 9))
+    !isempty(x.java_outer_classname) &&
+        (encoded_size += PB._encoded_size(x.java_outer_classname, 8))
+    x.java_multiple_files != false &&
+        (encoded_size += PB._encoded_size(x.java_multiple_files, 10))
+    x.java_generate_equals_and_hash != false &&
+        (encoded_size += PB._encoded_size(x.java_generate_equals_and_hash, 20))
+    x.java_string_check_utf8 != false &&
+        (encoded_size += PB._encoded_size(x.java_string_check_utf8, 27))
+    x.optimize_for != var"FileOptions.OptimizeMode".SPEED &&
+        (encoded_size += PB._encoded_size(x.optimize_for, 9))
     !isempty(x.go_package) && (encoded_size += PB._encoded_size(x.go_package, 11))
-    x.cc_generic_services != false && (encoded_size += PB._encoded_size(x.cc_generic_services, 16))
-    x.java_generic_services != false && (encoded_size += PB._encoded_size(x.java_generic_services, 17))
-    x.py_generic_services != false && (encoded_size += PB._encoded_size(x.py_generic_services, 18))
-    x.php_generic_services != false && (encoded_size += PB._encoded_size(x.php_generic_services, 42))
+    x.cc_generic_services != false &&
+        (encoded_size += PB._encoded_size(x.cc_generic_services, 16))
+    x.java_generic_services != false &&
+        (encoded_size += PB._encoded_size(x.java_generic_services, 17))
+    x.py_generic_services != false &&
+        (encoded_size += PB._encoded_size(x.py_generic_services, 18))
+    x.php_generic_services != false &&
+        (encoded_size += PB._encoded_size(x.php_generic_services, 42))
     x.deprecated != false && (encoded_size += PB._encoded_size(x.deprecated, 23))
-    x.cc_enable_arenas != false && (encoded_size += PB._encoded_size(x.cc_enable_arenas, 31))
-    !isempty(x.objc_class_prefix) && (encoded_size += PB._encoded_size(x.objc_class_prefix, 36))
-    !isempty(x.csharp_namespace) && (encoded_size += PB._encoded_size(x.csharp_namespace, 37))
+    x.cc_enable_arenas != false &&
+        (encoded_size += PB._encoded_size(x.cc_enable_arenas, 31))
+    !isempty(x.objc_class_prefix) &&
+        (encoded_size += PB._encoded_size(x.objc_class_prefix, 36))
+    !isempty(x.csharp_namespace) &&
+        (encoded_size += PB._encoded_size(x.csharp_namespace, 37))
     !isempty(x.swift_prefix) && (encoded_size += PB._encoded_size(x.swift_prefix, 39))
-    !isempty(x.php_class_prefix) && (encoded_size += PB._encoded_size(x.php_class_prefix, 40))
+    !isempty(x.php_class_prefix) &&
+        (encoded_size += PB._encoded_size(x.php_class_prefix, 40))
     !isempty(x.php_namespace) && (encoded_size += PB._encoded_size(x.php_namespace, 41))
-    !isempty(x.php_metadata_namespace) && (encoded_size += PB._encoded_size(x.php_metadata_namespace, 44))
+    !isempty(x.php_metadata_namespace) &&
+        (encoded_size += PB._encoded_size(x.php_metadata_namespace, 44))
     !isempty(x.ruby_package) && (encoded_size += PB._encoded_size(x.ruby_package, 45))
-    !isempty(x.uninterpreted_option) && (encoded_size += PB._encoded_size(x.uninterpreted_option, 999))
+    !isempty(x.uninterpreted_option) &&
+        (encoded_size += PB._encoded_size(x.uninterpreted_option, 999))
     return encoded_size
 end
 
@@ -802,10 +990,24 @@ struct MessageOptions
     map_entry::Bool
     uninterpreted_option::Vector{UninterpretedOption}
 end
-PB.reserved_fields(::Type{MessageOptions}) = (names = String[], numbers = Union{Int,UnitRange{Int}}[8, 9])
-PB.extendable_field_numbers(::Type{MessageOptions}) = Union{Int,UnitRange{Int}}[1000:536870911]
-PB.default_values(::Type{MessageOptions}) = (;message_set_wire_format = false, no_standard_descriptor_accessor = false, deprecated = false, map_entry = false, uninterpreted_option = Vector{UninterpretedOption}())
-PB.field_numbers(::Type{MessageOptions}) = (;message_set_wire_format = 1, no_standard_descriptor_accessor = 2, deprecated = 3, map_entry = 7, uninterpreted_option = 999)
+PB.reserved_fields(::Type{MessageOptions}) =
+    (names=String[], numbers=Union{Int,UnitRange{Int}}[8, 9])
+PB.extendable_field_numbers(::Type{MessageOptions}) =
+    Union{Int,UnitRange{Int}}[1000:536870911]
+PB.default_values(::Type{MessageOptions}) = (;
+    message_set_wire_format=false,
+    no_standard_descriptor_accessor=false,
+    deprecated=false,
+    map_entry=false,
+    uninterpreted_option=Vector{UninterpretedOption}(),
+)
+PB.field_numbers(::Type{MessageOptions}) = (;
+    message_set_wire_format=1,
+    no_standard_descriptor_accessor=2,
+    deprecated=3,
+    map_entry=7,
+    uninterpreted_option=999,
+)
 
 function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:MessageOptions})
     message_set_wire_format = false
@@ -829,13 +1031,20 @@ function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:MessageOptions})
             Base.skip(d, wire_type)
         end
     end
-    return MessageOptions(message_set_wire_format, no_standard_descriptor_accessor, deprecated, map_entry, uninterpreted_option[])
+    return MessageOptions(
+        message_set_wire_format,
+        no_standard_descriptor_accessor,
+        deprecated,
+        map_entry,
+        uninterpreted_option[],
+    )
 end
 
 function PB.encode(e::PB.AbstractProtoEncoder, x::MessageOptions)
     initpos = position(e.io)
     x.message_set_wire_format != false && PB.encode(e, 1, x.message_set_wire_format)
-    x.no_standard_descriptor_accessor != false && PB.encode(e, 2, x.no_standard_descriptor_accessor)
+    x.no_standard_descriptor_accessor != false &&
+        PB.encode(e, 2, x.no_standard_descriptor_accessor)
     x.deprecated != false && PB.encode(e, 3, x.deprecated)
     x.map_entry != false && PB.encode(e, 7, x.map_entry)
     !isempty(x.uninterpreted_option) && PB.encode(e, 999, x.uninterpreted_option)
@@ -843,20 +1052,25 @@ function PB.encode(e::PB.AbstractProtoEncoder, x::MessageOptions)
 end
 function PB._encoded_size(x::MessageOptions)
     encoded_size = 0
-    x.message_set_wire_format != false && (encoded_size += PB._encoded_size(x.message_set_wire_format, 1))
-    x.no_standard_descriptor_accessor != false && (encoded_size += PB._encoded_size(x.no_standard_descriptor_accessor, 2))
+    x.message_set_wire_format != false &&
+        (encoded_size += PB._encoded_size(x.message_set_wire_format, 1))
+    x.no_standard_descriptor_accessor != false &&
+        (encoded_size += PB._encoded_size(x.no_standard_descriptor_accessor, 2))
     x.deprecated != false && (encoded_size += PB._encoded_size(x.deprecated, 3))
     x.map_entry != false && (encoded_size += PB._encoded_size(x.map_entry, 7))
-    !isempty(x.uninterpreted_option) && (encoded_size += PB._encoded_size(x.uninterpreted_option, 999))
+    !isempty(x.uninterpreted_option) &&
+        (encoded_size += PB._encoded_size(x.uninterpreted_option, 999))
     return encoded_size
 end
 
 struct OneofOptions
     uninterpreted_option::Vector{UninterpretedOption}
 end
-PB.extendable_field_numbers(::Type{OneofOptions}) = Union{Int,UnitRange{Int}}[1000:536870911]
-PB.default_values(::Type{OneofOptions}) = (;uninterpreted_option = Vector{UninterpretedOption}())
-PB.field_numbers(::Type{OneofOptions}) = (;uninterpreted_option = 999)
+PB.extendable_field_numbers(::Type{OneofOptions}) =
+    Union{Int,UnitRange{Int}}[1000:536870911]
+PB.default_values(::Type{OneofOptions}) =
+    (; uninterpreted_option=Vector{UninterpretedOption}())
+PB.field_numbers(::Type{OneofOptions}) = (; uninterpreted_option=999)
 
 function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:OneofOptions})
     uninterpreted_option = PB.BufferedVector{UninterpretedOption}()
@@ -878,7 +1092,8 @@ function PB.encode(e::PB.AbstractProtoEncoder, x::OneofOptions)
 end
 function PB._encoded_size(x::OneofOptions)
     encoded_size = 0
-    !isempty(x.uninterpreted_option) && (encoded_size += PB._encoded_size(x.uninterpreted_option, 999))
+    !isempty(x.uninterpreted_option) &&
+        (encoded_size += PB._encoded_size(x.uninterpreted_option, 999))
     return encoded_size
 end
 
@@ -894,8 +1109,30 @@ struct FieldDescriptorProto
     json_name::String
     options::Union{Nothing,FieldOptions}
 end
-PB.default_values(::Type{FieldDescriptorProto}) = (;name = "", number = zero(Int32), label = var"FieldDescriptorProto.Label".LABEL_OPTIONAL, var"#type" = var"FieldDescriptorProto.Type".TYPE_DOUBLE, type_name = "", extendee = "", default_value = "", oneof_index = zero(Int32), json_name = "", options = nothing)
-PB.field_numbers(::Type{FieldDescriptorProto}) = (;name = 1, number = 3, label = 4, var"#type" = 5, type_name = 6, extendee = 2, default_value = 7, oneof_index = 9, json_name = 10, options = 8)
+PB.default_values(::Type{FieldDescriptorProto}) = (;
+    name="",
+    number=zero(Int32),
+    label=var"FieldDescriptorProto.Label".LABEL_OPTIONAL,
+    var"#type"=var"FieldDescriptorProto.Type".TYPE_DOUBLE,
+    type_name="",
+    extendee="",
+    default_value="",
+    oneof_index=zero(Int32),
+    json_name="",
+    options=nothing,
+)
+PB.field_numbers(::Type{FieldDescriptorProto}) = (;
+    name=1,
+    number=3,
+    label=4,
+    var"#type"=5,
+    type_name=6,
+    extendee=2,
+    default_value=7,
+    oneof_index=9,
+    json_name=10,
+    options=8,
+)
 
 function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:FieldDescriptorProto})
     name = ""
@@ -934,7 +1171,18 @@ function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:FieldDescriptorProto})
             Base.skip(d, wire_type)
         end
     end
-    return FieldDescriptorProto(name, number, label, var"#type", type_name, extendee, default_value, oneof_index, json_name, options[])
+    return FieldDescriptorProto(
+        name,
+        number,
+        label,
+        var"#type",
+        type_name,
+        extendee,
+        default_value,
+        oneof_index,
+        json_name,
+        options[],
+    )
 end
 
 function PB.encode(e::PB.AbstractProtoEncoder, x::FieldDescriptorProto)
@@ -942,7 +1190,8 @@ function PB.encode(e::PB.AbstractProtoEncoder, x::FieldDescriptorProto)
     !isempty(x.name) && PB.encode(e, 1, x.name)
     x.number != zero(Int32) && PB.encode(e, 3, x.number)
     x.label != var"FieldDescriptorProto.Label".LABEL_OPTIONAL && PB.encode(e, 4, x.label)
-    x.var"#type" != var"FieldDescriptorProto.Type".TYPE_DOUBLE && PB.encode(e, 5, x.var"#type")
+    x.var"#type" != var"FieldDescriptorProto.Type".TYPE_DOUBLE &&
+        PB.encode(e, 5, x.var"#type")
     !isempty(x.type_name) && PB.encode(e, 6, x.type_name)
     !isempty(x.extendee) && PB.encode(e, 2, x.extendee)
     !isempty(x.default_value) && PB.encode(e, 7, x.default_value)
@@ -955,8 +1204,10 @@ function PB._encoded_size(x::FieldDescriptorProto)
     encoded_size = 0
     !isempty(x.name) && (encoded_size += PB._encoded_size(x.name, 1))
     x.number != zero(Int32) && (encoded_size += PB._encoded_size(x.number, 3))
-    x.label != var"FieldDescriptorProto.Label".LABEL_OPTIONAL && (encoded_size += PB._encoded_size(x.label, 4))
-    x.var"#type" != var"FieldDescriptorProto.Type".TYPE_DOUBLE && (encoded_size += PB._encoded_size(x.var"#type", 5))
+    x.label != var"FieldDescriptorProto.Label".LABEL_OPTIONAL &&
+        (encoded_size += PB._encoded_size(x.label, 4))
+    x.var"#type" != var"FieldDescriptorProto.Type".TYPE_DOUBLE &&
+        (encoded_size += PB._encoded_size(x.var"#type", 5))
     !isempty(x.type_name) && (encoded_size += PB._encoded_size(x.type_name, 6))
     !isempty(x.extendee) && (encoded_size += PB._encoded_size(x.extendee, 2))
     !isempty(x.default_value) && (encoded_size += PB._encoded_size(x.default_value, 7))
@@ -971,8 +1222,9 @@ struct EnumValueDescriptorProto
     number::Int32
     options::Union{Nothing,EnumValueOptions}
 end
-PB.default_values(::Type{EnumValueDescriptorProto}) = (;name = "", number = zero(Int32), options = nothing)
-PB.field_numbers(::Type{EnumValueDescriptorProto}) = (;name = 1, number = 2, options = 3)
+PB.default_values(::Type{EnumValueDescriptorProto}) =
+    (; name="", number=zero(Int32), options=nothing)
+PB.field_numbers(::Type{EnumValueDescriptorProto}) = (; name=1, number=2, options=3)
 
 function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:EnumValueDescriptorProto})
     name = ""
@@ -1013,10 +1265,15 @@ struct var"DescriptorProto.ExtensionRange"
     var"#end"::Int32
     options::Union{Nothing,ExtensionRangeOptions}
 end
-PB.default_values(::Type{var"DescriptorProto.ExtensionRange"}) = (;start = zero(Int32), var"#end" = zero(Int32), options = nothing)
-PB.field_numbers(::Type{var"DescriptorProto.ExtensionRange"}) = (;start = 1, var"#end" = 2, options = 3)
+PB.default_values(::Type{var"DescriptorProto.ExtensionRange"}) =
+    (; start=zero(Int32), var"#end"=zero(Int32), options=nothing)
+PB.field_numbers(::Type{var"DescriptorProto.ExtensionRange"}) =
+    (; start=1, var"#end"=2, options=3)
 
-function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:var"DescriptorProto.ExtensionRange"})
+function PB.decode(
+    d::PB.AbstractProtoDecoder,
+    ::Type{<:var"DescriptorProto.ExtensionRange"},
+)
     start = zero(Int32)
     var"#end" = zero(Int32)
     options = Ref{Union{Nothing,ExtensionRangeOptions}}(nothing)
@@ -1058,8 +1315,22 @@ struct MethodDescriptorProto
     client_streaming::Bool
     server_streaming::Bool
 end
-PB.default_values(::Type{MethodDescriptorProto}) = (;name = "", input_type = "", output_type = "", options = nothing, client_streaming = false, server_streaming = false)
-PB.field_numbers(::Type{MethodDescriptorProto}) = (;name = 1, input_type = 2, output_type = 3, options = 4, client_streaming = 5, server_streaming = 6)
+PB.default_values(::Type{MethodDescriptorProto}) = (;
+    name="",
+    input_type="",
+    output_type="",
+    options=nothing,
+    client_streaming=false,
+    server_streaming=false,
+)
+PB.field_numbers(::Type{MethodDescriptorProto}) = (;
+    name=1,
+    input_type=2,
+    output_type=3,
+    options=4,
+    client_streaming=5,
+    server_streaming=6,
+)
 
 function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:MethodDescriptorProto})
     name = ""
@@ -1086,7 +1357,14 @@ function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:MethodDescriptorProto})
             Base.skip(d, wire_type)
         end
     end
-    return MethodDescriptorProto(name, input_type, output_type, options[], client_streaming, server_streaming)
+    return MethodDescriptorProto(
+        name,
+        input_type,
+        output_type,
+        options[],
+        client_streaming,
+        server_streaming,
+    )
 end
 
 function PB.encode(e::PB.AbstractProtoEncoder, x::MethodDescriptorProto)
@@ -1114,8 +1392,8 @@ struct OneofDescriptorProto
     name::String
     options::Union{Nothing,OneofOptions}
 end
-PB.default_values(::Type{OneofDescriptorProto}) = (;name = "", options = nothing)
-PB.field_numbers(::Type{OneofDescriptorProto}) = (;name = 1, options = 2)
+PB.default_values(::Type{OneofDescriptorProto}) = (; name="", options=nothing)
+PB.field_numbers(::Type{OneofDescriptorProto}) = (; name=1, options=2)
 
 function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:OneofDescriptorProto})
     name = ""
@@ -1153,8 +1431,15 @@ struct EnumDescriptorProto
     reserved_range::Vector{var"EnumDescriptorProto.EnumReservedRange"}
     reserved_name::Vector{String}
 end
-PB.default_values(::Type{EnumDescriptorProto}) = (;name = "", value = Vector{EnumValueDescriptorProto}(), options = nothing, reserved_range = Vector{var"EnumDescriptorProto.EnumReservedRange"}(), reserved_name = Vector{String}())
-PB.field_numbers(::Type{EnumDescriptorProto}) = (;name = 1, value = 2, options = 3, reserved_range = 4, reserved_name = 5)
+PB.default_values(::Type{EnumDescriptorProto}) = (;
+    name="",
+    value=Vector{EnumValueDescriptorProto}(),
+    options=nothing,
+    reserved_range=Vector{var"EnumDescriptorProto.EnumReservedRange"}(),
+    reserved_name=Vector{String}(),
+)
+PB.field_numbers(::Type{EnumDescriptorProto}) =
+    (; name=1, value=2, options=3, reserved_range=4, reserved_name=5)
 
 function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:EnumDescriptorProto})
     name = ""
@@ -1205,8 +1490,9 @@ struct ServiceDescriptorProto
     method::Vector{MethodDescriptorProto}
     options::Union{Nothing,ServiceOptions}
 end
-PB.default_values(::Type{ServiceDescriptorProto}) = (;name = "", method = Vector{MethodDescriptorProto}(), options = nothing)
-PB.field_numbers(::Type{ServiceDescriptorProto}) = (;name = 1, method = 2, options = 3)
+PB.default_values(::Type{ServiceDescriptorProto}) =
+    (; name="", method=Vector{MethodDescriptorProto}(), options=nothing)
+PB.field_numbers(::Type{ServiceDescriptorProto}) = (; name=1, method=2, options=3)
 
 function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:ServiceDescriptorProto})
     name = ""
@@ -1254,8 +1540,30 @@ struct DescriptorProto
     reserved_range::Vector{var"DescriptorProto.ReservedRange"}
     reserved_name::Vector{String}
 end
-PB.default_values(::Type{DescriptorProto}) = (;name = "", field = Vector{FieldDescriptorProto}(), extension = Vector{FieldDescriptorProto}(), nested_type = Vector{DescriptorProto}(), enum_type = Vector{EnumDescriptorProto}(), extension_range = Vector{var"DescriptorProto.ExtensionRange"}(), oneof_decl = Vector{OneofDescriptorProto}(), options = nothing, reserved_range = Vector{var"DescriptorProto.ReservedRange"}(), reserved_name = Vector{String}())
-PB.field_numbers(::Type{DescriptorProto}) = (;name = 1, field = 2, extension = 6, nested_type = 3, enum_type = 4, extension_range = 5, oneof_decl = 8, options = 7, reserved_range = 9, reserved_name = 10)
+PB.default_values(::Type{DescriptorProto}) = (;
+    name="",
+    field=Vector{FieldDescriptorProto}(),
+    extension=Vector{FieldDescriptorProto}(),
+    nested_type=Vector{DescriptorProto}(),
+    enum_type=Vector{EnumDescriptorProto}(),
+    extension_range=Vector{var"DescriptorProto.ExtensionRange"}(),
+    oneof_decl=Vector{OneofDescriptorProto}(),
+    options=nothing,
+    reserved_range=Vector{var"DescriptorProto.ReservedRange"}(),
+    reserved_name=Vector{String}(),
+)
+PB.field_numbers(::Type{DescriptorProto}) = (;
+    name=1,
+    field=2,
+    extension=6,
+    nested_type=3,
+    enum_type=4,
+    extension_range=5,
+    oneof_decl=8,
+    options=7,
+    reserved_range=9,
+    reserved_name=10,
+)
 
 function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:DescriptorProto})
     name = ""
@@ -1294,7 +1602,18 @@ function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:DescriptorProto})
             Base.skip(d, wire_type)
         end
     end
-    return DescriptorProto(name, field[], extension[], nested_type[], enum_type[], extension_range[], oneof_decl[], options[], reserved_range[], reserved_name[])
+    return DescriptorProto(
+        name,
+        field[],
+        extension[],
+        nested_type[],
+        enum_type[],
+        extension_range[],
+        oneof_decl[],
+        options[],
+        reserved_range[],
+        reserved_name[],
+    )
 end
 
 function PB.encode(e::PB.AbstractProtoEncoder, x::DescriptorProto)
@@ -1340,8 +1659,34 @@ struct FileDescriptorProto
     source_code_info::Union{Nothing,SourceCodeInfo}
     syntax::String
 end
-PB.default_values(::Type{FileDescriptorProto}) = (;name = "", package = "", dependency = Vector{String}(), public_dependency = Vector{Int32}(), weak_dependency = Vector{Int32}(), message_type = Vector{DescriptorProto}(), enum_type = Vector{EnumDescriptorProto}(), service = Vector{ServiceDescriptorProto}(), extension = Vector{FieldDescriptorProto}(), options = nothing, source_code_info = nothing, syntax = "")
-PB.field_numbers(::Type{FileDescriptorProto}) = (;name = 1, package = 2, dependency = 3, public_dependency = 10, weak_dependency = 11, message_type = 4, enum_type = 5, service = 6, extension = 7, options = 8, source_code_info = 9, syntax = 12)
+PB.default_values(::Type{FileDescriptorProto}) = (;
+    name="",
+    package="",
+    dependency=Vector{String}(),
+    public_dependency=Vector{Int32}(),
+    weak_dependency=Vector{Int32}(),
+    message_type=Vector{DescriptorProto}(),
+    enum_type=Vector{EnumDescriptorProto}(),
+    service=Vector{ServiceDescriptorProto}(),
+    extension=Vector{FieldDescriptorProto}(),
+    options=nothing,
+    source_code_info=nothing,
+    syntax="",
+)
+PB.field_numbers(::Type{FileDescriptorProto}) = (;
+    name=1,
+    package=2,
+    dependency=3,
+    public_dependency=10,
+    weak_dependency=11,
+    message_type=4,
+    enum_type=5,
+    service=6,
+    extension=7,
+    options=8,
+    source_code_info=9,
+    syntax=12,
+)
 
 function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:FileDescriptorProto})
     name = ""
@@ -1386,7 +1731,20 @@ function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:FileDescriptorProto})
             Base.skip(d, wire_type)
         end
     end
-    return FileDescriptorProto(name, package, dependency[], public_dependency[], weak_dependency[], message_type[], enum_type[], service[], extension[], options[], source_code_info[], syntax)
+    return FileDescriptorProto(
+        name,
+        package,
+        dependency[],
+        public_dependency[],
+        weak_dependency[],
+        message_type[],
+        enum_type[],
+        service[],
+        extension[],
+        options[],
+        source_code_info[],
+        syntax,
+    )
 end
 
 function PB.encode(e::PB.AbstractProtoEncoder, x::FileDescriptorProto)
@@ -1410,14 +1768,16 @@ function PB._encoded_size(x::FileDescriptorProto)
     !isempty(x.name) && (encoded_size += PB._encoded_size(x.name, 1))
     !isempty(x.package) && (encoded_size += PB._encoded_size(x.package, 2))
     !isempty(x.dependency) && (encoded_size += PB._encoded_size(x.dependency, 3))
-    !isempty(x.public_dependency) && (encoded_size += PB._encoded_size(x.public_dependency, 10))
+    !isempty(x.public_dependency) &&
+        (encoded_size += PB._encoded_size(x.public_dependency, 10))
     !isempty(x.weak_dependency) && (encoded_size += PB._encoded_size(x.weak_dependency, 11))
     !isempty(x.message_type) && (encoded_size += PB._encoded_size(x.message_type, 4))
     !isempty(x.enum_type) && (encoded_size += PB._encoded_size(x.enum_type, 5))
     !isempty(x.service) && (encoded_size += PB._encoded_size(x.service, 6))
     !isempty(x.extension) && (encoded_size += PB._encoded_size(x.extension, 7))
     !isnothing(x.options) && (encoded_size += PB._encoded_size(x.options, 8))
-    !isnothing(x.source_code_info) && (encoded_size += PB._encoded_size(x.source_code_info, 9))
+    !isnothing(x.source_code_info) &&
+        (encoded_size += PB._encoded_size(x.source_code_info, 9))
     !isempty(x.syntax) && (encoded_size += PB._encoded_size(x.syntax, 12))
     return encoded_size
 end
@@ -1425,8 +1785,8 @@ end
 struct FileDescriptorSet
     file::Vector{FileDescriptorProto}
 end
-PB.default_values(::Type{FileDescriptorSet}) = (;file = Vector{FileDescriptorProto}())
-PB.field_numbers(::Type{FileDescriptorSet}) = (;file = 1)
+PB.default_values(::Type{FileDescriptorSet}) = (; file=Vector{FileDescriptorProto}())
+PB.field_numbers(::Type{FileDescriptorSet}) = (; file=1)
 
 function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:FileDescriptorSet})
     file = PB.BufferedVector{FileDescriptorProto}()

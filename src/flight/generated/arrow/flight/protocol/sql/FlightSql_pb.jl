@@ -46,15 +46,19 @@ export ActionEndSavepointRequest, ActionCancelQueryResult, CommandStatementSubst
 export ActionCreatePreparedSubstraitPlanRequest
 export var"CommandStatementIngest.TableDefinitionOptions", CommandStatementIngest
 
-
 struct ActionCreatePreparedStatementRequest
     query::String
     transaction_id::Vector{UInt8}
 end
-PB.default_values(::Type{ActionCreatePreparedStatementRequest}) = (;query = "", transaction_id = UInt8[])
-PB.field_numbers(::Type{ActionCreatePreparedStatementRequest}) = (;query = 1, transaction_id = 2)
+PB.default_values(::Type{ActionCreatePreparedStatementRequest}) =
+    (; query="", transaction_id=UInt8[])
+PB.field_numbers(::Type{ActionCreatePreparedStatementRequest}) =
+    (; query=1, transaction_id=2)
 
-function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:ActionCreatePreparedStatementRequest})
+function PB.decode(
+    d::PB.AbstractProtoDecoder,
+    ::Type{<:ActionCreatePreparedStatementRequest},
+)
     query = ""
     transaction_id = UInt8[]
     while !PB.message_done(d)
@@ -92,10 +96,15 @@ end
 struct ActionClosePreparedStatementRequest
     prepared_statement_handle::Vector{UInt8}
 end
-PB.default_values(::Type{ActionClosePreparedStatementRequest}) = (;prepared_statement_handle = UInt8[])
-PB.field_numbers(::Type{ActionClosePreparedStatementRequest}) = (;prepared_statement_handle = 1)
+PB.default_values(::Type{ActionClosePreparedStatementRequest}) =
+    (; prepared_statement_handle=UInt8[])
+PB.field_numbers(::Type{ActionClosePreparedStatementRequest}) =
+    (; prepared_statement_handle=1)
 
-function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:ActionClosePreparedStatementRequest})
+function PB.decode(
+    d::PB.AbstractProtoDecoder,
+    ::Type{<:ActionClosePreparedStatementRequest},
+)
     prepared_statement_handle = UInt8[]
     while !PB.message_done(d)
         field_number, wire_type = PB.decode_tag(d)
@@ -115,7 +124,8 @@ function PB.encode(e::PB.AbstractProtoEncoder, x::ActionClosePreparedStatementRe
 end
 function PB._encoded_size(x::ActionClosePreparedStatementRequest)
     encoded_size = 0
-    !isempty(x.prepared_statement_handle) && (encoded_size += PB._encoded_size(x.prepared_statement_handle, 1))
+    !isempty(x.prepared_statement_handle) &&
+        (encoded_size += PB._encoded_size(x.prepared_statement_handle, 1))
     return encoded_size
 end
 
@@ -132,10 +142,15 @@ struct ActionCreatePreparedStatementResult
     dataset_schema::Vector{UInt8}
     parameter_schema::Vector{UInt8}
 end
-PB.default_values(::Type{ActionCreatePreparedStatementResult}) = (;prepared_statement_handle = UInt8[], dataset_schema = UInt8[], parameter_schema = UInt8[])
-PB.field_numbers(::Type{ActionCreatePreparedStatementResult}) = (;prepared_statement_handle = 1, dataset_schema = 2, parameter_schema = 3)
+PB.default_values(::Type{ActionCreatePreparedStatementResult}) =
+    (; prepared_statement_handle=UInt8[], dataset_schema=UInt8[], parameter_schema=UInt8[])
+PB.field_numbers(::Type{ActionCreatePreparedStatementResult}) =
+    (; prepared_statement_handle=1, dataset_schema=2, parameter_schema=3)
 
-function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:ActionCreatePreparedStatementResult})
+function PB.decode(
+    d::PB.AbstractProtoDecoder,
+    ::Type{<:ActionCreatePreparedStatementResult},
+)
     prepared_statement_handle = UInt8[]
     dataset_schema = UInt8[]
     parameter_schema = UInt8[]
@@ -151,7 +166,11 @@ function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:ActionCreatePreparedStat
             Base.skip(d, wire_type)
         end
     end
-    return ActionCreatePreparedStatementResult(prepared_statement_handle, dataset_schema, parameter_schema)
+    return ActionCreatePreparedStatementResult(
+        prepared_statement_handle,
+        dataset_schema,
+        parameter_schema,
+    )
 end
 
 function PB.encode(e::PB.AbstractProtoEncoder, x::ActionCreatePreparedStatementResult)
@@ -163,9 +182,11 @@ function PB.encode(e::PB.AbstractProtoEncoder, x::ActionCreatePreparedStatementR
 end
 function PB._encoded_size(x::ActionCreatePreparedStatementResult)
     encoded_size = 0
-    !isempty(x.prepared_statement_handle) && (encoded_size += PB._encoded_size(x.prepared_statement_handle, 1))
+    !isempty(x.prepared_statement_handle) &&
+        (encoded_size += PB._encoded_size(x.prepared_statement_handle, 1))
     !isempty(x.dataset_schema) && (encoded_size += PB._encoded_size(x.dataset_schema, 2))
-    !isempty(x.parameter_schema) && (encoded_size += PB._encoded_size(x.parameter_schema, 3))
+    !isempty(x.parameter_schema) &&
+        (encoded_size += PB._encoded_size(x.parameter_schema, 3))
     return encoded_size
 end
 
@@ -174,8 +195,9 @@ end
 struct CommandPreparedStatementQuery
     prepared_statement_handle::Vector{UInt8}
 end
-PB.default_values(::Type{CommandPreparedStatementQuery}) = (;prepared_statement_handle = UInt8[])
-PB.field_numbers(::Type{CommandPreparedStatementQuery}) = (;prepared_statement_handle = 1)
+PB.default_values(::Type{CommandPreparedStatementQuery}) =
+    (; prepared_statement_handle=UInt8[])
+PB.field_numbers(::Type{CommandPreparedStatementQuery}) = (; prepared_statement_handle=1)
 
 function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:CommandPreparedStatementQuery})
     prepared_statement_handle = UInt8[]
@@ -197,7 +219,8 @@ function PB.encode(e::PB.AbstractProtoEncoder, x::CommandPreparedStatementQuery)
 end
 function PB._encoded_size(x::CommandPreparedStatementQuery)
     encoded_size = 0
-    !isempty(x.prepared_statement_handle) && (encoded_size += PB._encoded_size(x.prepared_statement_handle, 1))
+    !isempty(x.prepared_statement_handle) &&
+        (encoded_size += PB._encoded_size(x.prepared_statement_handle, 1))
     return encoded_size
 end
 
@@ -205,8 +228,8 @@ struct CommandGetDbSchemas
     catalog::String
     db_schema_filter_pattern::String
 end
-PB.default_values(::Type{CommandGetDbSchemas}) = (;catalog = "", db_schema_filter_pattern = "")
-PB.field_numbers(::Type{CommandGetDbSchemas}) = (;catalog = 1, db_schema_filter_pattern = 2)
+PB.default_values(::Type{CommandGetDbSchemas}) = (; catalog="", db_schema_filter_pattern="")
+PB.field_numbers(::Type{CommandGetDbSchemas}) = (; catalog=1, db_schema_filter_pattern=2)
 
 function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:CommandGetDbSchemas})
     catalog = ""
@@ -233,7 +256,8 @@ end
 function PB._encoded_size(x::CommandGetDbSchemas)
     encoded_size = 0
     !isempty(x.catalog) && (encoded_size += PB._encoded_size(x.catalog, 1))
-    !isempty(x.db_schema_filter_pattern) && (encoded_size += PB._encoded_size(x.db_schema_filter_pattern, 2))
+    !isempty(x.db_schema_filter_pattern) &&
+        (encoded_size += PB._encoded_size(x.db_schema_filter_pattern, 2))
     return encoded_size
 end
 
@@ -263,8 +287,8 @@ end
 struct TicketStatementQuery
     statement_handle::Vector{UInt8}
 end
-PB.default_values(::Type{TicketStatementQuery}) = (;statement_handle = UInt8[])
-PB.field_numbers(::Type{TicketStatementQuery}) = (;statement_handle = 1)
+PB.default_values(::Type{TicketStatementQuery}) = (; statement_handle=UInt8[])
+PB.field_numbers(::Type{TicketStatementQuery}) = (; statement_handle=1)
 
 function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:TicketStatementQuery})
     statement_handle = UInt8[]
@@ -286,7 +310,8 @@ function PB.encode(e::PB.AbstractProtoEncoder, x::TicketStatementQuery)
 end
 function PB._encoded_size(x::TicketStatementQuery)
     encoded_size = 0
-    !isempty(x.statement_handle) && (encoded_size += PB._encoded_size(x.statement_handle, 1))
+    !isempty(x.statement_handle) &&
+        (encoded_size += PB._encoded_size(x.statement_handle, 1))
     return encoded_size
 end
 
@@ -318,8 +343,8 @@ struct CommandGetPrimaryKeys
     db_schema::String
     table::String
 end
-PB.default_values(::Type{CommandGetPrimaryKeys}) = (;catalog = "", db_schema = "", table = "")
-PB.field_numbers(::Type{CommandGetPrimaryKeys}) = (;catalog = 1, db_schema = 2, table = 3)
+PB.default_values(::Type{CommandGetPrimaryKeys}) = (; catalog="", db_schema="", table="")
+PB.field_numbers(::Type{CommandGetPrimaryKeys}) = (; catalog=1, db_schema=2, table=3)
 
 function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:CommandGetPrimaryKeys})
     catalog = ""
@@ -358,8 +383,8 @@ end
 struct DoPutUpdateResult
     record_count::Int64
 end
-PB.default_values(::Type{DoPutUpdateResult}) = (;record_count = zero(Int64))
-PB.field_numbers(::Type{DoPutUpdateResult}) = (;record_count = 1)
+PB.default_values(::Type{DoPutUpdateResult}) = (; record_count=zero(Int64))
+PB.field_numbers(::Type{DoPutUpdateResult}) = (; record_count=1)
 
 function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:DoPutUpdateResult})
     record_count = zero(Int64)
@@ -395,8 +420,8 @@ struct ActionBeginSavepointRequest
     transaction_id::Vector{UInt8}
     name::String
 end
-PB.default_values(::Type{ActionBeginSavepointRequest}) = (;transaction_id = UInt8[], name = "")
-PB.field_numbers(::Type{ActionBeginSavepointRequest}) = (;transaction_id = 1, name = 2)
+PB.default_values(::Type{ActionBeginSavepointRequest}) = (; transaction_id=UInt8[], name="")
+PB.field_numbers(::Type{ActionBeginSavepointRequest}) = (; transaction_id=1, name=2)
 
 function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:ActionBeginSavepointRequest})
     transaction_id = UInt8[]
@@ -434,8 +459,8 @@ struct CommandGetImportedKeys
     db_schema::String
     table::String
 end
-PB.default_values(::Type{CommandGetImportedKeys}) = (;catalog = "", db_schema = "", table = "")
-PB.field_numbers(::Type{CommandGetImportedKeys}) = (;catalog = 1, db_schema = 2, table = 3)
+PB.default_values(::Type{CommandGetImportedKeys}) = (; catalog="", db_schema="", table="")
+PB.field_numbers(::Type{CommandGetImportedKeys}) = (; catalog=1, db_schema=2, table=3)
 
 function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:CommandGetImportedKeys})
     catalog = ""
@@ -475,8 +500,8 @@ struct CommandStatementUpdate
     query::String
     transaction_id::Vector{UInt8}
 end
-PB.default_values(::Type{CommandStatementUpdate}) = (;query = "", transaction_id = UInt8[])
-PB.field_numbers(::Type{CommandStatementUpdate}) = (;query = 1, transaction_id = 2)
+PB.default_values(::Type{CommandStatementUpdate}) = (; query="", transaction_id=UInt8[])
+PB.field_numbers(::Type{CommandStatementUpdate}) = (; query=1, transaction_id=2)
 
 function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:CommandStatementUpdate})
     query = ""
@@ -514,8 +539,8 @@ end
 struct ActionBeginTransactionResult
     transaction_id::Vector{UInt8}
 end
-PB.default_values(::Type{ActionBeginTransactionResult}) = (;transaction_id = UInt8[])
-PB.field_numbers(::Type{ActionBeginTransactionResult}) = (;transaction_id = 1)
+PB.default_values(::Type{ActionBeginTransactionResult}) = (; transaction_id=UInt8[])
+PB.field_numbers(::Type{ActionBeginTransactionResult}) = (; transaction_id=1)
 
 function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:ActionBeginTransactionResult})
     transaction_id = UInt8[]
@@ -546,8 +571,8 @@ struct CommandGetExportedKeys
     db_schema::String
     table::String
 end
-PB.default_values(::Type{CommandGetExportedKeys}) = (;catalog = "", db_schema = "", table = "")
-PB.field_numbers(::Type{CommandGetExportedKeys}) = (;catalog = 1, db_schema = 2, table = 3)
+PB.default_values(::Type{CommandGetExportedKeys}) = (; catalog="", db_schema="", table="")
+PB.field_numbers(::Type{CommandGetExportedKeys}) = (; catalog=1, db_schema=2, table=3)
 
 function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:CommandGetExportedKeys})
     catalog = ""
@@ -587,8 +612,8 @@ struct ActionCancelQueryRequest
     info::Vector{UInt8}
 end
 Base.depwarn("`ActionCancelQueryRequest` is deprecated.", nameof(ActionCancelQueryRequest))
-PB.default_values(::Type{ActionCancelQueryRequest}) = (;info = UInt8[])
-PB.field_numbers(::Type{ActionCancelQueryRequest}) = (;info = 1)
+PB.default_values(::Type{ActionCancelQueryRequest}) = (; info=UInt8[])
+PB.field_numbers(::Type{ActionCancelQueryRequest}) = (; info=1)
 
 function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:ActionCancelQueryRequest})
     info = UInt8[]
@@ -623,8 +648,20 @@ struct CommandGetTables
     table_types::Vector{String}
     include_schema::Bool
 end
-PB.default_values(::Type{CommandGetTables}) = (;catalog = "", db_schema_filter_pattern = "", table_name_filter_pattern = "", table_types = Vector{String}(), include_schema = false)
-PB.field_numbers(::Type{CommandGetTables}) = (;catalog = 1, db_schema_filter_pattern = 2, table_name_filter_pattern = 3, table_types = 4, include_schema = 5)
+PB.default_values(::Type{CommandGetTables}) = (;
+    catalog="",
+    db_schema_filter_pattern="",
+    table_name_filter_pattern="",
+    table_types=Vector{String}(),
+    include_schema=false,
+)
+PB.field_numbers(::Type{CommandGetTables}) = (;
+    catalog=1,
+    db_schema_filter_pattern=2,
+    table_name_filter_pattern=3,
+    table_types=4,
+    include_schema=5,
+)
 
 function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:CommandGetTables})
     catalog = ""
@@ -648,7 +685,13 @@ function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:CommandGetTables})
             Base.skip(d, wire_type)
         end
     end
-    return CommandGetTables(catalog, db_schema_filter_pattern, table_name_filter_pattern, table_types[], include_schema)
+    return CommandGetTables(
+        catalog,
+        db_schema_filter_pattern,
+        table_name_filter_pattern,
+        table_types[],
+        include_schema,
+    )
 end
 
 function PB.encode(e::PB.AbstractProtoEncoder, x::CommandGetTables)
@@ -663,8 +706,10 @@ end
 function PB._encoded_size(x::CommandGetTables)
     encoded_size = 0
     !isempty(x.catalog) && (encoded_size += PB._encoded_size(x.catalog, 1))
-    !isempty(x.db_schema_filter_pattern) && (encoded_size += PB._encoded_size(x.db_schema_filter_pattern, 2))
-    !isempty(x.table_name_filter_pattern) && (encoded_size += PB._encoded_size(x.table_name_filter_pattern, 3))
+    !isempty(x.db_schema_filter_pattern) &&
+        (encoded_size += PB._encoded_size(x.db_schema_filter_pattern, 2))
+    !isempty(x.table_name_filter_pattern) &&
+        (encoded_size += PB._encoded_size(x.table_name_filter_pattern, 3))
     !isempty(x.table_types) && (encoded_size += PB._encoded_size(x.table_types, 4))
     x.include_schema != false && (encoded_size += PB._encoded_size(x.include_schema, 5))
     return encoded_size
@@ -684,8 +729,16 @@ struct CommandGetCrossReference
     fk_db_schema::String
     fk_table::String
 end
-PB.default_values(::Type{CommandGetCrossReference}) = (;pk_catalog = "", pk_db_schema = "", pk_table = "", fk_catalog = "", fk_db_schema = "", fk_table = "")
-PB.field_numbers(::Type{CommandGetCrossReference}) = (;pk_catalog = 1, pk_db_schema = 2, pk_table = 3, fk_catalog = 4, fk_db_schema = 5, fk_table = 6)
+PB.default_values(::Type{CommandGetCrossReference}) = (;
+    pk_catalog="",
+    pk_db_schema="",
+    pk_table="",
+    fk_catalog="",
+    fk_db_schema="",
+    fk_table="",
+)
+PB.field_numbers(::Type{CommandGetCrossReference}) =
+    (; pk_catalog=1, pk_db_schema=2, pk_table=3, fk_catalog=4, fk_db_schema=5, fk_table=6)
 
 function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:CommandGetCrossReference})
     pk_catalog = ""
@@ -712,7 +765,14 @@ function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:CommandGetCrossReference
             Base.skip(d, wire_type)
         end
     end
-    return CommandGetCrossReference(pk_catalog, pk_db_schema, pk_table, fk_catalog, fk_db_schema, fk_table)
+    return CommandGetCrossReference(
+        pk_catalog,
+        pk_db_schema,
+        pk_table,
+        fk_catalog,
+        fk_db_schema,
+        fk_table,
+    )
 end
 
 function PB.encode(e::PB.AbstractProtoEncoder, x::CommandGetCrossReference)
@@ -760,8 +820,8 @@ end
 struct ActionBeginSavepointResult
     savepoint_id::Vector{UInt8}
 end
-PB.default_values(::Type{ActionBeginSavepointResult}) = (;savepoint_id = UInt8[])
-PB.field_numbers(::Type{ActionBeginSavepointResult}) = (;savepoint_id = 1)
+PB.default_values(::Type{ActionBeginSavepointResult}) = (; savepoint_id=UInt8[])
+PB.field_numbers(::Type{ActionBeginSavepointResult}) = (; savepoint_id=1)
 
 function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:ActionBeginSavepointResult})
     savepoint_id = UInt8[]
@@ -793,8 +853,8 @@ struct SubstraitPlan
     plan::Vector{UInt8}
     version::String
 end
-PB.default_values(::Type{SubstraitPlan}) = (;plan = UInt8[], version = "")
-PB.field_numbers(::Type{SubstraitPlan}) = (;plan = 1, version = 2)
+PB.default_values(::Type{SubstraitPlan}) = (; plan=UInt8[], version="")
+PB.field_numbers(::Type{SubstraitPlan}) = (; plan=1, version=2)
 
 function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:SubstraitPlan})
     plan = UInt8[]
@@ -832,8 +892,8 @@ end
 struct CommandGetXdbcTypeInfo
     data_type::Int32
 end
-PB.default_values(::Type{CommandGetXdbcTypeInfo}) = (;data_type = zero(Int32))
-PB.field_numbers(::Type{CommandGetXdbcTypeInfo}) = (;data_type = 1)
+PB.default_values(::Type{CommandGetXdbcTypeInfo}) = (; data_type=zero(Int32))
+PB.field_numbers(::Type{CommandGetXdbcTypeInfo}) = (; data_type=1)
 
 function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:CommandGetXdbcTypeInfo})
     data_type = zero(Int32)
@@ -863,8 +923,8 @@ struct CommandStatementQuery
     query::String
     transaction_id::Vector{UInt8}
 end
-PB.default_values(::Type{CommandStatementQuery}) = (;query = "", transaction_id = UInt8[])
-PB.field_numbers(::Type{CommandStatementQuery}) = (;query = 1, transaction_id = 2)
+PB.default_values(::Type{CommandStatementQuery}) = (; query="", transaction_id=UInt8[])
+PB.field_numbers(::Type{CommandStatementQuery}) = (; query=1, transaction_id=2)
 
 function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:CommandStatementQuery})
     query = ""
@@ -898,8 +958,9 @@ end
 struct DoPutPreparedStatementResult
     prepared_statement_handle::Vector{UInt8}
 end
-PB.default_values(::Type{DoPutPreparedStatementResult}) = (;prepared_statement_handle = UInt8[])
-PB.field_numbers(::Type{DoPutPreparedStatementResult}) = (;prepared_statement_handle = 1)
+PB.default_values(::Type{DoPutPreparedStatementResult}) =
+    (; prepared_statement_handle=UInt8[])
+PB.field_numbers(::Type{DoPutPreparedStatementResult}) = (; prepared_statement_handle=1)
 
 function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:DoPutPreparedStatementResult})
     prepared_statement_handle = UInt8[]
@@ -921,7 +982,8 @@ function PB.encode(e::PB.AbstractProtoEncoder, x::DoPutPreparedStatementResult)
 end
 function PB._encoded_size(x::DoPutPreparedStatementResult)
     encoded_size = 0
-    !isempty(x.prepared_statement_handle) && (encoded_size += PB._encoded_size(x.prepared_statement_handle, 1))
+    !isempty(x.prepared_statement_handle) &&
+        (encoded_size += PB._encoded_size(x.prepared_statement_handle, 1))
     return encoded_size
 end
 
@@ -930,8 +992,9 @@ end
 struct CommandPreparedStatementUpdate
     prepared_statement_handle::Vector{UInt8}
 end
-PB.default_values(::Type{CommandPreparedStatementUpdate}) = (;prepared_statement_handle = UInt8[])
-PB.field_numbers(::Type{CommandPreparedStatementUpdate}) = (;prepared_statement_handle = 1)
+PB.default_values(::Type{CommandPreparedStatementUpdate}) =
+    (; prepared_statement_handle=UInt8[])
+PB.field_numbers(::Type{CommandPreparedStatementUpdate}) = (; prepared_statement_handle=1)
 
 function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:CommandPreparedStatementUpdate})
     prepared_statement_handle = UInt8[]
@@ -953,15 +1016,16 @@ function PB.encode(e::PB.AbstractProtoEncoder, x::CommandPreparedStatementUpdate
 end
 function PB._encoded_size(x::CommandPreparedStatementUpdate)
     encoded_size = 0
-    !isempty(x.prepared_statement_handle) && (encoded_size += PB._encoded_size(x.prepared_statement_handle, 1))
+    !isempty(x.prepared_statement_handle) &&
+        (encoded_size += PB._encoded_size(x.prepared_statement_handle, 1))
     return encoded_size
 end
 
 struct CommandGetSqlInfo
     info::Vector{UInt32}
 end
-PB.default_values(::Type{CommandGetSqlInfo}) = (;info = Vector{UInt32}())
-PB.field_numbers(::Type{CommandGetSqlInfo}) = (;info = 1)
+PB.default_values(::Type{CommandGetSqlInfo}) = (; info=Vector{UInt32}())
+PB.field_numbers(::Type{CommandGetSqlInfo}) = (; info=1)
 
 function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:CommandGetSqlInfo})
     info = PB.BufferedVector{UInt32}()
@@ -991,8 +1055,11 @@ struct ActionEndTransactionRequest
     transaction_id::Vector{UInt8}
     action::var"ActionEndTransactionRequest.EndTransaction".T
 end
-PB.default_values(::Type{ActionEndTransactionRequest}) = (;transaction_id = UInt8[], action = var"ActionEndTransactionRequest.EndTransaction".END_TRANSACTION_UNSPECIFIED)
-PB.field_numbers(::Type{ActionEndTransactionRequest}) = (;transaction_id = 1, action = 2)
+PB.default_values(::Type{ActionEndTransactionRequest}) = (;
+    transaction_id=UInt8[],
+    action=var"ActionEndTransactionRequest.EndTransaction".END_TRANSACTION_UNSPECIFIED,
+)
+PB.field_numbers(::Type{ActionEndTransactionRequest}) = (; transaction_id=1, action=2)
 
 function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:ActionEndTransactionRequest})
     transaction_id = UInt8[]
@@ -1013,13 +1080,17 @@ end
 function PB.encode(e::PB.AbstractProtoEncoder, x::ActionEndTransactionRequest)
     initpos = position(e.io)
     !isempty(x.transaction_id) && PB.encode(e, 1, x.transaction_id)
-    x.action != var"ActionEndTransactionRequest.EndTransaction".END_TRANSACTION_UNSPECIFIED && PB.encode(e, 2, x.action)
+    x.action !=
+    var"ActionEndTransactionRequest.EndTransaction".END_TRANSACTION_UNSPECIFIED &&
+        PB.encode(e, 2, x.action)
     return position(e.io) - initpos
 end
 function PB._encoded_size(x::ActionEndTransactionRequest)
     encoded_size = 0
     !isempty(x.transaction_id) && (encoded_size += PB._encoded_size(x.transaction_id, 1))
-    x.action != var"ActionEndTransactionRequest.EndTransaction".END_TRANSACTION_UNSPECIFIED && (encoded_size += PB._encoded_size(x.action, 2))
+    x.action !=
+    var"ActionEndTransactionRequest.EndTransaction".END_TRANSACTION_UNSPECIFIED &&
+        (encoded_size += PB._encoded_size(x.action, 2))
     return encoded_size
 end
 
@@ -1027,8 +1098,11 @@ struct ActionEndSavepointRequest
     savepoint_id::Vector{UInt8}
     action::var"ActionEndSavepointRequest.EndSavepoint".T
 end
-PB.default_values(::Type{ActionEndSavepointRequest}) = (;savepoint_id = UInt8[], action = var"ActionEndSavepointRequest.EndSavepoint".END_SAVEPOINT_UNSPECIFIED)
-PB.field_numbers(::Type{ActionEndSavepointRequest}) = (;savepoint_id = 1, action = 2)
+PB.default_values(::Type{ActionEndSavepointRequest}) = (;
+    savepoint_id=UInt8[],
+    action=var"ActionEndSavepointRequest.EndSavepoint".END_SAVEPOINT_UNSPECIFIED,
+)
+PB.field_numbers(::Type{ActionEndSavepointRequest}) = (; savepoint_id=1, action=2)
 
 function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:ActionEndSavepointRequest})
     savepoint_id = UInt8[]
@@ -1049,13 +1123,15 @@ end
 function PB.encode(e::PB.AbstractProtoEncoder, x::ActionEndSavepointRequest)
     initpos = position(e.io)
     !isempty(x.savepoint_id) && PB.encode(e, 1, x.savepoint_id)
-    x.action != var"ActionEndSavepointRequest.EndSavepoint".END_SAVEPOINT_UNSPECIFIED && PB.encode(e, 2, x.action)
+    x.action != var"ActionEndSavepointRequest.EndSavepoint".END_SAVEPOINT_UNSPECIFIED &&
+        PB.encode(e, 2, x.action)
     return position(e.io) - initpos
 end
 function PB._encoded_size(x::ActionEndSavepointRequest)
     encoded_size = 0
     !isempty(x.savepoint_id) && (encoded_size += PB._encoded_size(x.savepoint_id, 1))
-    x.action != var"ActionEndSavepointRequest.EndSavepoint".END_SAVEPOINT_UNSPECIFIED && (encoded_size += PB._encoded_size(x.action, 2))
+    x.action != var"ActionEndSavepointRequest.EndSavepoint".END_SAVEPOINT_UNSPECIFIED &&
+        (encoded_size += PB._encoded_size(x.action, 2))
     return encoded_size
 end
 
@@ -1063,8 +1139,9 @@ struct ActionCancelQueryResult
     result::var"ActionCancelQueryResult.CancelResult".T
 end
 Base.depwarn("`ActionCancelQueryResult` is deprecated.", nameof(ActionCancelQueryResult))
-PB.default_values(::Type{ActionCancelQueryResult}) = (;result = var"ActionCancelQueryResult.CancelResult".CANCEL_RESULT_UNSPECIFIED)
-PB.field_numbers(::Type{ActionCancelQueryResult}) = (;result = 1)
+PB.default_values(::Type{ActionCancelQueryResult}) =
+    (; result=var"ActionCancelQueryResult.CancelResult".CANCEL_RESULT_UNSPECIFIED)
+PB.field_numbers(::Type{ActionCancelQueryResult}) = (; result=1)
 
 function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:ActionCancelQueryResult})
     result = var"ActionCancelQueryResult.CancelResult".CANCEL_RESULT_UNSPECIFIED
@@ -1081,12 +1158,14 @@ end
 
 function PB.encode(e::PB.AbstractProtoEncoder, x::ActionCancelQueryResult)
     initpos = position(e.io)
-    x.result != var"ActionCancelQueryResult.CancelResult".CANCEL_RESULT_UNSPECIFIED && PB.encode(e, 1, x.result)
+    x.result != var"ActionCancelQueryResult.CancelResult".CANCEL_RESULT_UNSPECIFIED &&
+        PB.encode(e, 1, x.result)
     return position(e.io) - initpos
 end
 function PB._encoded_size(x::ActionCancelQueryResult)
     encoded_size = 0
-    x.result != var"ActionCancelQueryResult.CancelResult".CANCEL_RESULT_UNSPECIFIED && (encoded_size += PB._encoded_size(x.result, 1))
+    x.result != var"ActionCancelQueryResult.CancelResult".CANCEL_RESULT_UNSPECIFIED &&
+        (encoded_size += PB._encoded_size(x.result, 1))
     return encoded_size
 end
 
@@ -1094,8 +1173,9 @@ struct CommandStatementSubstraitPlan
     plan::Union{Nothing,SubstraitPlan}
     transaction_id::Vector{UInt8}
 end
-PB.default_values(::Type{CommandStatementSubstraitPlan}) = (;plan = nothing, transaction_id = UInt8[])
-PB.field_numbers(::Type{CommandStatementSubstraitPlan}) = (;plan = 1, transaction_id = 2)
+PB.default_values(::Type{CommandStatementSubstraitPlan}) =
+    (; plan=nothing, transaction_id=UInt8[])
+PB.field_numbers(::Type{CommandStatementSubstraitPlan}) = (; plan=1, transaction_id=2)
 
 function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:CommandStatementSubstraitPlan})
     plan = Ref{Union{Nothing,SubstraitPlan}}(nothing)
@@ -1130,10 +1210,15 @@ struct ActionCreatePreparedSubstraitPlanRequest
     plan::Union{Nothing,SubstraitPlan}
     transaction_id::Vector{UInt8}
 end
-PB.default_values(::Type{ActionCreatePreparedSubstraitPlanRequest}) = (;plan = nothing, transaction_id = UInt8[])
-PB.field_numbers(::Type{ActionCreatePreparedSubstraitPlanRequest}) = (;plan = 1, transaction_id = 2)
+PB.default_values(::Type{ActionCreatePreparedSubstraitPlanRequest}) =
+    (; plan=nothing, transaction_id=UInt8[])
+PB.field_numbers(::Type{ActionCreatePreparedSubstraitPlanRequest}) =
+    (; plan=1, transaction_id=2)
 
-function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:ActionCreatePreparedSubstraitPlanRequest})
+function PB.decode(
+    d::PB.AbstractProtoDecoder,
+    ::Type{<:ActionCreatePreparedSubstraitPlanRequest},
+)
     plan = Ref{Union{Nothing,SubstraitPlan}}(nothing)
     transaction_id = UInt8[]
     while !PB.message_done(d)
@@ -1166,18 +1251,33 @@ struct var"CommandStatementIngest.TableDefinitionOptions"
     if_not_exist::var"CommandStatementIngest.TableDefinitionOptions.TableNotExistOption".T
     if_exists::var"CommandStatementIngest.TableDefinitionOptions.TableExistsOption".T
 end
-PB.default_values(::Type{var"CommandStatementIngest.TableDefinitionOptions"}) = (;if_not_exist = var"CommandStatementIngest.TableDefinitionOptions.TableNotExistOption".TABLE_NOT_EXIST_OPTION_UNSPECIFIED, if_exists = var"CommandStatementIngest.TableDefinitionOptions.TableExistsOption".TABLE_EXISTS_OPTION_UNSPECIFIED)
-PB.field_numbers(::Type{var"CommandStatementIngest.TableDefinitionOptions"}) = (;if_not_exist = 1, if_exists = 2)
+PB.default_values(::Type{var"CommandStatementIngest.TableDefinitionOptions"}) = (;
+    if_not_exist=var"CommandStatementIngest.TableDefinitionOptions.TableNotExistOption".TABLE_NOT_EXIST_OPTION_UNSPECIFIED,
+    if_exists=var"CommandStatementIngest.TableDefinitionOptions.TableExistsOption".TABLE_EXISTS_OPTION_UNSPECIFIED,
+)
+PB.field_numbers(::Type{var"CommandStatementIngest.TableDefinitionOptions"}) =
+    (; if_not_exist=1, if_exists=2)
 
-function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:var"CommandStatementIngest.TableDefinitionOptions"})
-    if_not_exist = var"CommandStatementIngest.TableDefinitionOptions.TableNotExistOption".TABLE_NOT_EXIST_OPTION_UNSPECIFIED
-    if_exists = var"CommandStatementIngest.TableDefinitionOptions.TableExistsOption".TABLE_EXISTS_OPTION_UNSPECIFIED
+function PB.decode(
+    d::PB.AbstractProtoDecoder,
+    ::Type{<:var"CommandStatementIngest.TableDefinitionOptions"},
+)
+    if_not_exist =
+        var"CommandStatementIngest.TableDefinitionOptions.TableNotExistOption".TABLE_NOT_EXIST_OPTION_UNSPECIFIED
+    if_exists =
+        var"CommandStatementIngest.TableDefinitionOptions.TableExistsOption".TABLE_EXISTS_OPTION_UNSPECIFIED
     while !PB.message_done(d)
         field_number, wire_type = PB.decode_tag(d)
         if field_number == 1
-            if_not_exist = PB.decode(d, var"CommandStatementIngest.TableDefinitionOptions.TableNotExistOption".T)
+            if_not_exist = PB.decode(
+                d,
+                var"CommandStatementIngest.TableDefinitionOptions.TableNotExistOption".T,
+            )
         elseif field_number == 2
-            if_exists = PB.decode(d, var"CommandStatementIngest.TableDefinitionOptions.TableExistsOption".T)
+            if_exists = PB.decode(
+                d,
+                var"CommandStatementIngest.TableDefinitionOptions.TableExistsOption".T,
+            )
         else
             Base.skip(d, wire_type)
         end
@@ -1185,21 +1285,35 @@ function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:var"CommandStatementInge
     return var"CommandStatementIngest.TableDefinitionOptions"(if_not_exist, if_exists)
 end
 
-function PB.encode(e::PB.AbstractProtoEncoder, x::var"CommandStatementIngest.TableDefinitionOptions")
+function PB.encode(
+    e::PB.AbstractProtoEncoder,
+    x::var"CommandStatementIngest.TableDefinitionOptions",
+)
     initpos = position(e.io)
-    x.if_not_exist != var"CommandStatementIngest.TableDefinitionOptions.TableNotExistOption".TABLE_NOT_EXIST_OPTION_UNSPECIFIED && PB.encode(e, 1, x.if_not_exist)
-    x.if_exists != var"CommandStatementIngest.TableDefinitionOptions.TableExistsOption".TABLE_EXISTS_OPTION_UNSPECIFIED && PB.encode(e, 2, x.if_exists)
+    x.if_not_exist !=
+    var"CommandStatementIngest.TableDefinitionOptions.TableNotExistOption".TABLE_NOT_EXIST_OPTION_UNSPECIFIED &&
+        PB.encode(e, 1, x.if_not_exist)
+    x.if_exists !=
+    var"CommandStatementIngest.TableDefinitionOptions.TableExistsOption".TABLE_EXISTS_OPTION_UNSPECIFIED &&
+        PB.encode(e, 2, x.if_exists)
     return position(e.io) - initpos
 end
 function PB._encoded_size(x::var"CommandStatementIngest.TableDefinitionOptions")
     encoded_size = 0
-    x.if_not_exist != var"CommandStatementIngest.TableDefinitionOptions.TableNotExistOption".TABLE_NOT_EXIST_OPTION_UNSPECIFIED && (encoded_size += PB._encoded_size(x.if_not_exist, 1))
-    x.if_exists != var"CommandStatementIngest.TableDefinitionOptions.TableExistsOption".TABLE_EXISTS_OPTION_UNSPECIFIED && (encoded_size += PB._encoded_size(x.if_exists, 2))
+    x.if_not_exist !=
+    var"CommandStatementIngest.TableDefinitionOptions.TableNotExistOption".TABLE_NOT_EXIST_OPTION_UNSPECIFIED &&
+        (encoded_size += PB._encoded_size(x.if_not_exist, 1))
+    x.if_exists !=
+    var"CommandStatementIngest.TableDefinitionOptions.TableExistsOption".TABLE_EXISTS_OPTION_UNSPECIFIED &&
+        (encoded_size += PB._encoded_size(x.if_exists, 2))
     return encoded_size
 end
 
 struct CommandStatementIngest
-    table_definition_options::Union{Nothing,var"CommandStatementIngest.TableDefinitionOptions"}
+    table_definition_options::Union{
+        Nothing,
+        var"CommandStatementIngest.TableDefinitionOptions",
+    }
     table::String
     schema::String
     catalog::String
@@ -1207,11 +1321,28 @@ struct CommandStatementIngest
     transaction_id::Vector{UInt8}
     options::Dict{String,String}
 end
-PB.default_values(::Type{CommandStatementIngest}) = (;table_definition_options = nothing, table = "", schema = "", catalog = "", temporary = false, transaction_id = UInt8[], options = Dict{String,String}())
-PB.field_numbers(::Type{CommandStatementIngest}) = (;table_definition_options = 1, table = 2, schema = 3, catalog = 4, temporary = 5, transaction_id = 6, options = 1000)
+PB.default_values(::Type{CommandStatementIngest}) = (;
+    table_definition_options=nothing,
+    table="",
+    schema="",
+    catalog="",
+    temporary=false,
+    transaction_id=UInt8[],
+    options=Dict{String,String}(),
+)
+PB.field_numbers(::Type{CommandStatementIngest}) = (;
+    table_definition_options=1,
+    table=2,
+    schema=3,
+    catalog=4,
+    temporary=5,
+    transaction_id=6,
+    options=1000,
+)
 
 function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:CommandStatementIngest})
-    table_definition_options = Ref{Union{Nothing,var"CommandStatementIngest.TableDefinitionOptions"}}(nothing)
+    table_definition_options =
+        Ref{Union{Nothing,var"CommandStatementIngest.TableDefinitionOptions"}}(nothing)
     table = ""
     schema = ""
     catalog = ""
@@ -1238,7 +1369,15 @@ function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:CommandStatementIngest})
             Base.skip(d, wire_type)
         end
     end
-    return CommandStatementIngest(table_definition_options[], table, schema, catalog, temporary, transaction_id, options)
+    return CommandStatementIngest(
+        table_definition_options[],
+        table,
+        schema,
+        catalog,
+        temporary,
+        transaction_id,
+        options,
+    )
 end
 
 function PB.encode(e::PB.AbstractProtoEncoder, x::CommandStatementIngest)
@@ -1254,7 +1393,8 @@ function PB.encode(e::PB.AbstractProtoEncoder, x::CommandStatementIngest)
 end
 function PB._encoded_size(x::CommandStatementIngest)
     encoded_size = 0
-    !isnothing(x.table_definition_options) && (encoded_size += PB._encoded_size(x.table_definition_options, 1))
+    !isnothing(x.table_definition_options) &&
+        (encoded_size += PB._encoded_size(x.table_definition_options, 1))
     !isempty(x.table) && (encoded_size += PB._encoded_size(x.table, 2))
     !isempty(x.schema) && (encoded_size += PB._encoded_size(x.schema, 3))
     !isempty(x.catalog) && (encoded_size += PB._encoded_size(x.catalog, 4))
