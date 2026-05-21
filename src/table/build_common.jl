@@ -299,22 +299,34 @@ function uncompress(ptr::Ptr{UInt8}, buffer, compression)
         return length(encodedbytes), copy(encodedbytes)
     end
     decodedbytes = Vector{UInt8}(undef, len)
-    if compression.codec === Meta.CompressionType.LZ4_FRAME
+    codec = _compression_codec(compression)
+    if codec === Meta.CompressionType.LZ4_FRAME
         comp = lz4_frame_decompressor()
         Base.@lock comp begin
             transcode(comp[], encodedbytes, decodedbytes)
         end
-    elseif compression.codec === Meta.CompressionType.ZSTD
+    elseif codec === Meta.CompressionType.ZSTD
         comp = zstd_decompressor()
         Base.@lock comp begin
             transcode(comp[], encodedbytes, decodedbytes)
         end
     else
-        error(
-            "unsupported compression type when reading arrow buffers: $(typeof(compression.codec))",
+        throw(
+            ArgumentError(
+                "unsupported compression codec when reading arrow buffers: $codec",
+            ),
         )
     end
     return len, decodedbytes
+end
+
+function _compression_codec(compression)
+    try
+        return compression.codec
+    catch err
+        err isa ArgumentError || rethrow()
+        throw(ArgumentError("unsupported compression codec when reading arrow buffers"))
+    end
 end
 
 function reinterp(::Type{T}, batch, buf, compression) where {T}

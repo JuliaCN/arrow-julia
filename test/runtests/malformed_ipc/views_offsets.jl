@@ -103,6 +103,14 @@
         return bytes
     end
 
+    function patch_record_batch_compression_codec!(bytes, rb, codec::Int8)
+        compression = rb.compression
+        offset = Arrow.FlatBuffers.offset(compression, 4)
+        offset != 0 || error("record batch compression codec field not found")
+        bytes[Arrow.FlatBuffers.pos(compression) + offset + 1] = reinterpret(UInt8, codec)
+        return bytes
+    end
+
     function ipc_prefix(message_length::Int32)
         return vcat(
             collect(reinterpret(UInt8, UInt32[Arrow.CONTINUATION_INDICATOR_BYTES])),
@@ -187,6 +195,20 @@
     assert_argument_error(
         () -> Arrow.validate(compressed_negative_length),
         "compressed arrow buffer has invalid uncompressed length -2",
+    )
+
+    compressed_unknown_codec = patched_table_bytes(
+        (values=Int32[1, 2],),
+        (bytes, batch, rb) -> patch_record_batch_compression_codec!(bytes, rb, Int8(7));
+        compress=:zstd,
+    )
+    assert_argument_error(
+        () -> Arrow.validate(compressed_unknown_codec),
+        "unsupported compression codec when reading arrow buffers",
+    )
+    assert_argument_error(
+        () -> Arrow.validate(compressed_unknown_codec; stream=true),
+        "unsupported compression codec when reading arrow buffers",
     )
 
     descending = Arrow.List{Vector{Int32},Int32,typeof(item)}(

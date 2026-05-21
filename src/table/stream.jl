@@ -278,12 +278,13 @@ function Base.iterate(x::Stream, (pos, id)=(1, 0))
     end
 
     if compression !== nothing
-        if compression.codec == Flatbuf.CompressionType.ZSTD
+        codec = _compression_codec(compression)
+        if codec == Flatbuf.CompressionType.ZSTD
             x.compression[] = :zstd
-        elseif compression.codec == Flatbuf.CompressionType.LZ4_FRAME
+        elseif codec == Flatbuf.CompressionType.LZ4_FRAME
             x.compression[] = :lz4
         else
-            throw(ArgumentError("unsupported compression codec: $(compression.codec)"))
+            throw(ArgumentError("unsupported compression codec: $codec"))
         end
     end
 
