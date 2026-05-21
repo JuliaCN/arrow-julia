@@ -43,6 +43,8 @@ lead to unsafe indexing or misleading semantic interpretation:
   rejected explicitly;
 - truncated IPC message length, metadata, and body sections are rejected after
   a continuation marker has started a message;
+- negative IPC message body lengths are rejected before advancing to the
+  message body;
 - compressed IPC buffers validate their encoded body length, 8-byte
   uncompressed-length header, and allowed uncompressed length sentinel before
   decompression;

@@ -15,8 +15,13 @@
 # limitations under the License.
 
 @testset "malformed IPC corpus fixture policy" begin
-    expected_files =
-        sort(["field_nodes.jl", "fixture_policy.jl", "unions.jl", "views_offsets.jl"])
+    expected_files = sort([
+        "field_nodes.jl",
+        "fixture_policy.jl",
+        "message_framing.jl",
+        "unions.jl",
+        "views_offsets.jl",
+    ])
     actual_files = sort(basename.(filter(endswith(".jl"), readdir(@__DIR__; join=true))))
     @test actual_files == expected_files
 

@@ -18,5 +18,6 @@
     include(joinpath(@__DIR__, "malformed_ipc", "views_offsets.jl"))
     include(joinpath(@__DIR__, "malformed_ipc", "field_nodes.jl"))
     include(joinpath(@__DIR__, "malformed_ipc", "unions.jl"))
+    include(joinpath(@__DIR__, "malformed_ipc", "message_framing.jl"))
     include(joinpath(@__DIR__, "malformed_ipc", "fixture_policy.jl"))
 end
