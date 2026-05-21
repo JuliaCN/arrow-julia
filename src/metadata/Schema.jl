@@ -723,7 +723,7 @@ Base.propertynames(x::Schema) = (:endianness, :fields, :custom_metadata)
 function Base.getproperty(x::Schema, field::Symbol)
     if field === :endianness
         o = FlatBuffers.offset(x, 4)
-        o != 0 && return FlatBuffers.get(x, o + FlatBuffers.pos(x), Endianness.T)
+        o != 0 && return _endianness(FlatBuffers.get(x, o + FlatBuffers.pos(x), Int16))
     elseif field === :fields
         o = FlatBuffers.offset(x, 6)
         if o != 0
@@ -736,6 +736,15 @@ function Base.getproperty(x::Schema, field::Symbol)
         end
     end
     return nothing
+end
+
+function _endianness(raw::Int16)
+    try
+        return Endianness.T(raw)
+    catch err
+        err isa ArgumentError || rethrow()
+        throw(ArgumentError("unsupported arrow schema endianness tag $raw"))
+    end
 end
 
 schemaStart(b::FlatBuffers.Builder) = FlatBuffers.startobject!(b, 3)

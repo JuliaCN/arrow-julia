@@ -51,10 +51,36 @@
         return bytes
     end
 
+    function patch_schema_endianness_slot_to_fields_offset!(bytes)
+        schema = first_schema(bytes)
+        pos = Arrow.FlatBuffers.pos(schema)
+        vtable_pos = pos - Arrow.readbuffer(getfield(schema, :bytes), pos + 1, Int32)
+        fields_offset = Arrow.FlatBuffers.offset(schema, 6)
+        fields_offset != 0 || error("schema fields field not found")
+        raw = collect(reinterpret(UInt8, Int16[fields_offset]))
+        copyto!(bytes, vtable_pos + 5, raw, 1, length(raw))
+        return bytes
+    end
+
     valid_list = read(Arrow.tobuffer((values=[Int32[1, 2]],); ntasks=0))
     @test_throws ArgumentError(
         "field values is missing child 2; only 1 children are declared",
     ) Arrow._field_child(first_schema(valid_list).fields[1], 2)
+    @test_throws ArgumentError("unsupported arrow schema endianness Big") Arrow._assert_supported_schema_endianness(
+        Arrow.Meta.Endianness.Big,
+    )
+
+    unsupported_schema_endianness = patch_schema_endianness_slot_to_fields_offset!(
+        read(Arrow.tobuffer((values=Int32[1, 2],); ntasks=0)),
+    )
+    assert_argument_error(
+        () -> Arrow.validate(unsupported_schema_endianness),
+        "unsupported arrow schema endianness tag 4",
+    )
+    assert_argument_error(
+        () -> Arrow.validate(unsupported_schema_endianness; stream=true),
+        "unsupported arrow schema endianness tag 4",
+    )
 
     unsupported_field_type = patch_first_field_type_tag!(
         read(Arrow.tobuffer((values=Int32[1, 2],); ntasks=0)),

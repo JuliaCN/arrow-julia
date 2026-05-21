@@ -41,7 +41,7 @@ function Table(blobs::Vector{ArrowBlob}; convert::Bool=true)
             header = batch.msg.header
             if header isa Meta.Schema
                 @debug "parsing schema message"
-                # assert endianness?
+                _assert_supported_schema_endianness(header.endianness)
                 # store custom_metadata?
                 if sch === nothing
                     for (i, field) in enumerate(header.fields)
@@ -265,6 +265,11 @@ function Base.iterate(x::BatchIterator, (pos, id)=(x.startpos, 0))
         )
     end
     return Batch(msg, x.bytes, pos, id), (pos + msg.bodyLength, id + 1)
+end
+
+function _assert_supported_schema_endianness(endianness)
+    (endianness === nothing || endianness === Meta.Endianness.Little) && return nothing
+    throw(ArgumentError("unsupported arrow schema endianness $endianness"))
 end
 
 struct VectorIterator

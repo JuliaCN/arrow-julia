@@ -191,7 +191,7 @@ function Base.iterate(x::Stream, (pos, id)=(1, 0))
         elseif header isa Meta.Schema
             if isnothing(x.schema)
                 x.schema = header
-                # assert endianness?
+                _assert_supported_schema_endianness(header.endianness)
                 # store custom_metadata?
                 for (i, field) in enumerate(x.schema.fields)
                     rejectunsupported(field)

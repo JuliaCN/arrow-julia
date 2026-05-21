@@ -47,6 +47,8 @@ lead to unsafe indexing or misleading semantic interpretation:
   unsupported values are rejected before message bodies are traversed;
 - schema fields with unsupported type tags are rejected before type
   interpretation can recurse into invalid metadata;
+- schema endianness metadata is checked and non-little-endian payloads are
+  rejected before field buffers are interpreted;
 - truncated IPC message length, metadata, and body sections are rejected after
   a continuation marker has started a message;
 - negative IPC message body lengths and body lengths larger than the remaining
