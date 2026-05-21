@@ -258,10 +258,11 @@ function Base.iterate(x::BatchIterator, (pos, id)=(x.startpos, 0))
     @debug "parsing message: pos = $pos, msglen = $msglen, bodyLength = $(msg.bodyLength)"
     msg.bodyLength < 0 &&
         throw(ArgumentError("arrow ipc message body length must be non-negative"))
-    if pos + msg.bodyLength - 1 > length(x.bytes)
+    remaining_body_bytes = length(x.bytes) - pos + 1
+    if msg.bodyLength > remaining_body_bytes
         throw(
             ArgumentError(
-                "truncated arrow ipc message body: declared length $(msg.bodyLength) exceeds remaining bytes $(length(x.bytes) - pos + 1)",
+                "truncated arrow ipc message body: declared length $(msg.bodyLength) exceeds remaining bytes $remaining_body_bytes",
             ),
         )
     end

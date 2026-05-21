@@ -58,4 +58,17 @@
         () -> Arrow.validate(negative_body_length; stream=true),
         "arrow ipc message body length must be non-negative",
     )
+
+    oversized_body_length = patch_first_record_batch_body_length!(
+        read(Arrow.tobuffer((values=Int32[1, 2],); ntasks=0)),
+        typemax(Int64),
+    )
+    assert_argument_error(
+        () -> Arrow.validate(oversized_body_length),
+        "truncated arrow ipc message body",
+    )
+    assert_argument_error(
+        () -> Arrow.validate(oversized_body_length; stream=true),
+        "truncated arrow ipc message body",
+    )
 end
