@@ -56,6 +56,9 @@ lead to unsafe indexing or misleading semantic interpretation:
   cannot hide trailing layout data;
 - DictionaryBatch payloads enforce the same full-consumption rule as ordinary
   RecordBatch payloads before dictionary values are registered;
+- DictionaryBatch messages must follow a schema that declares the referenced
+  dictionary id, so malformed dictionary ordering and unknown ids fail with
+  stable diagnostics instead of low-level lookup errors;
 - compressed IPC buffers validate their encoded body length, 8-byte
   uncompressed-length header, and allowed uncompressed length sentinel before
   decompression;

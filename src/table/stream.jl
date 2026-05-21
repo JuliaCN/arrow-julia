@@ -222,7 +222,7 @@ function Base.iterate(x::Stream, (pos, id)=(1, 0))
                 dictencodings = x.dictencodings[]
                 if haskey(dictencodings, id) && header.isDelta
                     # delta
-                    field = x.dictencoded[id]
+                    field = _dictionary_encoded_field(x.dictencoded, id)
                     values = _build_dictionary_values(
                         field,
                         batch,
@@ -235,7 +235,7 @@ function Base.iterate(x::Stream, (pos, id)=(1, 0))
                     continue
                 end
                 # new dictencoding or replace
-                field = x.dictencoded[id]
+                field = _dictionary_encoded_field(x.dictencoded, id)
                 values = _build_dictionary_values(
                     field,
                     batch,

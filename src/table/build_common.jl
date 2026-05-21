@@ -200,6 +200,12 @@ function _build_dictionary_values(field, batch, recordbatch, dictencodings, conv
     return values
 end
 
+function _dictionary_encoded_field(dictencoded, id)
+    haskey(dictencoded, id) ||
+        throw(ArgumentError("dictionary batch id $id has no schema dictionary field"))
+    return dictencoded[id]
+end
+
 function build(field::Meta.Field, batch, rb, de, nodeidx, bufferidx, varbufferidx, convert)
     name = Symbol(field.name)
     node = _record_batch_node(rb, nodeidx)

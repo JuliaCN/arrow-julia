@@ -61,6 +61,8 @@ function Table(blobs::Vector{ArrowBlob}; convert::Bool=true)
                     )
                 end
             elseif header isa Meta.DictionaryBatch
+                sch === nothing &&
+                    throw(ArgumentError("first arrow ipc message MUST be a schema message"))
                 id = header.id
                 recordbatch = header.data
                 @debug "parsing dictionary batch message: id = $id, compression = $(recordbatch.compression)"
@@ -68,7 +70,7 @@ function Table(blobs::Vector{ArrowBlob}; convert::Bool=true)
                     dictencodings = dictencodingslockable[]
                     if haskey(dictencodings, id) && header.isDelta
                         # delta
-                        field = dictencoded[id]
+                        field = _dictionary_encoded_field(dictencoded, id)
                         values = _build_dictionary_values(
                             field,
                             batch,
@@ -94,7 +96,7 @@ function Table(blobs::Vector{ArrowBlob}; convert::Bool=true)
                         continue
                     end
                     # new dictencoding or replace
-                    field = dictencoded[id]
+                    field = _dictionary_encoded_field(dictencoded, id)
                     values = _build_dictionary_values(
                         field,
                         batch,
@@ -115,6 +117,8 @@ function Table(blobs::Vector{ArrowBlob}; convert::Bool=true)
                 end # lock
                 @debug "parsed dictionary batch message: id=$id, data=$values\n"
             elseif header isa Meta.RecordBatch
+                sch === nothing &&
+                    throw(ArgumentError("first arrow ipc message MUST be a schema message"))
                 @debug "parsing record batch message: compression = $(header.compression)"
                 push!(
                     tasks,

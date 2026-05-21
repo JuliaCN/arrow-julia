@@ -36,6 +36,19 @@
         error("dictionary batch not found")
     end
 
+    function dictionary_batch_first_bytes(bytes)
+        iterator = Arrow.BatchIterator(Arrow.ArrowBlob(bytes, 1, nothing))
+        state = (iterator.startpos, 0)
+        while true
+            current_pos = state[1]
+            next = iterate(iterator, state)
+            next === nothing && break
+            batch, state = next
+            batch.msg.header isa Arrow.Meta.DictionaryBatch && return bytes[current_pos:end]
+        end
+        error("dictionary batch not found")
+    end
+
     function patch_first_dictionary_batch_node_count!(bytes, declared_count::UInt32)
         dictionary = first_dictionary_batch_header(bytes)
         raw = collect(reinterpret(UInt8, UInt32[declared_count]))
@@ -59,5 +72,22 @@
     assert_argument_error(
         () -> Arrow.validate(extra_dictionary_node; stream=true),
         "record batch declares 2 field nodes but schema consumed 1",
+    )
+
+    schema_less_dictionary = dictionary_batch_first_bytes(
+        read(Arrow.tobuffer((values=PooledArray(["alpha", "beta", "alpha"]),); ntasks=0)),
+    )
+    assert_argument_error(
+        () -> Arrow.validate(schema_less_dictionary),
+        "first arrow ipc message MUST be a schema message",
+    )
+    assert_argument_error(
+        () -> Arrow.validate(schema_less_dictionary; stream=true),
+        "first arrow ipc message MUST be a schema message",
+    )
+
+    @test_throws ArgumentError("dictionary batch id 42 has no schema dictionary field") Arrow._dictionary_encoded_field(
+        Dict{Int64,Arrow.Meta.Field}(),
+        Int64(42),
     )
 end
