@@ -212,12 +212,20 @@ function Base.getproperty(x::Message, field::Symbol)
     elseif field === :header
         o = FlatBuffers.offset(x, 6)
         if o != 0
-            T = MessageHeader(FlatBuffers.get(x, o + FlatBuffers.pos(x), UInt8))
+            raw = FlatBuffers.get(x, o + FlatBuffers.pos(x), UInt8)
+            T = MessageHeader(raw)
+            T === nothing &&
+                throw(ArgumentError("unsupported arrow ipc message header type tag $raw"))
             o = FlatBuffers.offset(x, 8)
-            pos = FlatBuffers.union(x, o)
             if o != 0
+                pos = FlatBuffers.union(x, o)
                 return FlatBuffers.init(T, FlatBuffers.bytes(x), pos)
             end
+            throw(
+                ArgumentError(
+                    "arrow ipc message header type tag $raw is missing header metadata",
+                ),
+            )
         end
     elseif field === :bodyLength
         o = FlatBuffers.offset(x, 10)

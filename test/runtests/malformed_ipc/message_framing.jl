@@ -62,6 +62,15 @@
         return bytes
     end
 
+    function patch_first_message_header_tag!(bytes, tag::UInt8)
+        iterator = Arrow.BatchIterator(Arrow.ArrowBlob(bytes, 1, nothing))
+        batch, _ = iterate(iterator, (iterator.startpos, 0))
+        header_offset = Arrow.FlatBuffers.offset(batch.msg, 6)
+        header_offset != 0 || error("message header type field not found")
+        bytes[Arrow.FlatBuffers.pos(batch.msg) + header_offset + 1] = tag
+        return bytes
+    end
+
     invalid_message_version = patch_first_message_version!(
         read(Arrow.tobuffer((values=Int32[1, 2],); ntasks=0)),
         Int16(42),
@@ -73,6 +82,19 @@
     assert_argument_error(
         () -> Arrow.validate(invalid_message_version; stream=true),
         "unsupported arrow ipc message metadata version 42",
+    )
+
+    invalid_header_tag = patch_first_message_header_tag!(
+        read(Arrow.tobuffer((values=Int32[1, 2],); ntasks=0)),
+        UInt8(255),
+    )
+    assert_argument_error(
+        () -> Arrow.validate(invalid_header_tag),
+        "unsupported arrow ipc message header type tag 255",
+    )
+    assert_argument_error(
+        () -> Arrow.validate(invalid_header_tag; stream=true),
+        "unsupported arrow ipc message header type tag 255",
     )
 
     negative_body_length = patch_first_record_batch_body_length!(
