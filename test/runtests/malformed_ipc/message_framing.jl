@@ -46,6 +46,35 @@
         error("record batch not found")
     end
 
+    function patch_first_message_version!(bytes, version::Int16)
+        iterator = Arrow.BatchIterator(Arrow.ArrowBlob(bytes, 1, nothing))
+        batch, _ = iterate(iterator, (iterator.startpos, 0))
+        version_offset = Arrow.FlatBuffers.offset(batch.msg, 4)
+        version_offset != 0 || error("message version field not found")
+        raw = collect(reinterpret(UInt8, Int16[version]))
+        copyto!(
+            bytes,
+            Arrow.FlatBuffers.pos(batch.msg) + version_offset + 1,
+            raw,
+            1,
+            length(raw),
+        )
+        return bytes
+    end
+
+    invalid_message_version = patch_first_message_version!(
+        read(Arrow.tobuffer((values=Int32[1, 2],); ntasks=0)),
+        Int16(42),
+    )
+    assert_argument_error(
+        () -> Arrow.validate(invalid_message_version),
+        "unsupported arrow ipc message metadata version 42",
+    )
+    assert_argument_error(
+        () -> Arrow.validate(invalid_message_version; stream=true),
+        "unsupported arrow ipc message metadata version 42",
+    )
+
     negative_body_length = patch_first_record_batch_body_length!(
         read(Arrow.tobuffer((values=Int32[1, 2],); ntasks=0)),
         Int64(-1),

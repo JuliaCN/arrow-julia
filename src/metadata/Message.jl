@@ -205,7 +205,10 @@ Base.propertynames(x::Message) = (:version, :header, :bodyLength, :custom_metada
 function Base.getproperty(x::Message, field::Symbol)
     if field === :version
         o = FlatBuffers.offset(x, 4)
-        o != 0 && return FlatBuffers.get(x, o + FlatBuffers.pos(x), MetadataVersion.T)
+        o != 0 && return _metadata_version(
+            FlatBuffers.get(x, o + FlatBuffers.pos(x), Int16),
+            "arrow ipc message",
+        )
     elseif field === :header
         o = FlatBuffers.offset(x, 6)
         if o != 0
@@ -227,6 +230,15 @@ function Base.getproperty(x::Message, field::Symbol)
         end
     end
     return nothing
+end
+
+function _metadata_version(raw::Int16, label::AbstractString)
+    try
+        return MetadataVersion.T(raw)
+    catch err
+        err isa ArgumentError || rethrow()
+        throw(ArgumentError("unsupported $label metadata version $raw"))
+    end
 end
 
 messageStart(b::FlatBuffers.Builder) = FlatBuffers.startobject!(b, 5)

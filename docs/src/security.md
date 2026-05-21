@@ -41,6 +41,8 @@ lead to unsafe indexing or misleading semantic interpretation:
 
 - unsupported Tensor and SparseTensor IPC message headers are recognized and
   rejected explicitly;
+- IPC message metadata versions are decoded through a checked enum path and
+  unsupported values are rejected before message bodies are traversed;
 - schema fields with unsupported type tags are rejected before type
   interpretation can recurse into invalid metadata;
 - truncated IPC message length, metadata, and body sections are rejected after

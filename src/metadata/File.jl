@@ -25,7 +25,10 @@ Base.propertynames(x::Footer) =
 function Base.getproperty(x::Footer, field::Symbol)
     if field === :version
         o = FlatBuffers.offset(x, 4)
-        o != 0 && return FlatBuffers.get(x, o + FlatBuffers.pos(x), MetadataVersion.T)
+        o != 0 && return _metadata_version(
+            FlatBuffers.get(x, o + FlatBuffers.pos(x), Int16),
+            "arrow ipc file footer",
+        )
         return MetadataVersion.V1
     elseif field === :schema
         o = FlatBuffers.offset(x, 6)
