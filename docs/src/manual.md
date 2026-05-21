@@ -312,6 +312,8 @@ Set `ARROW_IPC_REPORT_ROWS` to change the row count. Optional
 `ARROW_IPC_MAX_*` environment variables can enforce local timing or allocation
 limits. CI gates IPC read and physical-scan allocation regressions while
 keeping wall-clock timing informational by default.
+See [Production Performance Gates](production_performance_gates.md) for the
+operator-facing gate profile.
 
 ### C Data Interface
 
@@ -495,6 +497,8 @@ latest `gRPCServer.jl` listener stack. The current nghttp2 backend is intentiona
 bounded, so the package-owned `test/flight_purehttp2_perf.jl` runner remains
 the canonical large-transport proof for the default backend while
 request-streaming C-wrapper work stays deferred.
+See [Production Performance Gates](production_performance_gates.md) for the
+deployment-local throughput floor profile.
 
 ## Writing arrow data
 
