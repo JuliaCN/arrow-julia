@@ -120,6 +120,7 @@ end
 
 _flightdata_bytes(bytes::Vector{UInt8}) = bytes
 _flightdata_bytes(bytes::AbstractVector{UInt8}) = Vector{UInt8}(bytes)
+_flightdata_bytes(bytes) = Vector{UInt8}(bytes)
 
 function _flightdata_message(
     msg::ArrowParent.Message;
