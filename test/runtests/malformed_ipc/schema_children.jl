@@ -43,10 +43,31 @@
         return bytes
     end
 
+    function patch_first_field_type_tag!(bytes, tag::UInt8)
+        field = first_schema(bytes).fields[1]
+        offset = Arrow.FlatBuffers.offset(field, 8)
+        offset != 0 || error("field type tag not found")
+        bytes[Arrow.FlatBuffers.pos(field) + offset + 1] = tag
+        return bytes
+    end
+
     valid_list = read(Arrow.tobuffer((values=[Int32[1, 2]],); ntasks=0))
     @test_throws ArgumentError(
         "field values is missing child 2; only 1 children are declared",
     ) Arrow._field_child(first_schema(valid_list).fields[1], 2)
+
+    unsupported_field_type = patch_first_field_type_tag!(
+        read(Arrow.tobuffer((values=Int32[1, 2],); ntasks=0)),
+        UInt8(255),
+    )
+    assert_argument_error(
+        () -> Arrow.validate(unsupported_field_type),
+        "unsupported arrow field type tag 255",
+    )
+    assert_argument_error(
+        () -> Arrow.validate(unsupported_field_type; stream=true),
+        "unsupported arrow field type tag 255",
+    )
 
     missing_list_child = truncate_first_field_children!(
         read(Arrow.tobuffer((values=[Int32[1, 2]],); ntasks=0)),

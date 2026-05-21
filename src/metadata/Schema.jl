@@ -635,12 +635,15 @@ function Base.getproperty(x::Field, field::Symbol)
     elseif field === :type
         o = FlatBuffers.offset(x, 8)
         if o != 0
-            T = Type(FlatBuffers.get(x, o + FlatBuffers.pos(x), UInt8))
+            raw = FlatBuffers.get(x, o + FlatBuffers.pos(x), UInt8)
+            T = Type(raw)
+            T === nothing && throw(ArgumentError("unsupported arrow field type tag $raw"))
             o = FlatBuffers.offset(x, 10)
             pos = FlatBuffers.union(x, o)
             if o != 0
                 return FlatBuffers.init(T, FlatBuffers.bytes(x), pos)
             end
+            throw(ArgumentError("arrow field type tag $raw is missing type metadata"))
         end
     elseif field === :dictionary
         o = FlatBuffers.offset(x, 12)
