@@ -36,6 +36,7 @@ function build(
     @debug "storage type for primitive: T = $T"
     bytes, A = reinterp(Base.nonmissingtype(T), batch, buffer, rb.compression)
     len = rb.nodes[nodeidx].length
+    _assert_value_count(A, len, Symbol(f.name))
     T = juliaeltype(f, meta, convert)
     @debug "final julia type for primitive: T = $T"
     return Primitive(T, bytes, validity, A, len, meta),
@@ -78,6 +79,7 @@ function build(
         # return ValidityBitmap(decodedbytes, 1, node.length, node.null_count)
     end
     len = rb.nodes[nodeidx].length
+    _assert_bool_value_bytes(decodedbytes, pos, len, Symbol(f.name))
     T = juliaeltype(f, meta, convert)
     return BoolVector{T}(decodedbytes, pos, validity, len, meta),
     nodeidx + 1,

@@ -80,6 +80,14 @@
         return bytes
     end
 
+    function patch_record_batch_buffer_length!(bytes, rb, buffer_index, new_length::Int64)
+        buffer = rb.buffers[buffer_index]
+        start = Arrow.FlatBuffers.pos(buffer) + 8
+        raw = collect(reinterpret(UInt8, Int64[new_length]))
+        copyto!(bytes, start, raw, 1, length(raw))
+        return bytes
+    end
+
     function ipc_prefix(message_length::Int32)
         return vcat(
             collect(reinterpret(UInt8, UInt32[Arrow.CONTINUATION_INDICATOR_BYTES])),
@@ -122,6 +130,27 @@
     assert_argument_error(
         () -> Arrow.validate(UInt8[0xff, 0xff, 0xff, 0xff, 0x08]; stream=true),
         "truncated arrow ipc message length",
+    )
+
+    short_primitive_values = patched_record_batch_bytes(
+        Tables.getcolumn(Arrow.Table(Arrow.tobuffer((values=Int32[1, 2],))), :values),
+        (bytes, batch, rb) -> patch_record_batch_buffer_length!(bytes, rb, 2, Int64(4)),
+    )
+    assert_argument_error(
+        () -> Arrow.validate(short_primitive_values),
+        "primitive column values value buffer length 0 is shorter than logical length 2",
+    )
+
+    short_bool_values = patched_record_batch_bytes(
+        Tables.getcolumn(
+            Arrow.Table(Arrow.tobuffer((values=fill(true, 9),)); convert=false),
+            :values,
+        ),
+        (bytes, batch, rb) -> patch_record_batch_buffer_length!(bytes, rb, 2, Int64(1)),
+    )
+    assert_argument_error(
+        () -> Arrow.validate(short_bool_values),
+        "bool column values value buffer length 0 is shorter than required byte length 2",
     )
 
     descending = Arrow.List{Vector{Int32},Int32,typeof(item)}(

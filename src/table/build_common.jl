@@ -68,6 +68,26 @@ function _assert_field_node_shape(node, name::Symbol)
     return nothing
 end
 
+function _assert_value_count(values, len::Integer, name::Symbol)
+    length(values) >= len || throw(
+        ArgumentError(
+            "primitive column $name value buffer length $(length(values)) is shorter than logical length $len",
+        ),
+    )
+    return nothing
+end
+
+function _assert_bool_value_bytes(bytes, pos::Integer, len::Integer, name::Symbol)
+    required = cld(Int(len), 8)
+    available = max(length(bytes) - Int(pos) + 1, 0)
+    available >= required || throw(
+        ArgumentError(
+            "bool column $name value buffer length $available is shorter than required byte length $required",
+        ),
+    )
+    return nothing
+end
+
 function build(field::Meta.Field, batch, rb, de, nodeidx, bufferidx, varbufferidx, convert)
     name = Symbol(field.name)
     nodeidx <= length(rb.nodes) ||

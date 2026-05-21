@@ -45,6 +45,8 @@ lead to unsafe indexing or misleading semantic interpretation:
   a continuation marker has started a message;
 - IPC field nodes validate non-negative lengths, non-negative null counts, and
   null counts bounded by their logical lengths before buffer materialization;
+- IPC primitive and boolean columns validate that value buffers cover their
+  declared logical lengths before exposing borrowed vectors;
 - variable-size List, LargeList, Binary, Utf8, Map, ListView, BinaryView, and
   Utf8View IPC layouts validate offset or view span counts, monotonicity where
   required, non-negative spans, and child/data bounds before materialization;
