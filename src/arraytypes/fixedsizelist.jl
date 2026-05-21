@@ -29,6 +29,16 @@ end
 
 Base.size(l::FixedSizeList) = (l.ℓ,)
 
+function _assert_fixed_size_list_child_length(data, list_size::Integer, len::Integer, name)
+    required = Int(list_size) * Int(len)
+    length(data) >= required || throw(
+        ArgumentError(
+            "fixed-size-list column $name child length $(length(data)) is shorter than required length $required",
+        ),
+    )
+    return nothing
+end
+
 @propagate_inbounds function Base.getindex(l::FixedSizeList{T}, i::Integer) where {T}
     @boundscheck checkbounds(l, i)
     S = Base.nonmissingtype(T)

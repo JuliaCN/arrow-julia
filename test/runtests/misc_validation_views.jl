@@ -340,6 +340,33 @@
     @test Tables.getcolumn(null_slot_table, :values)[1] == "red"
     @test ismissing(Tables.getcolumn(null_slot_table, :values)[2])
 
+    short_fixed_size_list_child = Arrow.Primitive(
+        Int32,
+        UInt8[],
+        Arrow.ValidityBitmap(fill(true, 2)),
+        Int32[1, 2, 3],
+        3,
+        nothing,
+    )
+    short_fixed_size_list =
+        Arrow.FixedSizeList{NTuple{2,Int32},typeof(short_fixed_size_list_child)}(
+            UInt8[],
+            Arrow.ValidityBitmap(fill(true, 2)),
+            short_fixed_size_list_child,
+            2,
+            nothing,
+        )
+    assert_argument_error(
+        () -> Arrow.Table(
+            Arrow.tobuffer(
+                native_arrow_vector_table(:values, short_fixed_size_list);
+                ntasks=0,
+            );
+            convert=false,
+        ),
+        "fixed-size-list column values child length 3 is shorter than required length 4",
+    )
+
     union_source = Union{Int64,Float64,Missing}[1, 2.0, missing]
     dense_union = Arrow.DenseUnionVector(union_source)
     sparse_union = Arrow.SparseUnionVector(union_source)
@@ -391,6 +418,17 @@
         3,
         :values,
     ) === nothing
+
+    run_end_encoded = Arrow.RunEndEncoded(Int16[2, 5], ["a", "b"], 5, nothing)
+    short_final_run_end = patched_record_batch_bytes(
+        run_end_encoded,
+        (bytes, batch, rb) ->
+            patch_record_batch_buffer!(bytes, batch, rb, 2, Int16[2, 4]),
+    )
+    assert_argument_error(
+        () -> Arrow.Table(IOBuffer(short_final_run_end); convert=false),
+        "invalid Run-End Encoded array: final run end 4 does not match logical length 5",
+    )
 end
 
 @testset "View buffer count inference" begin

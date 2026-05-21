@@ -44,6 +44,11 @@ lead to unsafe indexing or misleading semantic interpretation:
   non-null slots before exposing Julia strings;
 - IPC dictionary-encoded columns validate non-null index slots against the
   dictionary length before exposing borrowed `DictEncoded` vectors;
+- IPC FixedSizeList columns validate that child arrays cover the declared
+  fixed-size logical length before exposing tuple values;
+- IPC Run-End Encoded columns validate run-end type, run/value counts,
+  strictly increasing positive run ends, non-null run ends, and final coverage
+  before exposing logical values;
 - IPC dense and sparse union columns validate type ids, dense unions validate
   child offsets, and sparse unions validate child array lengths before
   exposing borrowed union vectors;

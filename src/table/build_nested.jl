@@ -210,6 +210,7 @@ function build(
         bytes = UInt8[]
         A, nodeidx, bufferidx, varbufferidx =
             build(f.children[1], batch, rb, de, nodeidx, bufferidx, varbufferidx, convert)
+        _assert_fixed_size_list_child_length(A, L.listSize, len, Symbol(f.name))
     end
     meta = buildmetadata(f.custom_metadata)
     T = juliaeltype(f, meta, convert)
