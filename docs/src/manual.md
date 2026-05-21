@@ -550,10 +550,20 @@ Arrow.ADBC.Connection()
 Arrow.ADBC.Statement()
 ```
 
-This is an ABI and constants surface only. It does not load ADBC drivers,
-execute statements, or provide a high-level database client. Query execution,
-bulk ingestion, cancellation, partitioned result reads, and external driver
-interop remain dedicated ADBC follow-up work.
+ADBC statement execution returns an Arrow C Stream plus a rows-affected count.
+`Arrow.ADBC.importstream(stream_ptr; rows_affected)` borrows that result stream
+through the same C Stream importer used by `Arrow.CData.importstream`:
+
+```julia
+result = Arrow.ADBC.importstream(stream_ptr; rows_affected=rows)
+stream = Arrow.ADBC.resultstream(result)
+rows = Arrow.ADBC.rowsaffected(result)
+```
+
+This is an ABI, constants, and result-stream boundary. It does not load ADBC
+drivers, execute statements, or provide a high-level database client. Driver
+loading, query execution, bulk ingestion, cancellation, partitioned result
+reads, and external driver interop remain dedicated ADBC follow-up work.
 
 ## Writing arrow data
 

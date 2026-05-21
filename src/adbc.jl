@@ -25,6 +25,8 @@ database client.
 """
 module ADBC
 
+using ..CData
+
 export ADBC_VERSION_1_0_0,
     ADBC_VERSION_1_1_0,
     CONNECTION_OPTION_AUTOCOMMIT,
@@ -51,6 +53,7 @@ export ADBC_VERSION_1_0_0,
     STATUS_TIMEOUT,
     STATUS_UNAUTHENTICATED,
     STATUS_UNAUTHORIZED,
+    StatementResult,
     STATUS_UNKNOWN,
     STATEMENT_OPTION_INCREMENTAL,
     STATEMENT_OPTION_MAX_PROGRESS,
@@ -84,8 +87,12 @@ export ADBC_VERSION_1_0_0,
     OPTION_VALUE_ENABLED,
     assertok,
     error_message,
+    importstream,
     isinitialized,
     releaseable,
+    resultstream,
+    rowsaffected,
+    statementresult,
     statusname,
     statusok
 
@@ -258,5 +265,44 @@ function assertok(status::Union{StatusCode,Integer}, error::Error=Error())
     statusok(code) && return nothing
     throw(StatusException(code, error_message(error)))
 end
+
+"""
+    Arrow.ADBC.StatementResult
+
+Lightweight representation of an ADBC statement execution result: an Arrow C
+Stream iterator plus the optional rows-affected count returned by ADBC
+statement execution APIs.
+"""
+struct StatementResult{S}
+    stream::S
+    rows_affected::Int64
+end
+
+function _rows_affected(value::Integer)
+    value >= -1 || throw(ArgumentError("ADBC rows_affected must be -1 or non-negative"))
+    return Int64(value)
+end
+
+"""
+    Arrow.ADBC.statementresult(stream; rows_affected=-1)
+
+Wrap an imported Arrow C Stream result with the ADBC rows-affected count.
+"""
+function statementresult(stream; rows_affected::Integer=-1)
+    return StatementResult(stream, _rows_affected(rows_affected))
+end
+
+"""
+    Arrow.ADBC.importstream(stream_ptr; rows_affected=-1)
+
+Borrow an ADBC `ArrowArrayStream` result as an Arrow.jl imported C Stream and
+return it with the ADBC rows-affected count.
+"""
+function importstream(stream_ptr::Ptr{CData.ArrowArrayStream}; rows_affected::Integer=-1)
+    return statementresult(CData.importstream(stream_ptr); rows_affected=rows_affected)
+end
+
+resultstream(result::StatementResult) = result.stream
+rowsaffected(result::StatementResult) = result.rows_affected
 
 end # module ADBC

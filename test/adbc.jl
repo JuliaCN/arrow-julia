@@ -17,6 +17,7 @@
 
 using Test
 using Arrow
+using Tables
 
 const ADBC = Arrow.ADBC
 
@@ -55,4 +56,22 @@ const ADBC = Arrow.ADBC
     @test ADBC.statusok(0)
     @test ADBC.statusname(ADBC.STATUS_NOT_IMPLEMENTED) == "STATUS_NOT_IMPLEMENTED"
     @test_throws ADBC.StatusException ADBC.assertok(ADBC.STATUS_NOT_IMPLEMENTED)
+end
+
+@testset "ADBC statement result stream boundary" begin
+    table = (id=Int64[1, 2, 3], label=["a", "b", "c"])
+    exported = Arrow.CData.exportstream(Arrow.Table(Arrow.tobuffer(table)))
+    result = ADBC.importstream(Arrow.CData.stream_ptr(exported); rows_affected=3)
+
+    @test ADBC.rowsaffected(result) == 3
+    batches = collect(ADBC.resultstream(result))
+    @test length(batches) == 1
+    @test collect(Tables.getcolumn(batches[1], :id)) == [1, 2, 3]
+    @test collect(Tables.getcolumn(batches[1], :label)) == ["a", "b", "c"]
+
+    Arrow.CData.release!.(batches)
+    Arrow.CData.release!(ADBC.resultstream(result))
+    Arrow.CData.release!(exported)
+
+    @test_throws ArgumentError ADBC.statementresult(nothing; rows_affected=-2)
 end
