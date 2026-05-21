@@ -30,7 +30,8 @@ limits, and transport authentication outside Arrow.jl.
 For IPC streams or files, `Arrow.validate(input; convert=false)` runs the
 reader-side structural checks and returns `nothing` on success or throws the
 same diagnostic `ArgumentError` that `Arrow.Table` would throw for malformed
-metadata or buffers.
+metadata or buffers. Use `Arrow.validate(input; stream=true)` to validate by
+iterating the batch-wise `Arrow.Stream` reader path.
 
 ## Checked Layout Boundaries
 

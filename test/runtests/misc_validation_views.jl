@@ -87,6 +87,7 @@
     @test isnothing(Arrow.validate(valid_bytes))
     @test isnothing(Arrow.validate(IOBuffer(valid_bytes)))
     @test isnothing(Arrow.validate([valid_bytes]))
+    @test isnothing(Arrow.validate(valid_bytes; stream=true))
 
     descending = Arrow.List{Vector{Int32},Int32,typeof(item)}(
         UInt8[],
@@ -106,6 +107,13 @@
     assert_argument_error(
         () -> Arrow.validate(
             Arrow.tobuffer(native_arrow_vector_table(:values, descending); ntasks=0),
+        ),
+        "offsets must be monotonically increasing",
+    )
+    assert_argument_error(
+        () -> Arrow.validate(
+            Arrow.tobuffer(native_arrow_vector_table(:values, descending); ntasks=0);
+            stream=true,
         ),
         "offsets must be monotonically increasing",
     )

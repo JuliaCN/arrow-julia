@@ -15,8 +15,8 @@
 # limitations under the License.
 
 """
-    Arrow.validate(input, pos=1, len=nothing; convert::Bool=false)
-    Arrow.validate(inputs::Vector; convert::Bool=false)
+    Arrow.validate(input, pos=1, len=nothing; convert::Bool=false, stream::Bool=false)
+    Arrow.validate(inputs::Vector; convert::Bool=false, stream::Bool=false)
 
 Validate an Arrow IPC stream or file by running the same reader-side structural
 checks as [`Arrow.Table`](@ref). Return `nothing` when validation succeeds and
@@ -25,19 +25,49 @@ detected.
 
 The default `convert=false` keeps validation focused on Arrow physical layout
 checks instead of Julia semantic type conversion. Pass `convert=true` to also
-exercise the normal converted reader path.
+exercise the normal converted reader path. Pass `stream=true` to validate by
+iterating [`Arrow.Stream`](@ref) batches instead of materializing one
+`Arrow.Table`.
 """
-function validate(input, pos::Integer=1, len=nothing; convert::Bool=false)
-    Table(input, pos, len; convert=convert)
+function validate(
+    input,
+    pos::Integer=1,
+    len=nothing;
+    convert::Bool=false,
+    stream::Bool=false,
+)
+    _validate_reader(
+        stream ? Stream(input, pos, len; convert=convert) :
+        Table(input, pos, len; convert=convert),
+    )
     return nothing
 end
 
-function validate(input::Vector{UInt8}, pos::Integer=1, len=nothing; convert::Bool=false)
-    Table(input, pos, len; convert=convert)
+function validate(
+    input::Vector{UInt8},
+    pos::Integer=1,
+    len=nothing;
+    convert::Bool=false,
+    stream::Bool=false,
+)
+    _validate_reader(
+        stream ? Stream(input, pos, len; convert=convert) :
+        Table(input, pos, len; convert=convert),
+    )
     return nothing
 end
 
-function validate(inputs::Vector; convert::Bool=false)
-    Table(inputs; convert=convert)
+function validate(inputs::Vector; convert::Bool=false, stream::Bool=false)
+    _validate_reader(
+        stream ? Stream(inputs; convert=convert) : Table(inputs; convert=convert),
+    )
+    return nothing
+end
+
+_validate_reader(::Table) = nothing
+
+function _validate_reader(stream::Stream)
+    for _ in stream
+    end
     return nothing
 end
