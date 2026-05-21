@@ -20,6 +20,11 @@
             Union{Int64,Float64,Missing}[1, 2.0, 3, 4.0, missing],
         ),
     )
+    dense_source = (
+        values=Arrow.DenseUnionVector(
+            Union{Int64,Float64,Missing}[1, 2.0, 3, 4.0, missing],
+        ),
+    )
 
     function assert_sparse_child_lengths(table)
         values = Tables.getcolumn(table, :values)
@@ -28,8 +33,50 @@
         return values
     end
 
+    function assert_argument_error(f::Function, needle::AbstractString)
+        err = try
+            f()
+            nothing
+        catch e
+            e
+        end
+        @test err !== nothing
+        @test occursin(needle, sprint(showerror, err))
+        return
+    end
+
+    function first_schema(bytes)
+        blob = Arrow.ArrowBlob(bytes, 1, nothing)
+        for batch in Arrow.BatchIterator(blob)
+            schema = batch.msg.header
+            schema isa Arrow.Meta.Schema && return schema
+        end
+        error("schema not found")
+    end
+
+    function patch_first_union_mode!(bytes, mode::Int16)
+        union = first_schema(bytes).fields[1].type
+        union isa Arrow.Meta.Union || error("union field not found")
+        offset = Arrow.FlatBuffers.offset(union, 4)
+        offset != 0 || error("union mode field not found")
+        raw = collect(reinterpret(UInt8, Int16[mode]))
+        copyto!(bytes, Arrow.FlatBuffers.pos(union) + offset + 1, raw, 1, length(raw))
+        return bytes
+    end
+
     table = Arrow.Table(Arrow.tobuffer(source))
     assert_sparse_child_lengths(table)
+
+    invalid_union_mode =
+        patch_first_union_mode!(read(Arrow.tobuffer(dense_source; ntasks=0)), Int16(7))
+    assert_argument_error(
+        () -> Arrow.validate(invalid_union_mode),
+        "unsupported arrow union mode tag 7",
+    )
+    assert_argument_error(
+        () -> Arrow.validate(invalid_union_mode; stream=true),
+        "unsupported arrow union mode tag 7",
+    )
 
     mktemp() do path, io
         write(io, read(Arrow.tobuffer(source)))

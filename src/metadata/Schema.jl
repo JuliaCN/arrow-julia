@@ -109,13 +109,22 @@ Base.propertynames(x::Union) = (:mode, :typeIds)
 function Base.getproperty(x::Union, field::Symbol)
     if field === :mode
         o = FlatBuffers.offset(x, 4)
-        o != 0 && return FlatBuffers.get(x, o + FlatBuffers.pos(x), UnionMode.T)
+        o != 0 && return _union_mode(FlatBuffers.get(x, o + FlatBuffers.pos(x), Int16))
         return UnionMode.Sparse
     elseif field === :typeIds
         o = FlatBuffers.offset(x, 6)
         o != 0 && return FlatBuffers.Array{Int32}(x, o)
     end
     return nothing
+end
+
+function _union_mode(raw::Int16)
+    try
+        return UnionMode.T(raw)
+    catch err
+        err isa ArgumentError || rethrow()
+        throw(ArgumentError("unsupported arrow union mode tag $raw"))
+    end
 end
 
 unionStart(b::FlatBuffers.Builder) = FlatBuffers.startobject!(b, 2)

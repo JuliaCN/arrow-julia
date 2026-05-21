@@ -93,6 +93,8 @@ lead to unsafe indexing or misleading semantic interpretation:
 - IPC dense and sparse union columns validate type ids, dense unions validate
   child offsets, and sparse unions validate child array lengths before
   exposing borrowed union vectors;
+- IPC union mode metadata is decoded through a checked enum path before
+  selecting dense or sparse union interpretation;
 - canonical extension metadata and storage contracts are parsed and validated
   for the supported canonical extension names before Arrow.jl returns
   converted semantic values;
