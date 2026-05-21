@@ -127,21 +127,31 @@ function _flight_live_pyarrow_reused_doput_soak_rounds()
     return rounds
 end
 
-function _flight_live_pyarrow_reused_doput_min_throughput_mib_per_sec()
-    raw_value =
-        get(ENV, "ARROW_FLIGHT_PYARROW_REUSED_DOPUT_MIN_THROUGHPUT_MIB_PER_SEC", "0")
+function _flight_live_pyarrow_min_throughput_mib_per_sec(
+    operation::Symbol;
+    env_name::Union{Nothing,String}=nothing,
+)
+    threshold_env = something(
+        env_name,
+        "ARROW_FLIGHT_PYARROW_$(uppercase(string(operation)))_MIN_THROUGHPUT_MIB_PER_SEC",
+    )
+    raw_value = get(ENV, threshold_env, "0")
     minimum_throughput = tryparse(Float64, raw_value)
     isnothing(minimum_throughput) && throw(
         ArgumentError(
-            "ARROW_FLIGHT_PYARROW_REUSED_DOPUT_MIN_THROUGHPUT_MIB_PER_SEC must parse as a non-negative number; got $(repr(raw_value))",
+            "$threshold_env must parse as a non-negative number; got $(repr(raw_value))",
         ),
     )
-    minimum_throughput >= 0 || throw(
-        ArgumentError(
-            "ARROW_FLIGHT_PYARROW_REUSED_DOPUT_MIN_THROUGHPUT_MIB_PER_SEC must be non-negative; got $(repr(raw_value))",
-        ),
-    )
+    minimum_throughput >= 0 ||
+        throw(ArgumentError("$threshold_env must be non-negative; got $(repr(raw_value))"))
     return minimum_throughput
+end
+
+function _flight_live_pyarrow_reused_doput_min_throughput_mib_per_sec()
+    return _flight_live_pyarrow_min_throughput_mib_per_sec(
+        :doput_reused_client;
+        env_name="ARROW_FLIGHT_PYARROW_REUSED_DOPUT_MIN_THROUGHPUT_MIB_PER_SEC",
+    )
 end
 
 function _flight_live_command_output_excerpt(output::AbstractString; limit::Integer=2_000)

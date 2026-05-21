@@ -472,7 +472,16 @@ four rounds against one server. Each round opens one PyArrow client and runs
 the configured reused-upload count. Set
 `ARROW_FLIGHT_PYARROW_REUSED_DOPUT_MIN_THROUGHPUT_MIB_PER_SEC` to a positive
 number to make that local soak enforce an environment-specific throughput
-floor. A second focused runner,
+floor. The large and concurrent transport receipts also accept operation-local
+throughput floors through
+`ARROW_FLIGHT_PYARROW_DOGET_MIN_THROUGHPUT_MIB_PER_SEC`,
+`ARROW_FLIGHT_PYARROW_DOPUT_MIN_THROUGHPUT_MIB_PER_SEC`,
+`ARROW_FLIGHT_PYARROW_DOEXCHANGE_MIN_THROUGHPUT_MIB_PER_SEC`,
+`ARROW_FLIGHT_PYARROW_DOGET_CONCURRENT_MIN_THROUGHPUT_MIB_PER_SEC`,
+`ARROW_FLIGHT_PYARROW_DOPUT_CONCURRENT_MIN_THROUGHPUT_MIB_PER_SEC`, and
+`ARROW_FLIGHT_PYARROW_DOEXCHANGE_CONCURRENT_MIN_THROUGHPUT_MIB_PER_SEC`;
+all default to zero so shared CI keeps wall-clock throughput informational.
+A second focused runner,
 `test/flight_nghttp2_probe.jl`,
 verifies the currently exported `Nghttp2Wrapper.jl` low-level session /
 callback / submit hooks and raw h2c substrate behavior. A third focused
