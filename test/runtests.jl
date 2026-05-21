@@ -66,9 +66,8 @@ end
 
     @testset "misc" begin
         include(joinpath(@__DIR__, "runtests", "misc_core_layouts.jl"))
+        include(joinpath(@__DIR__, "runtests", "malformed_ipc.jl"))
         include(joinpath(@__DIR__, "runtests", "misc_validation_views.jl"))
-        include(joinpath(@__DIR__, "runtests", "misc_validation_nodes.jl"))
-        include(joinpath(@__DIR__, "runtests", "misc_validation_unions.jl"))
         include(joinpath(@__DIR__, "runtests", "misc_issue_roundtrips.jl"))
         include(joinpath(@__DIR__, "runtests", "misc_extensions.jl"))
         include(joinpath(@__DIR__, "runtests", "misc_tensor_display.jl"))
