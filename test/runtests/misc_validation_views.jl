@@ -96,6 +96,17 @@
     @test isnothing(Arrow.validate([valid_bytes]))
     @test isnothing(Arrow.validate(valid_bytes; stream=true))
 
+    for malformed in (UInt8[], UInt8[1, 2, 3, 4, 5, 6, 7, 8])
+        assert_argument_error(
+            () -> Arrow.validate(malformed),
+            "arrow ipc validation requires a schema message",
+        )
+        assert_argument_error(
+            () -> Arrow.validate(malformed; stream=true),
+            "arrow ipc validation requires a schema message",
+        )
+    end
+
     assert_argument_error(
         () -> Arrow.validate(UInt8[0xff, 0xff, 0xff, 0xff, 0x08]),
         "truncated arrow ipc message length",

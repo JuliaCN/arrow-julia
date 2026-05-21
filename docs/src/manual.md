@@ -82,10 +82,11 @@ Apart from letting other packages have all the fun, an `Arrow.Table` itself can 
 * `AbstractDict` methods like `haskey(tbl, :col1)`, `get(tbl, :col1, nothing)`, `keys(tbl)`, or `values(tbl)`
 
 For untrusted IPC inputs, `Arrow.validate(file_or_bytes; convert=false)` runs
-the same reader-side structural checks as `Arrow.Table` and returns `nothing`
-when validation succeeds. Malformed metadata or buffers throw the same
-diagnostic `ArgumentError` that the table reader would throw. Pass
-`stream=true` to validate through the batch-wise `Arrow.Stream` reader path.
+the same reader-side structural checks as `Arrow.Table`, requires at least one
+schema message, and returns `nothing` when validation succeeds. Malformed
+metadata or buffers throw the same diagnostic `ArgumentError` that the table
+reader would throw. Pass `stream=true` to validate through the batch-wise
+`Arrow.Stream` reader path.
 
 ### Arrow types
 

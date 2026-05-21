@@ -21,7 +21,7 @@
 Validate an Arrow IPC stream or file by running the same reader-side structural
 checks as [`Arrow.Table`](@ref). Return `nothing` when validation succeeds and
 throw the reader's `ArgumentError` when malformed IPC metadata or buffers are
-detected.
+detected. Validation also requires that at least one schema message was read.
 
 The default `convert=false` keeps validation focused on Arrow physical layout
 checks instead of Julia semantic type conversion. Pass `convert=true` to also
@@ -64,10 +64,19 @@ function validate(inputs::Vector; convert::Bool=false, stream::Bool=false)
     return nothing
 end
 
-_validate_reader(::Table) = nothing
+function _validate_reader(table::Table)
+    _assert_validated_schema(schema(table))
+    return nothing
+end
 
 function _validate_reader(stream::Stream)
     for _ in stream
     end
+    _assert_validated_schema(Ref(getfield(stream, :schema)))
     return nothing
+end
+
+function _assert_validated_schema(schema_ref)
+    isassigned(schema_ref) && schema_ref[] !== nothing && return nothing
+    throw(ArgumentError("arrow ipc validation requires a schema message"))
 end
