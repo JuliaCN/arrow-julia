@@ -504,18 +504,25 @@ deployment-local throughput floor profile.
 
 Flight SQL reuses Flight RPC methods with command and action payloads packed as
 `google.protobuf.Any` messages. Arrow.jl exposes the low-level
-`Arrow.Flight.SQL` helper boundary for protocol assembly without requiring
+`Arrow.Flight.SQL` helper boundary and generated Flight SQL protobuf messages
+under `Arrow.Flight.SQL.Generated` for protocol assembly without requiring
 callers to manually build the Flight `CMD` descriptor envelope:
 
 ```julia
-descriptor = Arrow.Flight.SQL.commanddescriptor("CommandStatementQuery", query_bytes)
-action = Arrow.Flight.SQL.action("ActionCreatePreparedStatementRequest", request_bytes)
+query = Arrow.Flight.SQL.Generated.CommandStatementQuery("select 1", UInt8[])
+descriptor = Arrow.Flight.SQL.commanddescriptor(query)
+
+request = Arrow.Flight.SQL.Generated.ActionCreatePreparedStatementRequest(
+    "select ?",
+    UInt8[],
+)
+action = Arrow.Flight.SQL.action(request)
 ```
 
-`Arrow.Flight.SQL.commanddescriptor` packs the supplied payload into a
-Flight SQL `Any` message and stores it in a `CMD`-type Flight descriptor.
-`Arrow.Flight.SQL.action` uses the same packing rule for Flight actions and
-derives the official action type from names such as
+`Arrow.Flight.SQL.commanddescriptor` packs the supplied typed message or raw
+payload into a Flight SQL `Any` message and stores it in a `CMD`-type Flight
+descriptor. `Arrow.Flight.SQL.action` uses the same packing rule for Flight
+actions and derives the official action type from names such as
 `ActionCreatePreparedStatementRequest` unless the caller supplies an explicit
 `type` keyword.
 
@@ -523,10 +530,10 @@ derives the official action type from names such as
 `app_metadata` contains the Flight SQL update count result; use
 `Arrow.Flight.SQL.doputupdatecount(result)` to decode it.
 
-This is a protocol-packing surface, not a high-level database client. Full
-typed Flight SQL command messages, SQL metadata schemas, external Flight SQL
-interop, and ADBC driver APIs are tracked as follow-up production-core protocol
-work in [Full Arrow Alignment Audit](arrow_alignment_audit.md).
+This is a generated protocol and packing surface, not a high-level database
+client. SQL metadata schemas, external Flight SQL interop, and ADBC driver APIs
+are tracked as follow-up production-core protocol work in
+[Full Arrow Alignment Audit](arrow_alignment_audit.md).
 
 ## Writing arrow data
 

@@ -36,11 +36,11 @@ It currently doesn't include support for:
 Flight RPC status:
   * Experimental `Arrow.Flight` support is available in-tree
   * Requires Julia `1.12+`
-  * Includes generated protocol bindings in the base package for Flight protocol and server/runtime ownership
+  * Includes generated protocol bindings in the base package for Flight protocol, Flight SQL protobuf messages, and server/runtime ownership
   * Keeps the top-level Flight module shell thin, with exports and generated-protocol setup split out of `src/flight/Flight.jl`
   * Includes high-level `FlightData <-> Arrow IPC` helpers for `Arrow.Table`, `Arrow.Stream`, and DoPut payload generation
   * Keeps the Flight IPC conversion layer modular under `src/flight/convert/`, with `src/flight/convert.jl` retained as a thin entrypoint
-  * Owns Flight protocol, descriptor, IPC, and server/runtime surfaces only; `flight_client_runtime_capabilities()` records that package-owned interop and performance proofs run through external Python clients instead of a Julia Flight client runtime
+  * Owns Flight protocol, Flight SQL protocol-packing, descriptor, IPC, and server/runtime surfaces only; `flight_client_runtime_capabilities()` records that package-owned interop and performance proofs run through external Python clients instead of a Julia Flight client runtime
   * Includes a transport-agnostic server core (`Service`, `ServerCallContext`, `ServiceDescriptor`, `MethodDescriptor`) for local Flight method dispatch, path lookup, handler testing, packaged backend capability checks through `flight_server_backend_capabilities(...)`, and shared gRPC-over-HTTP/2 framing helpers for lower-level backends
   * Keeps the transport-agnostic server core modular under `src/flight/server/`, with `src/flight/server.jl` retained as a thin entrypoint
   * Treats `gRPCServer.jl` as the packaged Flight listener transport owner, exposing `Flight.grpcserver_flight_server(...)` once the `gRPCServer.jl` extension is loaded while keeping the core server/runtime layer transport-agnostic

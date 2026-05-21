@@ -26,6 +26,14 @@ function flight_test_sql_protocol_helpers()
           "type.googleapis.com/arrow.flight.protocol.sql.CommandStatementQuery"
     @test Arrow.Flight.SQL.anypayload(descriptor.cmd) == b"select 1"
 
+    typed_query = Arrow.Flight.SQL.Generated.CommandStatementQuery("select 1", UInt8[])
+    typed_descriptor = Arrow.Flight.SQL.commanddescriptor(typed_query)
+    @test typed_descriptor.var"#type" == descriptor_type.CMD
+    @test Arrow.Flight.SQL.anytypeurl(typed_descriptor.cmd) ==
+          "type.googleapis.com/arrow.flight.protocol.sql.CommandStatementQuery"
+    @test Arrow.Flight.SQL.anypayload(typed_descriptor.cmd) ==
+          Arrow.Flight._protocolbytes(typed_query)
+
     full_url = "type.example.test/custom.Command"
     custom_descriptor = Arrow.Flight.SQL.commanddescriptor(full_url, UInt8[0x01])
     @test Arrow.Flight.SQL.anytypeurl(custom_descriptor.cmd) == full_url
@@ -38,6 +46,16 @@ function flight_test_sql_protocol_helpers()
           "type.googleapis.com/arrow.flight.protocol.sql.ActionCreatePreparedStatementRequest"
     @test Arrow.Flight.SQL.anypayload(create_action.body) == b"select ?"
 
+    typed_action = Arrow.Flight.SQL.action(
+        Arrow.Flight.SQL.Generated.ActionCreatePreparedStatementRequest(
+            "select ?",
+            UInt8[],
+        ),
+    )
+    @test getfield(typed_action, Symbol("#type")) == "CreatePreparedStatement"
+    @test Arrow.Flight.SQL.anytypeurl(typed_action.body) ==
+          "type.googleapis.com/arrow.flight.protocol.sql.ActionCreatePreparedStatementRequest"
+
     explicit_action = Arrow.Flight.SQL.action(
         "ActionClosePreparedStatementRequest",
         b"handle";
@@ -49,6 +67,11 @@ function flight_test_sql_protocol_helpers()
     update_result = Arrow.Flight.SQL.doputupdateresult(42)
     @test update_result isa protocol.PutResult
     @test Arrow.Flight.SQL.doputupdatecount(update_result) == 42
+    decoded_update = Arrow.Flight._decodeprotocolbytes(
+        Arrow.Flight.SQL.Generated.DoPutUpdateResult,
+        update_result.app_metadata,
+    )
+    @test decoded_update.record_count == 42
     @test_throws ArgumentError Arrow.Flight.SQL.doputupdateresult(-1)
     @test_throws ArgumentError Arrow.Flight.SQL.commanddescriptor("", UInt8[])
 end

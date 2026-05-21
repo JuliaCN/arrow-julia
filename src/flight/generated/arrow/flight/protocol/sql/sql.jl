@@ -15,11 +15,10 @@
 # specific language governing permissions and limitations
 # under the License.
 
-module protocol
+module sql
 
-import ...google
+import ....google
 
-include("Flight_pb.jl")
-include("sql/sql.jl")
+include("FlightSql_pb.jl")
 
-end # module protocol
+end # module sql

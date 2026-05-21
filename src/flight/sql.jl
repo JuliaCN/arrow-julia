@@ -24,6 +24,7 @@ using ..Flight: Protocol, _decodeprotocolbytes, _protocolbytes
 export FLIGHT_SQL_TYPE_URL_PREFIX,
     AnyMessage,
     DoPutUpdateResult,
+    Generated,
     action,
     actiontype,
     anymessage,
@@ -36,6 +37,15 @@ export FLIGHT_SQL_TYPE_URL_PREFIX,
     typeurl
 
 const FLIGHT_SQL_TYPE_URL_PREFIX = "type.googleapis.com/arrow.flight.protocol.sql."
+const FlightProtocol = Protocol
+const Generated = Protocol.sql
+
+"""
+    Arrow.Flight.SQL.DoPutUpdateResult
+
+Generated Flight SQL `DoPutUpdateResult` payload type.
+"""
+const DoPutUpdateResult = Generated.DoPutUpdateResult
 
 """
     Arrow.Flight.SQL.AnyMessage
@@ -81,45 +91,8 @@ function PB._encoded_size(x::AnyMessage)
     return encoded_size
 end
 
-"""
-    Arrow.Flight.SQL.DoPutUpdateResult
-
-Minimal Flight SQL `DoPutUpdateResult` payload with the number of rows affected
-by an update or ingestion command.
-"""
-struct DoPutUpdateResult
-    record_count::Int64
-end
-
-PB.default_values(::Type{DoPutUpdateResult}) = (; record_count=zero(Int64))
-PB.field_numbers(::Type{DoPutUpdateResult}) = (; record_count=1)
-
-function PB.decode(d::PB.AbstractProtoDecoder, ::Type{<:DoPutUpdateResult})
-    record_count = zero(Int64)
-    while !PB.message_done(d)
-        field_number, wire_type = PB.decode_tag(d)
-        if field_number == 1
-            record_count = PB.decode(d, Int64)
-        else
-            Base.skip(d, wire_type)
-        end
-    end
-    return DoPutUpdateResult(record_count)
-end
-
-function PB.encode(e::PB.AbstractProtoEncoder, x::DoPutUpdateResult)
-    initpos = position(e.io)
-    x.record_count != zero(Int64) && PB.encode(e, 1, x.record_count)
-    return position(e.io) - initpos
-end
-
-function PB._encoded_size(x::DoPutUpdateResult)
-    encoded_size = 0
-    x.record_count != zero(Int64) && (encoded_size += PB._encoded_size(x.record_count, 1))
-    return encoded_size
-end
-
 _bytes(payload::AbstractVector{UInt8}) = Vector{UInt8}(payload)
+_messagename(message) = String(nameof(typeof(message)))
 
 """
     Arrow.Flight.SQL.typeurl(message_name)
@@ -142,6 +115,8 @@ command or action payload.
 function anymessage(message_name::AbstractString, payload::AbstractVector{UInt8}=UInt8[])
     return AnyMessage(typeurl(message_name), _bytes(payload))
 end
+
+anymessage(message) = anymessage(_messagename(message), _protocolbytes(message))
 
 """
     Arrow.Flight.SQL.decodeany(payload)
@@ -166,13 +141,16 @@ function commanddescriptor(
     message_name::AbstractString,
     payload::AbstractVector{UInt8}=UInt8[],
 )
-    descriptor_type = Protocol.var"FlightDescriptor.DescriptorType"
-    return Protocol.FlightDescriptor(
+    descriptor_type = FlightProtocol.var"FlightDescriptor.DescriptorType"
+    return FlightProtocol.FlightDescriptor(
         descriptor_type.CMD,
         _protocolbytes(anymessage(message_name, payload)),
         String[],
     )
 end
+
+commanddescriptor(message) =
+    commanddescriptor(_messagename(message), _protocolbytes(message))
 
 function _default_action_type(message_name::AbstractString)
     name = String(message_name)
@@ -203,8 +181,14 @@ function action(
 )
     action_type = isnothing(type) ? actiontype(message_name) : String(type)
     isempty(action_type) && throw(ArgumentError("Flight SQL action type must not be empty"))
-    return Protocol.Action(action_type, _protocolbytes(anymessage(message_name, payload)))
+    return FlightProtocol.Action(
+        action_type,
+        _protocolbytes(anymessage(message_name, payload)),
+    )
 end
+
+action(message; type::Union{Nothing,AbstractString}=nothing) =
+    action(_messagename(message), _protocolbytes(message); type=type)
 
 """
     Arrow.Flight.SQL.doputupdateresult(record_count)
@@ -215,7 +199,7 @@ Build a Flight `PutResult` whose `app_metadata` contains a Flight SQL
 function doputupdateresult(record_count::Integer)
     record_count >= 0 ||
         throw(ArgumentError("Flight SQL DoPut update record count must be non-negative"))
-    return Protocol.PutResult(_protocolbytes(DoPutUpdateResult(Int64(record_count))))
+    return FlightProtocol.PutResult(_protocolbytes(DoPutUpdateResult(Int64(record_count))))
 end
 
 """
@@ -223,7 +207,7 @@ end
 
 Decode the Flight SQL update row count from a Flight `PutResult`.
 """
-function doputupdatecount(result::Protocol.PutResult)
+function doputupdatecount(result::FlightProtocol.PutResult)
     return _decodeprotocolbytes(DoPutUpdateResult, result.app_metadata).record_count
 end
 
