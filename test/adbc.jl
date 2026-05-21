@@ -21,6 +21,20 @@ using Tables
 
 const ADBC = Arrow.ADBC
 
+function adbc_mock_driver_init(version::Cint, driver::Ptr{Cvoid}, error::Ptr{ADBC.Error})
+    driver == C_NULL && return UInt8(ADBC.STATUS_INVALID_ARGUMENT)
+    version == Cint(ADBC.ADBC_VERSION_1_1_0) || return UInt8(ADBC.STATUS_NOT_IMPLEMENTED)
+    driver_fields = ntuple(
+        index -> index == 1 ? Ptr{Cvoid}(UInt(1)) : Ptr{Cvoid}(C_NULL),
+        fieldcount(ADBC.Driver),
+    )
+    unsafe_store!(Ptr{ADBC.Driver}(driver), ADBC.Driver(driver_fields...))
+    return UInt8(ADBC.STATUS_OK)
+end
+
+const ADBC_MOCK_DRIVER_INIT =
+    @cfunction(adbc_mock_driver_init, UInt8, (Cint, Ptr{Cvoid}, Ptr{ADBC.Error}),)
+
 @testset "ADBC ABI constants and handles" begin
     @test UInt8(ADBC.STATUS_OK) == 0
     @test UInt8(ADBC.STATUS_UNAUTHORIZED) == 14
@@ -66,6 +80,20 @@ const ADBC = Arrow.ADBC
     @test ADBC.statusname(ADBC.STATUS_NOT_IMPLEMENTED) == "STATUS_NOT_IMPLEMENTED"
     @test_throws ADBC.StatusException ADBC.assertok(ADBC.STATUS_NOT_IMPLEMENTED)
     @test_throws ArgumentError ADBC.driverabisize(0)
+end
+
+@testset "ADBC driver initialization ABI" begin
+    driver = Ref(ADBC.Driver())
+    initialized = ADBC.driverinit!(ADBC_MOCK_DRIVER_INIT, driver)
+
+    @test initialized == driver[]
+    @test ADBC.isinitialized(initialized)
+    @test ADBC.driverinit!(ADBC_MOCK_DRIVER_INIT; error=nothing) isa ADBC.Driver
+    @test_throws ArgumentError ADBC.driverinit!(Ptr{Cvoid}(C_NULL))
+    @test_throws ADBC.StatusException ADBC.driverinit!(
+        ADBC_MOCK_DRIVER_INIT;
+        version=ADBC.ADBC_VERSION_1_0_0,
+    )
 end
 
 @testset "ADBC statement result stream boundary" begin

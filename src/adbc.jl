@@ -91,6 +91,7 @@ export ADBC_VERSION_1_0_0,
     OPTION_VALUE_ENABLED,
     assertok,
     driverabisize,
+    driverinit!,
     error_message,
     importstream,
     isinitialized,
@@ -368,6 +369,41 @@ function driverabisize(version::Integer)
     else
         throw(ArgumentError("unsupported ADBC driver ABI version: $version"))
     end
+end
+
+"""
+    Arrow.ADBC.driverinit!(init, driver=Ref(Arrow.ADBC.Driver()); version=Arrow.ADBC.ADBC_VERSION_1_1_0, error=Ref(Arrow.ADBC.Error()))
+
+Call an ADBC `AdbcDriverInitFunc` function pointer and return the initialized
+driver table.
+
+The official ABI accepts `(int version, void *driver, AdbcError *error)`. This
+wrapper validates the requested ABI version, passes a `Ref{Driver}` through the
+same pointer slot, and raises `StatusException` for non-OK ADBC statuses.
+"""
+function driverinit!(
+    init::Ptr{Cvoid},
+    driver::Ref{Driver}=Ref(Driver());
+    version::Integer=ADBC_VERSION_1_1_0,
+    error::Union{Ref{Error},Nothing}=Ref(Error()),
+)
+    init == C_NULL &&
+        throw(ArgumentError("ADBC driver init function pointer must not be C_NULL"))
+    driverabisize(version)
+    status = if error === nothing
+        ccall(
+            init,
+            UInt8,
+            (Cint, Ref{Driver}, Ptr{Error}),
+            Cint(version),
+            driver,
+            Ptr{Error}(C_NULL),
+        )
+    else
+        ccall(init, UInt8, (Cint, Ref{Driver}, Ref{Error}), Cint(version), driver, error)
+    end
+    assertok(StatusCode(status), error === nothing ? Error() : error[])
+    return driver[]
 end
 
 """
