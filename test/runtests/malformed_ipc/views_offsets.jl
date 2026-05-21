@@ -344,6 +344,54 @@
         "UTF-8 view",
     )
 
+    external_utf8_views = Arrow.ViewElement[Arrow.ViewElement(
+        Int32(Arrow.VIEW_INLINE_BYTES + 1),
+        Int32(0),
+        Int32(0),
+        Int32(0),
+    ),]
+    external_utf8 = Arrow.View{String}(
+        UInt8[],
+        Arrow.ValidityBitmap(fill(true, 1)),
+        external_utf8_views,
+        collect(reinterpret(UInt8, external_utf8_views)),
+        [fill(UInt8(0x61), Arrow.VIEW_INLINE_BYTES + 1)],
+        1,
+        nothing,
+    )
+    external_utf8_rb = first(
+        batch.msg.header for batch in Arrow.BatchIterator(
+            Arrow.ArrowBlob(
+                read(
+                    Arrow.tobuffer(
+                        native_arrow_vector_table(:values, external_utf8);
+                        ntasks=0,
+                    ),
+                ),
+                1,
+                nothing,
+            ),
+        ) if batch.msg.header isa Arrow.Meta.RecordBatch
+    )
+    @test_throws ArgumentError(
+        "record batch is missing variadic buffer count 2; only 1 counts are declared",
+    ) Arrow._record_batch_variadic_count(external_utf8_rb, 2)
+    missing_variadic_count = patched_record_batch_bytes(
+        external_utf8,
+        (bytes, batch, rb) -> begin
+            raw = collect(reinterpret(UInt8, UInt32[0]))
+            copyto!(bytes, rb.variadicBufferCounts.pos - 3, raw, 1, length(raw))
+        end,
+    )
+    assert_argument_error(
+        () -> Arrow.validate(missing_variadic_count),
+        "record batch is missing variadic buffer count 1",
+    )
+    assert_argument_error(
+        () -> Arrow.validate(missing_variadic_count; stream=true),
+        "record batch is missing variadic buffer count 1",
+    )
+
     list_view = Arrow.ListView{AbstractVector{Int32},Int32,typeof(item)}(
         UInt8[],
         UInt8[],

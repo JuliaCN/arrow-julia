@@ -163,7 +163,8 @@ function build(
     inline = reinterpret(UInt8, views)  # reuse the (possibly realigned) memory backing `views`
     bufferidx += 1
     buffers = Vector{UInt8}[]
-    nvariadic = _viewbuffercount(validity, views, rb.variadicBufferCounts[varbufferidx])
+    nvariadic =
+        _viewbuffercount(validity, views, _record_batch_variadic_count(rb, varbufferidx))
     for i = 1:nvariadic
         buffer = _record_batch_buffer(rb, bufferidx)
         _, A = reinterp(UInt8, batch, buffer, rb.compression)

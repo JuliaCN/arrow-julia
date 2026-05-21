@@ -134,6 +134,17 @@ function _record_batch_node(rb, nodeidx::Integer)
     return nodes[nodeidx]
 end
 
+function _record_batch_variadic_count(rb, varbufferidx::Integer)
+    counts = rb.variadicBufferCounts
+    declared = counts === nothing ? 0 : length(counts)
+    1 <= varbufferidx <= declared || throw(
+        ArgumentError(
+            "record batch is missing variadic buffer count $varbufferidx; only $declared counts are declared",
+        ),
+    )
+    return counts[varbufferidx]
+end
+
 function _assert_reinterp_element_width(::Type{T}, len::Integer) where {T}
     width = sizeof(T)
     width == 1 && return nothing

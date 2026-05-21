@@ -48,8 +48,9 @@ lead to unsafe indexing or misleading semantic interpretation:
 - IPC RecordBatch buffer offsets, lengths, and fixed-width element alignment
   are validated against the declared message body before borrowed buffers are
   exposed;
-- missing IPC RecordBatch field-node and buffer declarations are rejected with
-  stable diagnostics before low-level bounds errors can escape;
+- missing IPC RecordBatch field-node, variadic-count, and buffer declarations
+  are rejected with stable diagnostics before low-level bounds errors can
+  escape;
 - compressed IPC buffers validate their encoded body length, 8-byte
   uncompressed-length header, and allowed uncompressed length sentinel before
   decompression;
