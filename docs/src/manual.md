@@ -293,14 +293,16 @@ client test design.
 The focused IPC performance receipt is `test/ipc_performance_report.jl`. It
 generates a representative primitive, boolean, UTF-8, and binary table, warms
 the runtime path, then reports Arrow IPC stream and file write timings,
-metadata-read timings, physical buffer-scan timings, materialized element-scan
-timings, allocations, byte sizes, throughput, row counts, and checksums.
-Metadata-read, physical scan, and materialized scan timings are intentionally
-separate: constructing `Arrow.Table` or `Arrow.Stream` is a lightweight
-metadata-wrapping path, the physical scan receipt proves borrowed buffers can be
-visited without element materialization, and the materialized scan receipt keeps
-ordinary consumer access visible without turning the IPC support claim into a
-full application benchmark.
+direct `Arrow.tobuffer` fast-path timings, metadata-read timings, physical
+buffer-scan timings, materialized element-scan timings, allocations, byte
+sizes, throughput, row counts, and checksums. Metadata-read, physical scan, and
+materialized scan timings are intentionally separate: constructing
+`Arrow.Table` or `Arrow.Stream` is a lightweight metadata-wrapping path, the
+physical scan receipt proves borrowed buffers can be visited without element
+materialization, and the materialized scan receipt keeps ordinary consumer
+access visible without turning the IPC support claim into a full application
+benchmark. The direct `Arrow.tobuffer` receipt tracks the single-partition
+fast path separately from the general `Arrow.write(io, ...)` path.
 
 ```julia
 julia --project=test test/ipc_performance_report.jl

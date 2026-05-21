@@ -118,6 +118,9 @@ function _message_body(msg::ArrowParent.Message, alignment::Integer)
     return _takeflightbody!(io)
 end
 
+_flightdata_bytes(bytes::Vector{UInt8}) = bytes
+_flightdata_bytes(bytes::AbstractVector{UInt8}) = Vector{UInt8}(bytes)
+
 function _flightdata_message(
     msg::ArrowParent.Message;
     descriptor::Union{Nothing,Protocol.FlightDescriptor}=nothing,
@@ -129,8 +132,8 @@ function _flightdata_message(
         throw(ArgumentError("FlightData body length mismatch while encoding Arrow IPC"))
     return Protocol.FlightData(
         descriptor,
-        Vector{UInt8}(msg.msgflatbuf),
-        Vector{UInt8}(app_metadata),
+        _flightdata_bytes(msg.msgflatbuf),
+        _flightdata_bytes(app_metadata),
         body,
     )
 end

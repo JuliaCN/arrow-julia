@@ -44,6 +44,11 @@ function write_ipc_bytes(source; file::Bool)
     return take!(io)
 end
 
+function direct_tobuffer_bytes(source)
+    io = Arrow.tobuffer(source; file=false)
+    return take!(io)
+end
+
 function stream_to_batches(bytes::Vector{UInt8})
     return collect(Arrow.Stream(bytes; convert=false))
 end
@@ -180,8 +185,10 @@ end
 
 function warmup_ipc()
     source = ipc_perf_table(16)
+    direct_source = (id=source.id, score=source.score, flag=source.flag)
     stream_bytes = write_ipc_bytes(source; file=false)
     file_bytes = write_ipc_bytes(source; file=true)
+    direct_tobuffer_bytes(direct_source)
     stream_batches = stream_to_batches(stream_bytes)
     file_table = Arrow.Table(file_bytes; convert=false)
     physical_checksum(stream_batches)
@@ -199,19 +206,24 @@ function main()
 
     source, prepare_ms, prepare_alloc = measure(() -> ipc_perf_table(rows))
     expected_checksum = checksum(source)
+    direct_source = (id=source.id, score=source.score, flag=source.flag)
 
     stream_bytes, stream_write_ms, stream_write_alloc =
         measure(() -> write_ipc_bytes(source; file=false))
     file_bytes, file_write_ms, file_write_alloc =
         measure(() -> write_ipc_bytes(source; file=true))
+    direct_bytes, direct_tobuffer_ms, direct_tobuffer_alloc =
+        measure(() -> direct_tobuffer_bytes(direct_source))
 
     stream_batches, stream_read_ms, stream_read_alloc =
         measure(() -> stream_to_batches(stream_bytes))
     file_table, file_read_ms, file_read_alloc =
         measure(() -> Arrow.Table(file_bytes; convert=false))
+    direct_table = Arrow.Table(direct_bytes; convert=false)
 
     assert_row_count(stream_batches, rows, "stream_read")
     assert_row_count(file_table, rows, "file_read")
+    assert_row_count(direct_table, rows, "direct_tobuffer_read")
 
     stream_physical_checksum, stream_physical_scan_ms, stream_physical_scan_alloc =
         measure(() -> physical_checksum(stream_batches))
@@ -235,6 +247,7 @@ function main()
     println("rows=$(rows)")
     println("stream_bytes=$(length(stream_bytes))")
     println("file_bytes=$(length(file_bytes))")
+    println("direct_tobuffer_bytes=$(length(direct_bytes))")
     println("expected_checksum=$(expected_checksum)")
     println("stream_physical_checksum=$(stream_physical_checksum)")
     println("file_physical_checksum=$(file_physical_checksum)")
@@ -245,6 +258,8 @@ function main()
     print_throughput("stream_write", length(stream_bytes), stream_write_ms)
     print_measure("file_write", file_write_ms, file_write_alloc)
     print_throughput("file_write", length(file_bytes), file_write_ms)
+    print_measure("direct_tobuffer", direct_tobuffer_ms, direct_tobuffer_alloc)
+    print_throughput("direct_tobuffer", length(direct_bytes), direct_tobuffer_ms)
     print_measure("stream_read", stream_read_ms, stream_read_alloc)
     print_throughput("stream_read", length(stream_bytes), stream_read_ms)
     print_measure("file_read", file_read_ms, file_read_alloc)
@@ -271,6 +286,11 @@ function main()
         "file_write_alloc_bytes",
         file_write_alloc,
         optional_int_limit("ARROW_IPC_MAX_FILE_WRITE_ALLOC_BYTES"),
+    )
+    enforce_max(
+        "direct_tobuffer_alloc_bytes",
+        direct_tobuffer_alloc,
+        optional_int_limit("ARROW_IPC_MAX_DIRECT_TOBUFFER_ALLOC_BYTES"),
     )
     enforce_max(
         "stream_read_alloc_bytes",
@@ -311,6 +331,11 @@ function main()
         "file_write_ms",
         file_write_ms,
         optional_float_limit("ARROW_IPC_MAX_FILE_WRITE_MS"),
+    )
+    enforce_max(
+        "direct_tobuffer_ms",
+        direct_tobuffer_ms,
+        optional_float_limit("ARROW_IPC_MAX_DIRECT_TOBUFFER_MS"),
     )
     enforce_max(
         "stream_read_ms",

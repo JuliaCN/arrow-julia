@@ -395,14 +395,6 @@ end
     end
 end
 
-@inline function _sizehint_iobuffer!(io::IO, n::Integer)
-    io isa IOBuffer || return nothing
-    data = getfield(io, :data)
-    data isa Vector{UInt8} || return nothing
-    sizehint!(data, max(length(data), position(io) + n))
-    return nothing
-end
-
 function _writearray_tolist_bitstype(io::IO, ::Type{T}, col::ToList{T,false}) where {T}
     n = 0
     off = _tolistoffset(col)

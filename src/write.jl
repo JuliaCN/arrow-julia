@@ -588,6 +588,7 @@ Tables.getcolumn(x::ToArrowTable, i::Int) = x.cols[i]
 
 function Base.write(io::IO, msg::Message, blocks, sch, alignment)
     metalen = padding(length(msg.msgflatbuf), alignment)
+    _sizehint_iobuffer!(io, 8 + metalen + msg.bodylen)
     @debug "writing message: metalen = $metalen, bodylen = $(msg.bodylen), isrecordbatch = $(msg.isrecordbatch), headerType = $(msg.headerType)"
     if msg.blockmsg
         push!(
