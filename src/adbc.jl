@@ -26,6 +26,7 @@ database client.
 module ADBC
 
 using ..CData
+using Libdl
 
 export ADBC_VERSION_1_0_0,
     ADBC_VERSION_1_1_0,
@@ -41,6 +42,8 @@ export ADBC_VERSION_1_0_0,
     Database,
     Connection,
     Driver,
+    DriverLibrary,
+    LoadedDriver,
     Partitions,
     Statement,
     STATUS_ALREADY_EXISTS,
@@ -90,11 +93,16 @@ export ADBC_VERSION_1_0_0,
     OPTION_VALUE_DISABLED,
     OPTION_VALUE_ENABLED,
     assertok,
+    closedriver!,
+    defaultdriverentrypoint,
     driverabisize,
+    driverentrypoint,
     driverinit!,
     error_message,
     importstream,
     isinitialized,
+    loaddriver,
+    opendriver,
     releaseable,
     resultstream,
     rowsaffected,
@@ -328,6 +336,7 @@ Driver() = Driver(ntuple(_ -> Ptr{Cvoid}(C_NULL), fieldcount(Driver))...)
 const DRIVER_1_0_0_SIZE =
     fieldoffset(Driver, findfirst(==(:error_get_detail_count), fieldnames(Driver)))
 const DRIVER_1_1_0_SIZE = sizeof(Driver)
+const DRIVER_DLOPEN_FLAGS = Libdl.RTLD_LAZY | Libdl.RTLD_LOCAL
 
 isinitialized(x::Union{Database,Connection,Statement}) = x.private_data != C_NULL
 isinitialized(x::Partitions) = x.private_data != C_NULL
@@ -404,6 +413,113 @@ function driverinit!(
     end
     assertok(StatusCode(status), error === nothing ? Error() : error[])
     return driver[]
+end
+
+mutable struct DriverLibrary
+    handle::Ptr{Cvoid}
+    path::String
+    entrypoint::Symbol
+end
+
+struct LoadedDriver
+    library::DriverLibrary
+    driver::Driver
+end
+
+Base.isopen(library::DriverLibrary) = library.handle != C_NULL
+
+function _pascalpart(part::AbstractString)
+    text = lowercase(part)
+    isempty(text) && return ""
+    return uppercasefirst(text)
+end
+
+"""
+    Arrow.ADBC.defaultdriverentrypoint(path)
+
+Derive the recommended ADBC driver initialization symbol from a shared-library
+path.
+"""
+function defaultdriverentrypoint(path::AbstractString)
+    base = basename(path)
+    while true
+        stem, ext = splitext(base)
+        isempty(ext) && break
+        base = stem
+    end
+    startswith(base, "lib") && (base = base[4:end])
+    parts = filter(!isempty, split(base, r"[^A-Za-z0-9]+"))
+    isempty(parts) &&
+        throw(ArgumentError("cannot derive ADBC driver entrypoint from $path"))
+    name = join(_pascalpart.(parts))
+    startswith(lowercase(name), "adbc") || (name = "Adbc" * name)
+    return Symbol(name * "Init")
+end
+
+_entrypointsymbol(entrypoint::Symbol) = entrypoint
+_entrypointsymbol(entrypoint::AbstractString) = Symbol(entrypoint)
+
+"""
+    Arrow.ADBC.opendriver(path; entrypoint=Arrow.ADBC.defaultdriverentrypoint(path), flags=...)
+
+Open an ADBC driver shared library and remember the initialization entrypoint
+that should be resolved from it.
+"""
+function opendriver(
+    path::AbstractString;
+    entrypoint::Union{Symbol,AbstractString}=defaultdriverentrypoint(path),
+    flags::Integer=DRIVER_DLOPEN_FLAGS,
+)
+    return DriverLibrary(
+        Libdl.dlopen(path, flags),
+        String(path),
+        _entrypointsymbol(entrypoint),
+    )
+end
+
+"""
+    Arrow.ADBC.driverentrypoint(library)
+
+Resolve the configured `AdbcDriverInitFunc` entrypoint from an open driver
+library.
+"""
+function driverentrypoint(library::DriverLibrary)
+    Base.isopen(library) || throw(ArgumentError("ADBC driver library is closed"))
+    return Libdl.dlsym(library.handle, library.entrypoint)
+end
+
+function closedriver!(library::DriverLibrary)
+    Base.isopen(library) || return nothing
+    Libdl.dlclose(library.handle)
+    library.handle = Ptr{Cvoid}(C_NULL)
+    return nothing
+end
+
+Base.close(library::DriverLibrary) = closedriver!(library)
+Base.close(driver::LoadedDriver) = closedriver!(driver.library)
+
+"""
+    Arrow.ADBC.loaddriver(path; entrypoint=Arrow.ADBC.defaultdriverentrypoint(path), version=Arrow.ADBC.ADBC_VERSION_1_1_0)
+
+Open an ADBC driver library, resolve its initialization entrypoint, and call
+`driverinit!`. The returned `LoadedDriver` keeps the shared library handle alive
+next to the initialized driver function table.
+"""
+function loaddriver(
+    path::AbstractString;
+    entrypoint::Union{Symbol,AbstractString}=defaultdriverentrypoint(path),
+    version::Integer=ADBC_VERSION_1_1_0,
+    flags::Integer=DRIVER_DLOPEN_FLAGS,
+    error::Union{Ref{Error},Nothing}=Ref(Error()),
+)
+    library = opendriver(path; entrypoint=entrypoint, flags=flags)
+    try
+        driver = driverinit!(driverentrypoint(library); version=version, error=error)
+        return LoadedDriver(library, driver)
+    catch
+        closedriver!(library)
+        rethrow()
+    end
 end
 
 """

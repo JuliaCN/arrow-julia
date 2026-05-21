@@ -17,6 +17,7 @@
 
 using Test
 using Arrow
+using Libdl
 using Tables
 
 const ADBC = Arrow.ADBC
@@ -34,6 +35,53 @@ end
 
 const ADBC_MOCK_DRIVER_INIT =
     @cfunction(adbc_mock_driver_init, UInt8, (Cint, Ptr{Cvoid}, Ptr{ADBC.Error}),)
+
+function build_adbc_mock_driver_library()
+    directory = mktempdir()
+    source = joinpath(directory, "adbc_mock_driver.c")
+    output = joinpath(directory, "libadbc_driver_sqlite.$(Libdl.dlext)")
+    write(
+        source,
+        raw"""
+#include <stdint.h>
+
+#define ADBC_VERSION_1_1_0 1001000
+#define ADBC_STATUS_OK 0
+#define ADBC_STATUS_NOT_IMPLEMENTED 2
+#define ADBC_STATUS_INVALID_ARGUMENT 5
+
+struct AdbcError {
+    const char* message;
+    int32_t vendor_code;
+    char sqlstate[5];
+    void (*release)(struct AdbcError*);
+    void* private_data;
+    void* private_driver;
+};
+
+#if defined(_WIN32)
+__declspec(dllexport)
+#else
+__attribute__((visibility("default")))
+#endif
+uint8_t AdbcDriverSqliteInit(int version, void* driver, struct AdbcError* error) {
+    (void)error;
+    if (driver == 0) {
+        return ADBC_STATUS_INVALID_ARGUMENT;
+    }
+    if (version != ADBC_VERSION_1_1_0) {
+        return ADBC_STATUS_NOT_IMPLEMENTED;
+    }
+    ((void**)driver)[0] = (void*)(uintptr_t)1;
+    return ADBC_STATUS_OK;
+}
+""",
+    )
+    cc = get(ENV, "CC", "cc")
+    shared_flag = Sys.isapple() ? "-dynamiclib" : "-shared"
+    run(`$cc $shared_flag -fPIC $source -o $output`)
+    return output
+end
 
 @testset "ADBC ABI constants and handles" begin
     @test UInt8(ADBC.STATUS_OK) == 0
@@ -92,6 +140,35 @@ end
     @test_throws ArgumentError ADBC.driverinit!(Ptr{Cvoid}(C_NULL))
     @test_throws ADBC.StatusException ADBC.driverinit!(
         ADBC_MOCK_DRIVER_INIT;
+        version=ADBC.ADBC_VERSION_1_0_0,
+    )
+end
+
+@testset "ADBC driver library resolution" begin
+    @test ADBC.defaultdriverentrypoint("/tmp/libadbc_driver_sqlite.so.2.0.0") ==
+          :AdbcDriverSqliteInit
+    @test ADBC.defaultdriverentrypoint("adbc_driver_sqlite.dll") == :AdbcDriverSqliteInit
+    @test ADBC.defaultdriverentrypoint("proprietary_driver.dll") ==
+          :AdbcProprietaryDriverInit
+
+    library_path = build_adbc_mock_driver_library()
+    library = ADBC.opendriver(library_path)
+    @test Base.isopen(library)
+    @test library.entrypoint == :AdbcDriverSqliteInit
+    @test ADBC.driverentrypoint(library) != C_NULL
+    ADBC.closedriver!(library)
+    @test !Base.isopen(library)
+    @test_throws ArgumentError ADBC.driverentrypoint(library)
+
+    loaded = ADBC.loaddriver(library_path)
+    @test loaded.library.path == library_path
+    @test loaded.library.entrypoint == :AdbcDriverSqliteInit
+    @test Base.isopen(loaded.library)
+    @test ADBC.isinitialized(loaded.driver)
+    close(loaded)
+    @test !Base.isopen(loaded.library)
+    @test_throws ADBC.StatusException ADBC.loaddriver(
+        library_path;
         version=ADBC.ADBC_VERSION_1_0_0,
     )
 end

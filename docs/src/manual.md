@@ -551,6 +551,8 @@ Arrow.ADBC.Statement()
 Arrow.ADBC.Driver()
 Arrow.ADBC.driverabisize(Arrow.ADBC.ADBC_VERSION_1_1_0)
 Arrow.ADBC.driverinit!(driver_init_ptr)
+Arrow.ADBC.opendriver("/path/to/libadbc_driver_sqlite.so")
+Arrow.ADBC.loaddriver("/path/to/libadbc_driver_sqlite.so")
 ```
 
 `driverinit!` calls an ADBC `AdbcDriverInitFunc` function pointer with the
@@ -558,6 +560,11 @@ official `(version, driver, error)` ABI and returns the initialized driver
 table. This is the narrow function-pointer boundary that a future driver
 manager or package extension can use after it has resolved a driver entry
 point.
+
+`opendriver` and `loaddriver` provide the low-level driver-manager boundary:
+open a shared library, derive or accept the ADBC init entrypoint, resolve it
+with `dlsym`, and initialize the driver table. They intentionally stop before
+database, connection, statement, and ingestion wrappers.
 
 ADBC statement execution returns an Arrow C Stream plus a rows-affected count.
 `Arrow.ADBC.importstream(stream_ptr; rows_affected)` borrows that result stream
@@ -569,11 +576,11 @@ stream = Arrow.ADBC.resultstream(result)
 rows = Arrow.ADBC.rowsaffected(result)
 ```
 
-This is an ABI, driver-initialization, constants, and result-stream boundary.
-It does not discover or dynamically load ADBC driver libraries, execute
-statements, or provide a high-level database client. Driver loading, query
-execution, bulk ingestion, cancellation, partitioned result reads, and external
-driver interop remain dedicated ADBC follow-up work.
+This is an ABI, driver-loading, constants, and result-stream boundary. It does
+not execute statements or provide a high-level database client. Query
+execution, bulk ingestion, cancellation, partitioned result reads, external
+driver interop, and driver-specific performance receipts remain dedicated ADBC
+follow-up work.
 
 ## Writing arrow data
 
