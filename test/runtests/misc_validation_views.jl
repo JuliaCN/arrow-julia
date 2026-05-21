@@ -83,6 +83,11 @@
     item = Tables.getcolumn(Arrow.Table(Arrow.tobuffer((item=Int32[1, 2, 3],))), :item)
     validity = Arrow.ValidityBitmap(fill(true, 2))
 
+    valid_bytes = read(Arrow.tobuffer((id=Int32[1, 2], label=["a", "b"])))
+    @test isnothing(Arrow.validate(valid_bytes))
+    @test isnothing(Arrow.validate(IOBuffer(valid_bytes)))
+    @test isnothing(Arrow.validate([valid_bytes]))
+
     descending = Arrow.List{Vector{Int32},Int32,typeof(item)}(
         UInt8[],
         validity,
@@ -95,6 +100,12 @@
         () -> Arrow.Table(
             Arrow.tobuffer(native_arrow_vector_table(:values, descending); ntasks=0);
             convert=false,
+        ),
+        "offsets must be monotonically increasing",
+    )
+    assert_argument_error(
+        () -> Arrow.validate(
+            Arrow.tobuffer(native_arrow_vector_table(:values, descending); ntasks=0),
         ),
         "offsets must be monotonically increasing",
     )

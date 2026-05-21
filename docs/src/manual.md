@@ -81,6 +81,11 @@ Apart from letting other packages have all the fun, an `Arrow.Table` itself can 
 * `for col in tbl`: iterate through columns in the table
 * `AbstractDict` methods like `haskey(tbl, :col1)`, `get(tbl, :col1, nothing)`, `keys(tbl)`, or `values(tbl)`
 
+For untrusted IPC inputs, `Arrow.validate(file_or_bytes; convert=false)` runs
+the same reader-side structural checks as `Arrow.Table` and returns `nothing`
+when validation succeeds. Malformed metadata or buffers throw the same
+diagnostic `ArgumentError` that the table reader would throw.
+
 ### Arrow types
 
 In the arrow data format, specific logical types are supported, a list of which can be found [here](https://arrow.apache.org/docs/status.html#data-types). These include booleans, integers of various bit widths, floats, decimals, time types, and binary/string. While most of these map naturally to types builtin to Julia itself, there are a few cases where the definitions are slightly different, and in these cases, by default, they are converted to more "friendly" Julia types (this auto conversion can be avoided by passing `convert=false` to `Arrow.Table`, like `Arrow.Table(file; convert=false)`). Examples of arrow to julia type mappings include:
