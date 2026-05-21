@@ -33,6 +33,13 @@ Modules = [Arrow.Flight]
 Order   = [:type, :function]
 ```
 
+## Flight SQL
+
+```@autodocs
+Modules = [Arrow.Flight.SQL]
+Order   = [:type, :function]
+```
+
 ## C Data Interface
 
 ```@docs

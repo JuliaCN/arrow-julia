@@ -500,6 +500,34 @@ request-streaming C-wrapper work stays deferred.
 See [Production Performance Gates](production_performance_gates.md) for the
 deployment-local throughput floor profile.
 
+### Flight SQL Protocol Helpers
+
+Flight SQL reuses Flight RPC methods with command and action payloads packed as
+`google.protobuf.Any` messages. Arrow.jl exposes the low-level
+`Arrow.Flight.SQL` helper boundary for protocol assembly without requiring
+callers to manually build the Flight `CMD` descriptor envelope:
+
+```julia
+descriptor = Arrow.Flight.SQL.commanddescriptor("CommandStatementQuery", query_bytes)
+action = Arrow.Flight.SQL.action("ActionCreatePreparedStatementRequest", request_bytes)
+```
+
+`Arrow.Flight.SQL.commanddescriptor` packs the supplied payload into a
+Flight SQL `Any` message and stores it in a `CMD`-type Flight descriptor.
+`Arrow.Flight.SQL.action` uses the same packing rule for Flight actions and
+derives the official action type from names such as
+`ActionCreatePreparedStatementRequest` unless the caller supplies an explicit
+`type` keyword.
+
+`Arrow.Flight.SQL.doputupdateresult(count)` builds a Flight `PutResult` whose
+`app_metadata` contains the Flight SQL update count result; use
+`Arrow.Flight.SQL.doputupdatecount(result)` to decode it.
+
+This is a protocol-packing surface, not a high-level database client. Full
+typed Flight SQL command messages, SQL metadata schemas, external Flight SQL
+interop, and ADBC driver APIs are tracked as follow-up production-core protocol
+work in [Full Arrow Alignment Audit](arrow_alignment_audit.md).
+
 ## Writing arrow data
 
 Ok, so that's a pretty good rundown of *reading* arrow data, but how do you *produce* arrow data? Enter `Arrow.write`.
