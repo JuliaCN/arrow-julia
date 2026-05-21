@@ -93,6 +93,25 @@ function _assert_bool_value_byte_count(available::Integer, len::Integer, name::S
     return nothing
 end
 
+function _assert_record_batch_buffer_bounds(batch, buffer, bufferidx=nothing)
+    label = bufferidx === nothing ? "record batch buffer" : "record batch buffer $bufferidx"
+    buffer.offset >= 0 || throw(ArgumentError("$label offset must be non-negative"))
+    buffer.length >= 0 || throw(ArgumentError("$label length must be non-negative"))
+    body_length = batch.msg.bodyLength
+    buffer.offset <= body_length || throw(
+        ArgumentError(
+            "$label offset $(buffer.offset) exceeds record batch body length $body_length",
+        ),
+    )
+    remaining = body_length - buffer.offset
+    buffer.length <= remaining || throw(
+        ArgumentError(
+            "$label length $(buffer.length) exceeds remaining record batch body bytes $remaining",
+        ),
+    )
+    return nothing
+end
+
 function build(field::Meta.Field, batch, rb, de, nodeidx, bufferidx, varbufferidx, convert)
     name = Symbol(field.name)
     nodeidx <= length(rb.nodes) ||
@@ -141,6 +160,7 @@ end
 
 function buildbitmap(batch, rb, nodeidx, bufferidx)
     buffer = rb.buffers[bufferidx]
+    _assert_record_batch_buffer_bounds(batch, buffer, bufferidx)
     voff = batch.pos + buffer.offset
     node = rb.nodes[nodeidx]
     if rb.compression === nothing
@@ -194,6 +214,7 @@ function uncompress(ptr::Ptr{UInt8}, buffer, compression)
 end
 
 function reinterp(::Type{T}, batch, buf, compression) where {T}
+    _assert_record_batch_buffer_bounds(batch, buf)
     ptr = pointer(batch.bytes, batch.pos + buf.offset)
     bytes = batch.bytes
     len = buf.length

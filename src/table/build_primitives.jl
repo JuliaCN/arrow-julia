@@ -65,6 +65,7 @@ function build(
     T = juliaeltype(f, nothing, false)
     @debug "storage type for primitive: T = $T"
     buffer = rb.buffers[bufferidx]
+    _assert_record_batch_buffer_bounds(batch, buffer, bufferidx)
     voff = batch.pos + buffer.offset
     node = rb.nodes[nodeidx]
     if rb.compression === nothing
