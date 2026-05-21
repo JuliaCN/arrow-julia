@@ -59,6 +59,8 @@ lead to unsafe indexing or misleading semantic interpretation:
 - DictionaryBatch messages must follow a schema that declares the referenced
   dictionary id, so malformed dictionary ordering and unknown ids fail with
   stable diagnostics instead of low-level lookup errors;
+- Flight IPC conversion applies the same dictionary-id validation before
+  accepting dictionary batches from FlightData streams;
 - compressed IPC buffers validate their encoded body length, 8-byte
   uncompressed-length header, and allowed uncompressed length sentinel before
   decompression;

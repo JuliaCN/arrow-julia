@@ -70,6 +70,35 @@ using UUIDs
     @test table_error isa ArgumentError
     @test occursin(missing_schema_fragment, sprint(showerror, table_error))
 
+    dictionary_messages =
+        Arrow.Flight.flightdata((value=PooledArray(["alpha", "beta", "alpha"]),);)
+    non_dictionary_messages = Arrow.Flight.flightdata((value=["alpha", "beta"],))
+    non_dictionary_schema = Arrow.Flight.Protocol.SchemaResult(
+        Arrow.Flight.schemaipc(first(non_dictionary_messages))[5:end],
+    )
+    dictionary_stream_error = try
+        collect(Arrow.Flight.stream(dictionary_messages[2:end]; schema=non_dictionary_schema))
+        nothing
+    catch err
+        err
+    end
+    @test dictionary_stream_error isa ArgumentError
+    @test occursin(
+        "dictionary batch id 1 has no schema dictionary field",
+        sprint(showerror, dictionary_stream_error),
+    )
+    dictionary_table_error = try
+        Arrow.Flight.table(dictionary_messages[2:end]; schema=non_dictionary_schema)
+        nothing
+    catch err
+        err
+    end
+    @test dictionary_table_error isa ArgumentError
+    @test occursin(
+        "dictionary batch id 1 has no schema dictionary field",
+        sprint(showerror, dictionary_table_error),
+    )
+
     empty_tbl = Arrow.Flight.table(
         Arrow.Flight.Protocol.FlightData[];
         schema=Arrow.Flight.Protocol.SchemaResult(schema_bytes[5:end]),

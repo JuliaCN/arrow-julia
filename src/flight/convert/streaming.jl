@@ -207,32 +207,24 @@ function _store_dictionary_batch!(
     @lock getfield(x, :dictencodings) begin
         dictencodings = getfield(x, :dictencodings)[]
         if haskey(dictencodings, id) && header.isDelta
-            field = getfield(x, :dictencoded)[id]
-            values, _, _, _ = ArrowParent.build(
+            field = ArrowParent._dictionary_encoded_field(getfield(x, :dictencoded), id)
+            values = ArrowParent._build_dictionary_values(
                 field,
-                field.type,
                 batch,
                 recordbatch,
                 getfield(x, :dictencodings),
-                Int64(1),
-                Int64(1),
-                Int64(1),
                 getfield(x, :convert),
             )
             dictencoding = dictencodings[id]
             append!(dictencoding.data, values)
             return
         end
-        field = getfield(x, :dictencoded)[id]
-        values, _, _, _ = ArrowParent.build(
+        field = ArrowParent._dictionary_encoded_field(getfield(x, :dictencoded), id)
+        values = ArrowParent._build_dictionary_values(
             field,
-            field.type,
             batch,
             recordbatch,
             getfield(x, :dictencodings),
-            Int64(1),
-            Int64(1),
-            Int64(1),
             getfield(x, :convert),
         )
         # Materialize dictionary values eagerly so delta batches can extend one
