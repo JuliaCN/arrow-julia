@@ -51,6 +51,34 @@
         error("record batch not found")
     end
 
+    function truncate_first_record_batch_buffers!(bytes, declared_count::UInt32)
+        blob = Arrow.ArrowBlob(bytes, 1, nothing)
+        for batch in Arrow.BatchIterator(blob)
+            rb = batch.msg.header
+            rb isa Arrow.Meta.RecordBatch || continue
+            raw = collect(reinterpret(UInt8, UInt32[declared_count]))
+            copyto!(bytes, rb.buffers.pos - 3, raw, 1, length(raw))
+            return bytes
+        end
+        error("record batch not found")
+    end
+
+    function first_record_batch_header(bytes)
+        blob = Arrow.ArrowBlob(bytes, 1, nothing)
+        for batch in Arrow.BatchIterator(blob)
+            rb = batch.msg.header
+            rb isa Arrow.Meta.RecordBatch && return rb
+        end
+        error("record batch not found")
+    end
+
+    @test_throws ArgumentError(
+        "record batch is missing buffer 3; only 2 buffers are declared",
+    ) Arrow._record_batch_buffer(
+        first_record_batch_header(read(Arrow.tobuffer((values=Int32[1],); ntasks=0))),
+        3,
+    )
+
     buffer_offset_beyond_body = patch_first_record_batch_buffer!(
         read(Arrow.tobuffer((values=Int32[1, 2],); ntasks=0)),
         2;
@@ -91,5 +119,18 @@
     assert_argument_error(
         () -> Arrow.validate(buffer_length_not_element_width; stream=true),
         "not a multiple",
+    )
+
+    missing_value_buffer = truncate_first_record_batch_buffers!(
+        read(Arrow.tobuffer((values=Int32[1],); ntasks=0)),
+        UInt32(1),
+    )
+    assert_argument_error(
+        () -> Arrow.validate(missing_value_buffer),
+        "record batch is missing buffer 2",
+    )
+    assert_argument_error(
+        () -> Arrow.validate(missing_value_buffer; stream=true),
+        "record batch is missing buffer 2",
     )
 end

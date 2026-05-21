@@ -112,6 +112,17 @@ function _assert_record_batch_buffer_bounds(batch, buffer, bufferidx=nothing)
     return nothing
 end
 
+function _record_batch_buffer(rb, bufferidx::Integer)
+    buffers = rb.buffers
+    declared = buffers === nothing ? 0 : length(buffers)
+    1 <= bufferidx <= declared || throw(
+        ArgumentError(
+            "record batch is missing buffer $bufferidx; only $declared buffers are declared",
+        ),
+    )
+    return buffers[bufferidx]
+end
+
 function _assert_reinterp_element_width(::Type{T}, len::Integer) where {T}
     width = sizeof(T)
     width == 1 && return nothing
@@ -132,7 +143,7 @@ function build(field::Meta.Field, batch, rb, de, nodeidx, bufferidx, varbufferid
     if d !== nothing
         validity = buildbitmap(batch, rb, nodeidx, bufferidx)
         bufferidx += 1
-        buffer = rb.buffers[bufferidx]
+        buffer = _record_batch_buffer(rb, bufferidx)
         S = d.indexType === nothing ? Int32 : juliaeltype(field, d.indexType, false)
         bytes, indices = reinterp(S, batch, buffer, rb.compression)
         @lock de begin
@@ -170,7 +181,7 @@ function build(field::Meta.Field, batch, rb, de, nodeidx, bufferidx, varbufferid
 end
 
 function buildbitmap(batch, rb, nodeidx, bufferidx)
-    buffer = rb.buffers[bufferidx]
+    buffer = _record_batch_buffer(rb, bufferidx)
     _assert_record_batch_buffer_bounds(batch, buffer, bufferidx)
     voff = batch.pos + buffer.offset
     node = rb.nodes[nodeidx]

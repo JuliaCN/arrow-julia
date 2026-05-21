@@ -29,7 +29,7 @@ function build(
     @debug "building array: L = $L"
     validity = buildbitmap(batch, rb, nodeidx, bufferidx)
     bufferidx += 1
-    buffer = rb.buffers[bufferidx]
+    buffer = _record_batch_buffer(rb, bufferidx)
     meta = buildmetadata(f.custom_metadata)
     # get storage type (non-converted)
     T = juliaeltype(f, nothing, false)
@@ -59,12 +59,12 @@ function build(
     @debug "building array: L = $L"
     validity = buildbitmap(batch, rb, nodeidx, bufferidx)
     bufferidx += 1
-    buffer = rb.buffers[bufferidx]
+    buffer = _record_batch_buffer(rb, bufferidx)
     meta = buildmetadata(f.custom_metadata)
     # get storage type (non-converted)
     T = juliaeltype(f, nothing, false)
     @debug "storage type for primitive: T = $T"
-    buffer = rb.buffers[bufferidx]
+    buffer = _record_batch_buffer(rb, bufferidx)
     _assert_record_batch_buffer_bounds(batch, buffer, bufferidx)
     voff = batch.pos + buffer.offset
     node = rb.nodes[nodeidx]

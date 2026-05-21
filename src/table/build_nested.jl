@@ -30,7 +30,7 @@ function build(
     @debug "building array: L = $L"
     validity = buildbitmap(batch, rb, nodeidx, bufferidx)
     bufferidx += 1
-    buffer = rb.buffers[bufferidx]
+    buffer = _record_batch_buffer(rb, bufferidx)
     ooff = batch.pos + buffer.offset
     OT = L isa LargeLists ? Int64 : Int32
     bytes, offs = reinterp(OT, batch, buffer, rb.compression)
@@ -46,7 +46,7 @@ function build(
        L isa Meta.Binary ||
        L isa Meta.BinaryView ||
        L isa Meta.LargeBinary
-        buffer = rb.buffers[bufferidx]
+        buffer = _record_batch_buffer(rb, bufferidx)
         bytes, A = reinterp(UInt8, batch, buffer, rb.compression)
         bufferidx += 1
     else
@@ -85,10 +85,10 @@ function build(
     validity = buildbitmap(batch, rb, nodeidx, bufferidx)
     bufferidx += 1
     OT = L isa Meta.LargeListView ? Int64 : Int32
-    offsetbuffer = rb.buffers[bufferidx]
+    offsetbuffer = _record_batch_buffer(rb, bufferidx)
     offsetbytes, offsets = reinterp(OT, batch, offsetbuffer, rb.compression)
     bufferidx += 1
-    sizebuffer = rb.buffers[bufferidx]
+    sizebuffer = _record_batch_buffer(rb, bufferidx)
     sizebytes, sizes = reinterp(OT, batch, sizebuffer, rb.compression)
     bufferidx += 1
     len = rb.nodes[nodeidx].length
@@ -158,14 +158,14 @@ function build(
     @debug "building array: L = $L"
     validity = buildbitmap(batch, rb, nodeidx, bufferidx)
     bufferidx += 1
-    buffer = rb.buffers[bufferidx]
+    buffer = _record_batch_buffer(rb, bufferidx)
     _, views = reinterp(ViewElement, batch, buffer, rb.compression)
     inline = reinterpret(UInt8, views)  # reuse the (possibly realigned) memory backing `views`
     bufferidx += 1
     buffers = Vector{UInt8}[]
     nvariadic = _viewbuffercount(validity, views, rb.variadicBufferCounts[varbufferidx])
     for i = 1:nvariadic
-        buffer = rb.buffers[bufferidx]
+        buffer = _record_batch_buffer(rb, bufferidx)
         _, A = reinterp(UInt8, batch, buffer, rb.compression)
         push!(buffers, A)
         bufferidx += 1
@@ -203,7 +203,7 @@ function build(
     len = rb.nodes[nodeidx].length
     nodeidx += 1
     if L isa Meta.FixedSizeBinary
-        buffer = rb.buffers[bufferidx]
+        buffer = _record_batch_buffer(rb, bufferidx)
         bytes, A = reinterp(UInt8, batch, buffer, rb.compression)
         bufferidx += 1
     else
@@ -234,7 +234,7 @@ function build(
     @debug "building array: L = $L"
     validity = buildbitmap(batch, rb, nodeidx, bufferidx)
     bufferidx += 1
-    buffer = rb.buffers[bufferidx]
+    buffer = _record_batch_buffer(rb, bufferidx)
     ooff = batch.pos + buffer.offset
     OT = Int32
     bytes, offs = reinterp(OT, batch, buffer, rb.compression)
@@ -381,11 +381,11 @@ function build(
     convert,
 )
     @debug "building array: L = $L"
-    buffer = rb.buffers[bufferidx]
+    buffer = _record_batch_buffer(rb, bufferidx)
     bytes, typeIds = reinterp(UInt8, batch, buffer, rb.compression)
     bufferidx += 1
     if L.mode == Meta.UnionMode.Dense
-        buffer = rb.buffers[bufferidx]
+        buffer = _record_batch_buffer(rb, bufferidx)
         bytes2, offsets = reinterp(Int32, batch, buffer, rb.compression)
         bufferidx += 1
     end
