@@ -129,6 +129,13 @@ default values are intentionally small enough for package validation; a
 production profile should increase them to match expected concurrency and data
 volume.
 
+The shared Flight transport adapter also guards request-streaming early
+rejection paths. If a handler rejects a bounded DoPut or DoExchange request
+before draining every incoming FlightData message, the adapter closes the
+request channel before waiting on the producer task, so authentication,
+cancellation, and resource-limit failures do not leave producers blocked
+behind a full channel.
+
 Network Flight receipts are transport receipts, not end-to-end zero-copy
 claims. Flight serializes Arrow IPC payloads over the wire. Same-process
 zero-copy claims belong to C Data and C Stream receipts.

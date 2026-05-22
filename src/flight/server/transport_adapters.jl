@@ -81,16 +81,24 @@ function _rethrow_transport_status_error(error, on_status_error::Function)
 end
 
 function _transport_handler_result(task::Task, producer::Union{Nothing,Task}=nothing)
+    task_error = nothing
+    try
+        wait(task)
+    catch
+    end
+    istaskfailed(task) && (task_error = task.exception)
+
+    producer_error = nothing
     if !isnothing(producer)
-        if istaskfailed(producer)
-            throw(producer.exception)
+        try
+            wait(producer)
+        catch
         end
-        wait(producer)
+        istaskfailed(producer) && (producer_error = producer.exception)
     end
-    if istaskfailed(task)
-        throw(task.exception)
-    end
-    wait(task)
+
+    isnothing(task_error) || throw(task_error)
+    isnothing(producer_error) || throw(producer_error)
     return nothing
 end
 
@@ -99,6 +107,15 @@ function _transport_cleanup_task(task::Union{Nothing,Task})
     istaskdone(task) && return nothing
     try
         wait(task)
+    catch
+    end
+    return nothing
+end
+
+function _transport_close_request!(request::Channel)
+    isopen(request) || return nothing
+    try
+        close(request)
     catch
     end
     return nothing
@@ -190,6 +207,7 @@ function transport_client_streaming_call(
     try
         return fetch(task)
     finally
+        _transport_close_request!(request)
         _transport_handler_result(task, producer)
     end
 end
@@ -243,9 +261,11 @@ function transport_bidi_streaming_call(
         for message in response
             emit(message)
         end
+        _transport_close_request!(request)
         _transport_handler_result(task, producer)
         return nothing
     finally
+        _transport_close_request!(request)
         isopen(response) && close(response)
         _transport_cleanup_task(task)
         _transport_cleanup_task(producer)
