@@ -26,18 +26,20 @@ wall-clock timing is noisy. Production readiness should instead be proven on
 the deployment class of hardware with explicit environment floors and retained
 receipts.
 
-The current production gate profile has five layers:
+The current production gate profile has six layers:
 
 1. C Data and C Stream same-process FFI receipts prove allocation bounds,
    release behavior, and pointer identity for CPU buffers.
 2. IPC receipts prove metadata reads, direct `Arrow.tobuffer` fast-path
    behavior, physical buffer scans, and materialized consumer scans.
-3. Flight receipts prove end-to-end large and concurrent DoGet, DoPut, and
+3. Flight wire receipts prove gRPC frame sizing and encoding allocation bounds
+   before live transport noise enters the measurement.
+4. Flight receipts prove end-to-end large and concurrent DoGet, DoPut, and
    DoExchange transport on the package-owned listener path.
-4. Flight SQL protocol receipts prove command/action `google.protobuf.Any`
+5. Flight SQL protocol receipts prove command/action `google.protobuf.Any`
    packing, decode, and DoPut metadata helper allocation bounds for the
    package-owned protocol helper layer.
-5. Flight SQL endpoint receipts prove the same command/action surface over a
+6. Flight SQL endpoint receipts prove the same command/action surface over a
    real Flight listener with external Python/protobuf clients for query,
    prepared-statement, and ingestion paths.
 
@@ -51,10 +53,11 @@ For transport and endpoint receipts, run Julia with all available runner
 threads, for example `JULIA_NUM_THREADS=auto`. The Flight SQL reports print
 `julia_num_threads` so retained receipts show the actual thread profile.
 
-Set `ARROW_PRODUCTION_PERFORMANCE_REPORTS=ipc,cdata,flight,flightsql,flightsqlendpoint`
+Set `ARROW_PRODUCTION_PERFORMANCE_REPORTS=ipc,cdata,flightwire,flight,flightsql,flightsqlendpoint`
 to run every current report, or provide another comma-separated subset of
-`ipc`, `cdata`, `flight`, `flightsql`, and `flightsqlendpoint` when a
-production environment wants to run only part of the profile.
+`ipc`, `cdata`, `flightwire`, `flight`, `flightsql`, and
+`flightsqlendpoint` when a production environment wants to run only part of
+the profile.
 
 ## IPC Gate
 
@@ -86,7 +89,20 @@ for same-process CPU zero-copy claims.
 
 ## Flight Gate
 
-Run:
+Run the wire-level allocation gate with:
+
+```sh
+julia --project=test test/flight_wire_performance_report.jl
+```
+
+The Flight wire report measures gRPC frame size calculation, protobuf frame
+encoding, and FlightData emission. Shared CI gates allocation regressions with
+`ARROW_FLIGHT_WIRE_MAX_*_ALLOC_BYTES` variables. The size check uses generated
+protobuf encoded-size metadata instead of constructing a full framed message,
+so FlightData emission does not serialize each record batch once for sizing and
+again for transport.
+
+Run the live transport gate with:
 
 ```sh
 julia --project=test test/flight_purehttp2_perf.jl

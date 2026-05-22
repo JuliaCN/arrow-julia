@@ -88,17 +88,28 @@ function splitcompletegrpcmessages(payload::AbstractVector{UInt8})
     return frames, UInt8[]
 end
 
+function _protobuf_encoded_size(message)
+    return ProtoBuf._encoded_size(message)
+end
+
 function _protobuf_bytes(message)
-    io = IOBuffer()
+    io = IOBuffer(sizehint=_protobuf_encoded_size(message))
     encoder = ProtoBuf.ProtoEncoder(io)
     ProtoBuf.encode(encoder, message)
     return take!(io)
 end
 
+function grpcmessagesize(message)
+    payload_length =
+        message isa AbstractVector{UInt8} ? length(message) :
+        _protobuf_encoded_size(message)
+    payload_length <= typemax(UInt32) ||
+        throw(ArgumentError("gRPC message payload length exceeds UInt32 framing limit"))
+    return GRPC_ENVELOPE_HEADER_SIZE + payload_length
+end
+
 function grpcmessage(message)
-    payload =
-        message isa AbstractVector{UInt8} ? Vector{UInt8}(message) :
-        _protobuf_bytes(message)
+    payload = message isa AbstractVector{UInt8} ? message : _protobuf_bytes(message)
     payload_length = length(payload)
     payload_length <= typemax(UInt32) ||
         throw(ArgumentError("gRPC message payload length exceeds UInt32 framing limit"))
@@ -109,7 +120,13 @@ function grpcmessage(message)
     framed[3] = UInt8((payload_length >> 16) & 0xff)
     framed[4] = UInt8((payload_length >> 8) & 0xff)
     framed[5] = UInt8(payload_length & 0xff)
-    copyto!(framed, GRPC_ENVELOPE_HEADER_SIZE + 1, payload, 1, payload_length)
+    copyto!(
+        framed,
+        GRPC_ENVELOPE_HEADER_SIZE + 1,
+        payload,
+        firstindex(payload),
+        payload_length,
+    )
     return framed
 end
 

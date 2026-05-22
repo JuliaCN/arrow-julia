@@ -389,6 +389,14 @@ jobs:
           ARROW_FLIGHT_SQL_MAX_PUT_RESULT_ALLOC_BYTES: '2048'
           JULIA_NUM_THREADS: 'auto'
         run: julia --color=yes --project=test test/flight_sql_performance_report.jl
+      - name: Run Flight wire performance report
+        env:
+          ARROW_FLIGHT_WIRE_MAX_TICKET_FRAME_ALLOC_BYTES: '1024'
+          ARROW_FLIGHT_WIRE_MAX_FLIGHTDATA_SIZE_ALLOC_BYTES: '1024'
+          ARROW_FLIGHT_WIRE_MAX_FLIGHTDATA_FRAME_ALLOC_BYTES: '81920'
+          ARROW_FLIGHT_WIRE_MAX_FLIGHTDATA_EMIT_ALLOC_BYTES: '750000'
+          JULIA_NUM_THREADS: 'auto'
+        run: julia --color=yes --project=test test/flight_wire_performance_report.jl
       - name: Run Flight SQL endpoint report
         env:
           ARROW_FLIGHT_PYTHON: ${{ env.pythonLocation }}/bin/python

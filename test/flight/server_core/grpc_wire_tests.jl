@@ -26,6 +26,7 @@ function flight_server_core_test_grpc_wire(fixture)
 
     ticket = protocol.Ticket(b"ticket-1")
     framed = Arrow.Flight.grpcmessage(ticket)
+    @test Arrow.Flight.grpcmessagesize(ticket) == length(framed)
     @test Arrow.Flight.decodegrpcmessage(protocol.Ticket, framed).ticket == ticket.ticket
 
     multi_payload = vcat(framed, Arrow.Flight.grpcmessage(protocol.Ticket(b"ticket-2")))
@@ -37,6 +38,8 @@ function flight_server_core_test_grpc_wire(fixture)
         Vector{UInt8},
         Arrow.Flight.grpcmessage(raw_payload),
     ) == raw_payload
+    @test Arrow.Flight.grpcmessagesize(raw_payload) ==
+          Arrow.Flight.GRPC_ENVELOPE_HEADER_SIZE + length(raw_payload)
 
     @test_throws ArgumentError Arrow.Flight.decodegrpcmessages(
         protocol.Ticket,

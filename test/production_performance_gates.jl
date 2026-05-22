@@ -20,13 +20,14 @@ const TEST_ROOT = @__DIR__
 const REPORT_SCRIPTS = (
     ipc="ipc_performance_report.jl",
     cdata="cdata_validation_report.jl",
+    flightwire="flight_wire_performance_report.jl",
     flight="flight_purehttp2_perf.jl",
     flightsql="flight_sql_performance_report.jl",
     flightsqlendpoint="flight_sql_endpoint_report.jl",
 )
 
 function selected_reports()
-    raw = get(ENV, "ARROW_PRODUCTION_PERFORMANCE_REPORTS", "ipc,cdata,flight")
+    raw = get(ENV, "ARROW_PRODUCTION_PERFORMANCE_REPORTS", "ipc,cdata,flightwire,flight")
     names = Symbol[]
     for item in split(raw, ',')
         name = Symbol(strip(item))
