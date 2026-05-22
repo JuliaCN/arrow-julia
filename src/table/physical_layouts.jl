@@ -118,10 +118,21 @@ end
 function materializecolumns(x::VectorIterator)
     cols = Vector{AbstractVector}(undef, length(x))
     i = 1
-    for col in x
+    state = (Int64(1), Int64(1), Int64(1), Int64(1))
+    while true
+        next = iterate(x, state)
+        next === nothing && break
+        col, state = next
         cols[i] = col
         i += 1
     end
+    _, nodeidx, bufferidx, varbufferidx = state
+    _assert_record_batch_fully_consumed(
+        x.batch.msg.header,
+        nodeidx,
+        bufferidx,
+        varbufferidx,
+    )
     return cols
 end
 

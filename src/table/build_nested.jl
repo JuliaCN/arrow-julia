@@ -30,13 +30,13 @@ function build(
     @debug "building array: L = $L"
     validity = buildbitmap(batch, rb, nodeidx, bufferidx)
     bufferidx += 1
-    buffer = rb.buffers[bufferidx]
+    buffer = _record_batch_buffer(rb, bufferidx)
     ooff = batch.pos + buffer.offset
     OT = L isa LargeLists ? Int64 : Int32
     bytes, offs = reinterp(OT, batch, buffer, rb.compression)
     offsets = Offsets(bytes, offs)
     bufferidx += 1
-    len = rb.nodes[nodeidx].length
+    len = _record_batch_node(rb, nodeidx).length
     nodeidx += 1
     meta = buildmetadata(f.custom_metadata)
     T = juliaeltype(f, meta, convert)
@@ -46,13 +46,21 @@ function build(
        L isa Meta.Binary ||
        L isa Meta.BinaryView ||
        L isa Meta.LargeBinary
-        buffer = rb.buffers[bufferidx]
+        buffer = _record_batch_buffer(rb, bufferidx)
         bytes, A = reinterp(UInt8, batch, buffer, rb.compression)
         bufferidx += 1
     else
         bytes = UInt8[]
-        A, nodeidx, bufferidx, varbufferidx =
-            build(f.children[1], batch, rb, de, nodeidx, bufferidx, varbufferidx, convert)
+        A, nodeidx, bufferidx, varbufferidx = build(
+            _field_child(f, 1),
+            batch,
+            rb,
+            de,
+            nodeidx,
+            bufferidx,
+            varbufferidx,
+            convert,
+        )
         # juliaeltype returns Vector for List, translate to SubArray
         S = Base.nonmissingtype(T)
         if S <: Vector
@@ -85,16 +93,16 @@ function build(
     validity = buildbitmap(batch, rb, nodeidx, bufferidx)
     bufferidx += 1
     OT = L isa Meta.LargeListView ? Int64 : Int32
-    offsetbuffer = rb.buffers[bufferidx]
+    offsetbuffer = _record_batch_buffer(rb, bufferidx)
     offsetbytes, offsets = reinterp(OT, batch, offsetbuffer, rb.compression)
     bufferidx += 1
-    sizebuffer = rb.buffers[bufferidx]
+    sizebuffer = _record_batch_buffer(rb, bufferidx)
     sizebytes, sizes = reinterp(OT, batch, sizebuffer, rb.compression)
     bufferidx += 1
-    len = rb.nodes[nodeidx].length
+    len = _record_batch_node(rb, nodeidx).length
     nodeidx += 1
     A, nodeidx, bufferidx, varbufferidx =
-        build(f.children[1], batch, rb, de, nodeidx, bufferidx, varbufferidx, convert)
+        build(_field_child(f, 1), batch, rb, de, nodeidx, bufferidx, varbufferidx, convert)
     _assert_list_view_spans(offsets, sizes, A; len)
     meta = buildmetadata(f.custom_metadata)
     T = juliaeltype(f, meta, convert)
@@ -130,14 +138,14 @@ function build(
     convert,
 )
     @debug "building array: x = $x"
-    len = rb.nodes[nodeidx].length
+    len = _record_batch_node(rb, nodeidx).length
     nodeidx += 1
     meta = buildmetadata(f.custom_metadata)
     T = juliaeltype(f, meta, convert)
     run_ends, nodeidx, bufferidx, varbufferidx =
-        build(f.children[1], batch, rb, de, nodeidx, bufferidx, varbufferidx, false)
+        build(_field_child(f, 1), batch, rb, de, nodeidx, bufferidx, varbufferidx, false)
     values, nodeidx, bufferidx, varbufferidx =
-        build(f.children[2], batch, rb, de, nodeidx, bufferidx, varbufferidx, convert)
+        build(_field_child(f, 2), batch, rb, de, nodeidx, bufferidx, varbufferidx, convert)
     return _makerunendencoded(T, run_ends, values, len, meta),
     nodeidx,
     bufferidx,
@@ -158,20 +166,21 @@ function build(
     @debug "building array: L = $L"
     validity = buildbitmap(batch, rb, nodeidx, bufferidx)
     bufferidx += 1
-    buffer = rb.buffers[bufferidx]
+    buffer = _record_batch_buffer(rb, bufferidx)
     _, views = reinterp(ViewElement, batch, buffer, rb.compression)
     inline = reinterpret(UInt8, views)  # reuse the (possibly realigned) memory backing `views`
     bufferidx += 1
     buffers = Vector{UInt8}[]
-    nvariadic = _viewbuffercount(validity, views, rb.variadicBufferCounts[varbufferidx])
+    nvariadic =
+        _viewbuffercount(validity, views, _record_batch_variadic_count(rb, varbufferidx))
     for i = 1:nvariadic
-        buffer = rb.buffers[bufferidx]
+        buffer = _record_batch_buffer(rb, bufferidx)
         _, A = reinterp(UInt8, batch, buffer, rb.compression)
         push!(buffers, A)
         bufferidx += 1
     end
     varbufferidx += 1
-    len = rb.nodes[nodeidx].length
+    len = _record_batch_node(rb, nodeidx).length
     nodeidx += 1
     if L isa Meta.Utf8View
         _assert_utf8_view_spans(views, inline, buffers, validity, len, "UTF-8 view")
@@ -200,16 +209,25 @@ function build(
     @debug "building array: L = $L"
     validity = buildbitmap(batch, rb, nodeidx, bufferidx)
     bufferidx += 1
-    len = rb.nodes[nodeidx].length
+    len = _record_batch_node(rb, nodeidx).length
     nodeidx += 1
     if L isa Meta.FixedSizeBinary
-        buffer = rb.buffers[bufferidx]
+        buffer = _record_batch_buffer(rb, bufferidx)
         bytes, A = reinterp(UInt8, batch, buffer, rb.compression)
         bufferidx += 1
     else
         bytes = UInt8[]
-        A, nodeidx, bufferidx, varbufferidx =
-            build(f.children[1], batch, rb, de, nodeidx, bufferidx, varbufferidx, convert)
+        A, nodeidx, bufferidx, varbufferidx = build(
+            _field_child(f, 1),
+            batch,
+            rb,
+            de,
+            nodeidx,
+            bufferidx,
+            varbufferidx,
+            convert,
+        )
+        _assert_fixed_size_list_child_length(A, L.listSize, len, Symbol(f.name))
     end
     meta = buildmetadata(f.custom_metadata)
     T = juliaeltype(f, meta, convert)
@@ -233,16 +251,16 @@ function build(
     @debug "building array: L = $L"
     validity = buildbitmap(batch, rb, nodeidx, bufferidx)
     bufferidx += 1
-    buffer = rb.buffers[bufferidx]
+    buffer = _record_batch_buffer(rb, bufferidx)
     ooff = batch.pos + buffer.offset
     OT = Int32
     bytes, offs = reinterp(OT, batch, buffer, rb.compression)
     offsets = Offsets(bytes, offs)
     bufferidx += 1
-    len = rb.nodes[nodeidx].length
+    len = _record_batch_node(rb, nodeidx).length
     nodeidx += 1
     A, nodeidx, bufferidx, varbufferidx =
-        build(f.children[1], batch, rb, de, nodeidx, bufferidx, varbufferidx, convert)
+        build(_field_child(f, 1), batch, rb, de, nodeidx, bufferidx, varbufferidx, convert)
     _assert_offsets_spans(offsets.offsets, length(validity), length(A), "map")
     meta = buildmetadata(f.custom_metadata)
     T = juliaeltype(f, meta, convert)
@@ -266,7 +284,7 @@ function build(
     @debug "building array: L = $L"
     validity = buildbitmap(batch, rb, nodeidx, bufferidx)
     bufferidx += 1
-    len = rb.nodes[nodeidx].length
+    len = _record_batch_node(rb, nodeidx).length
     vecs = []
     nodeidx += 1
     for child in f.children
@@ -357,6 +375,14 @@ function _assert_sparse_union_layout!(
 )
     child_by_type_id = _union_child_map(declared_type_ids, length(data), name)
     _assert_union_type_id_buffer!(type_ids, len, child_by_type_id, name)
+    for (child_index, child) in enumerate(data)
+        child_len = length(child)
+        child_len == len || throw(
+            ArgumentError(
+                "sparse union column $name child $child_index length $child_len must match row count $len",
+            ),
+        )
+    end
     return nothing
 end
 
@@ -372,16 +398,16 @@ function build(
     convert,
 )
     @debug "building array: L = $L"
-    buffer = rb.buffers[bufferidx]
+    buffer = _record_batch_buffer(rb, bufferidx)
     bytes, typeIds = reinterp(UInt8, batch, buffer, rb.compression)
     bufferidx += 1
     if L.mode == Meta.UnionMode.Dense
-        buffer = rb.buffers[bufferidx]
+        buffer = _record_batch_buffer(rb, bufferidx)
         bytes2, offsets = reinterp(Int32, batch, buffer, rb.compression)
         bufferidx += 1
     end
     vecs = []
-    len = rb.nodes[nodeidx].length
+    len = _record_batch_node(rb, nodeidx).length
     nodeidx += 1
     for child in f.children
         A, nodeidx, bufferidx, varbufferidx =
@@ -417,7 +443,10 @@ function build(
     @debug "building array: L = $L"
     meta = buildmetadata(f.custom_metadata)
     T = juliaeltype(f, meta, convert)
-    return NullVector{maybemissing(T)}(MissingVector(rb.nodes[nodeidx].length), meta),
+    return NullVector{maybemissing(T)}(
+        MissingVector(_record_batch_node(rb, nodeidx).length),
+        meta,
+    ),
     nodeidx + 1,
     bufferidx,
     varbufferidx

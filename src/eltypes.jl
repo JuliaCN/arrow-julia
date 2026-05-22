@@ -19,4 +19,16 @@ include(joinpath(@__DIR__, "eltypes", "dispatch.jl"))
 include(joinpath(@__DIR__, "eltypes", "canonical_extensions.jl"))
 include(joinpath(@__DIR__, "eltypes", "primitive_types.jl"))
 include(joinpath(@__DIR__, "eltypes", "temporal_types.jl"))
+
+function _field_child(field::Meta.Field, childidx::Integer)
+    children = field.children
+    declared = children === nothing ? 0 : length(children)
+    1 <= childidx <= declared || throw(
+        ArgumentError(
+            "field $(Symbol(field.name)) is missing child $childidx; only $declared children are declared",
+        ),
+    )
+    return children[childidx]
+end
+
 include(joinpath(@__DIR__, "eltypes", "nested_types.jl"))

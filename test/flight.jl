@@ -15,15 +15,25 @@
 # specific language governing permissions and limitations
 # under the License.
 
+using PooledArrays
 using Tables
 
 include("flight/support.jl")
 include("flight/live_service_support.jl")
 include("flight/generated_protocol_tests.jl")
+include("flight/sql_tests.jl")
 include("flight/server_core.jl")
 include("flight/ipc_conversion.jl")
 include("flight/ipc_schema_separation.jl")
 
 @testset "Flight generated protocol surface" begin
     flight_test_generated_protocol_formatter_surface()
+end
+
+@testset "Flight SQL protocol helpers" begin
+    flight_test_sql_protocol_helpers()
+end
+
+@testset "Flight SQL stability fixtures" begin
+    flight_test_sql_stability_fixtures()
 end

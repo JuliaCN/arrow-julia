@@ -16,6 +16,7 @@
 # under the License.
 
 using DataAPI
+using PooledArrays: PooledArray
 using Tables
 using UUIDs
 
@@ -69,6 +70,87 @@ using UUIDs
     end
     @test table_error isa ArgumentError
     @test occursin(missing_schema_fragment, sprint(showerror, table_error))
+
+    dictionary_messages =
+        Arrow.Flight.flightdata((value=PooledArray(["alpha", "beta", "alpha"]),);)
+    non_dictionary_messages = Arrow.Flight.flightdata((value=["alpha", "beta"],))
+    non_dictionary_schema = Arrow.Flight.Protocol.SchemaResult(
+        Arrow.Flight.schemaipc(first(non_dictionary_messages))[5:end],
+    )
+    dictionary_stream_error = try
+        collect(Arrow.Flight.stream(dictionary_messages[2:end]; schema=non_dictionary_schema))
+        nothing
+    catch err
+        err
+    end
+    @test dictionary_stream_error isa ArgumentError
+    @test occursin(
+        "dictionary batch id 1 has no schema dictionary field",
+        sprint(showerror, dictionary_stream_error),
+    )
+    dictionary_table_error = try
+        Arrow.Flight.table(dictionary_messages[2:end]; schema=non_dictionary_schema)
+        nothing
+    catch err
+        err
+    end
+    @test dictionary_table_error isa ArgumentError
+    @test occursin(
+        "dictionary batch id 1 has no schema dictionary field",
+        sprint(showerror, dictionary_table_error),
+    )
+
+    delta_source = Tables.partitioner((
+        (
+            col1=Int64[1, 2, 3, 4],
+            col2=Union{String,Missing}["hey", "there", "sailor", missing],
+        ),
+        (
+            col1=Int64[1, 2, 5, 6],
+            col2=Union{String,Missing}["hey", "there", "sailor2", missing],
+        ),
+    ))
+    delta_messages = Arrow.Flight.flightdata(delta_source; dictencode=true)
+    first_delta_message = nothing
+    for message in delta_messages
+        _, header = Arrow.Flight._flight_message_header(message)
+        if header isa Arrow.Meta.DictionaryBatch && header.isDelta
+            first_delta_message = message
+            break
+        end
+    end
+    @test first_delta_message !== nothing
+    delta_without_base_messages = [
+        first(delta_messages),
+        Arrow.Flight.Protocol.FlightData(
+            nothing,
+            copy(first_delta_message.data_header),
+            UInt8[],
+            copy(first_delta_message.data_body),
+        ),
+    ]
+    delta_stream_error = try
+        collect(Arrow.Flight.stream(delta_without_base_messages))
+        nothing
+    catch err
+        err
+    end
+    @test delta_stream_error isa ArgumentError
+    @test occursin(
+        "dictionary batch id 1 cannot be a delta without an existing dictionary",
+        sprint(showerror, delta_stream_error),
+    )
+    delta_table_error = try
+        Arrow.Flight.table(delta_without_base_messages)
+        nothing
+    catch err
+        err
+    end
+    @test delta_table_error isa ArgumentError
+    @test occursin(
+        "dictionary batch id 1 cannot be a delta without an existing dictionary",
+        sprint(showerror, delta_table_error),
+    )
 
     empty_tbl = Arrow.Flight.table(
         Arrow.Flight.Protocol.FlightData[];

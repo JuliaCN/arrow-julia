@@ -164,7 +164,7 @@ function _emit_transport_safe_recordbatch!(
        !dictencodenested &&
        isempty(cols.dictencodingdeltas) &&
        rowcount > 1 &&
-       length(grpcmessage(record_message)) > MAX_TRANSPORT_SAFE_GRPC_MESSAGE_BYTES
+       grpcmessagesize(record_message) > MAX_TRANSPORT_SAFE_GRPC_MESSAGE_BYTES
         left_rows, right_rows = _transport_safe_row_ranges(rowcount)
         _emit_transport_safe_recordbatch!(
             emit,

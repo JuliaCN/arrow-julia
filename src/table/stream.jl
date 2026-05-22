@@ -191,7 +191,7 @@ function Base.iterate(x::Stream, (pos, id)=(1, 0))
         elseif header isa Meta.Schema
             if isnothing(x.schema)
                 x.schema = header
-                # assert endianness?
+                _assert_supported_schema_endianness(header.endianness)
                 # store custom_metadata?
                 for (i, field) in enumerate(x.schema.fields)
                     rejectunsupported(field)
@@ -220,18 +220,15 @@ function Base.iterate(x::Stream, (pos, id)=(1, 0))
             end
             @lock x.dictencodings begin
                 dictencodings = x.dictencodings[]
+                _assert_dictionary_delta_has_base(dictencodings, id, header.isDelta)
                 if haskey(dictencodings, id) && header.isDelta
                     # delta
-                    field = x.dictencoded[id]
-                    values, _, _, _ = build(
+                    field = _dictionary_encoded_field(x.dictencoded, id)
+                    values = _build_dictionary_values(
                         field,
-                        field.type,
                         batch,
                         recordbatch,
                         x.dictencodings,
-                        Int64(1),
-                        Int64(1),
-                        Int64(1),
                         x.convert,
                     )
                     dictencoding = dictencodings[id]
@@ -239,16 +236,12 @@ function Base.iterate(x::Stream, (pos, id)=(1, 0))
                     continue
                 end
                 # new dictencoding or replace
-                field = x.dictencoded[id]
-                values, _, _, _ = build(
+                field = _dictionary_encoded_field(x.dictencoded, id)
+                values = _build_dictionary_values(
                     field,
-                    field.type,
                     batch,
                     recordbatch,
                     x.dictencodings,
-                    Int64(1),
-                    Int64(1),
-                    Int64(1),
                     x.convert,
                 )
                 A = ChainedVector([values])
@@ -268,9 +261,12 @@ function Base.iterate(x::Stream, (pos, id)=(1, 0))
             if header.compression !== nothing
                 compression = header.compression
             end
-            for vec in VectorIterator(x.schema, batch, x.dictencodings, x.convert)
-                push!(columns, vec)
-            end
+            append!(
+                columns,
+                materializecolumns(
+                    VectorIterator(x.schema, batch, x.dictencodings, x.convert),
+                ),
+            )
             break
         elseif header isa Meta.Tensor
             throw(ArgumentError(TENSOR_UNSUPPORTED))
@@ -282,12 +278,14 @@ function Base.iterate(x::Stream, (pos, id)=(1, 0))
     end
 
     if compression !== nothing
-        if compression.codec == Flatbuf.CompressionType.ZSTD
+        _assert_compression_method_supported(compression)
+        codec = _compression_codec(compression)
+        if codec == Flatbuf.CompressionType.ZSTD
             x.compression[] = :zstd
-        elseif compression.codec == Flatbuf.CompressionType.LZ4_FRAME
+        elseif codec == Flatbuf.CompressionType.LZ4_FRAME
             x.compression[] = :lz4
         else
-            throw(ArgumentError("unsupported compression codec: $(compression.codec)"))
+            throw(ArgumentError("unsupported compression codec: $codec"))
         end
     end
 

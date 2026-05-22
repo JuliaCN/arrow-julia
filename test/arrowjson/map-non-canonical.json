@@ -1,0 +1,104 @@
+{
+  "schema": {
+    "fields": [
+      {
+        "name": "map_other_names",
+        "type": {
+          "name": "map",
+          "keysSorted": false
+        },
+        "nullable": false,
+        "children": [
+          {
+            "name": "some_entries",
+            "type": {
+              "name": "struct"
+            },
+            "nullable": false,
+            "children": [
+              {
+                "name": "some_key",
+                "type": {
+                  "name": "utf8"
+                },
+                "nullable": false,
+                "children": []
+              },
+              {
+                "name": "some_value",
+                "type": {
+                  "name": "int",
+                  "isSigned": true,
+                  "bitWidth": 32
+                },
+                "nullable": false,
+                "children": []
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "batches": [
+    {
+      "count": 2,
+      "columns": [
+        {
+          "name": "map_other_names",
+          "count": 2,
+          "VALIDITY": [
+            1,
+            1
+          ],
+          "OFFSET": [
+            0,
+            2,
+            2
+          ],
+          "children": [
+            {
+              "name": "some_entries",
+              "count": 2,
+              "VALIDITY": [
+                1,
+                1
+              ],
+              "children": [
+                {
+                  "name": "some_key",
+                  "count": 2,
+                  "VALIDITY": [
+                    1,
+                    1
+                  ],
+                  "OFFSET": [
+                    0,
+                    1,
+                    2
+                  ],
+                  "DATA": [
+                    "a",
+                    "b"
+                  ]
+                },
+                {
+                  "name": "some_value",
+                  "count": 2,
+                  "VALIDITY": [
+                    1,
+                    1
+                  ],
+                  "DATA": [
+                    1,
+                    2
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

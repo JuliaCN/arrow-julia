@@ -1,0 +1,38 @@
+{
+  "schema": {
+    "fields": [
+      {
+        "name": "decimal256_values",
+        "type": {
+          "name": "decimal",
+          "precision": 39,
+          "scale": 5,
+          "bitWidth": 256
+        },
+        "nullable": true,
+        "children": []
+      }
+    ]
+  },
+  "batches": [
+    {
+      "count": 3,
+      "columns": [
+        {
+          "name": "decimal256_values",
+          "count": 3,
+          "VALIDITY": [
+            1,
+            1,
+            0
+          ],
+          "DATA": [
+            "-388650046426122219289342316006807195478",
+            "388650046426122219289342316006807195478",
+            "0"
+          ]
+        }
+      ]
+    }
+  ]
+}

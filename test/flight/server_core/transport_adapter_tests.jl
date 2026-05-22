@@ -110,6 +110,36 @@ function flight_server_core_test_transport_adapters(fixture)
     @test bidi_messages[1].data_body == echoed.data_body
     @test bidi_messages[1].app_metadata == echoed.app_metadata
 
+    failing_bidi_service = Arrow.Flight.Service(
+        doexchange=(ctx, request, response) ->
+            throw(ArgumentError("bidi stream rejected before request drain")),
+    )
+    failing_bidi_method = Arrow.Flight.lookuptransportmethod(
+        Arrow.Flight.transportdescriptor(failing_bidi_service),
+        "DoExchange",
+    )
+    failing_bidi_task = @async try
+        Arrow.Flight.transport_bidi_streaming_call(
+            failing_bidi_service,
+            fixture.context,
+            failing_bidi_method,
+            Iterators.repeated(echoed, 8),
+            _ -> nothing;
+            request_capacity=1,
+            response_capacity=1,
+        )
+        nothing
+    catch error
+        error
+    end
+    @test timedwait(() -> istaskdone(failing_bidi_task), 2.0) !== :timed_out
+    failing_bidi_error = fetch(failing_bidi_task)
+    @test failing_bidi_error isa ArgumentError
+    @test occursin(
+        "bidi stream rejected before request drain",
+        sprint(showerror, failing_bidi_error),
+    )
+
     live_bidi_service = Arrow.Flight.Service(
         doexchange=(ctx, request, response) -> begin
             @test ctx === fixture.context

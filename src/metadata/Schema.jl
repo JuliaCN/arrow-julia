@@ -109,13 +109,22 @@ Base.propertynames(x::Union) = (:mode, :typeIds)
 function Base.getproperty(x::Union, field::Symbol)
     if field === :mode
         o = FlatBuffers.offset(x, 4)
-        o != 0 && return FlatBuffers.get(x, o + FlatBuffers.pos(x), UnionMode.T)
+        o != 0 && return _union_mode(FlatBuffers.get(x, o + FlatBuffers.pos(x), Int16))
         return UnionMode.Sparse
     elseif field === :typeIds
         o = FlatBuffers.offset(x, 6)
         o != 0 && return FlatBuffers.Array{Int32}(x, o)
     end
     return nothing
+end
+
+function _union_mode(raw::Int16)
+    try
+        return UnionMode.T(raw)
+    catch err
+        err isa ArgumentError || rethrow()
+        throw(ArgumentError("unsupported arrow union mode tag $raw"))
+    end
 end
 
 unionStart(b::FlatBuffers.Builder) = FlatBuffers.startobject!(b, 2)
@@ -635,12 +644,15 @@ function Base.getproperty(x::Field, field::Symbol)
     elseif field === :type
         o = FlatBuffers.offset(x, 8)
         if o != 0
-            T = Type(FlatBuffers.get(x, o + FlatBuffers.pos(x), UInt8))
+            raw = FlatBuffers.get(x, o + FlatBuffers.pos(x), UInt8)
+            T = Type(raw)
+            T === nothing && throw(ArgumentError("unsupported arrow field type tag $raw"))
             o = FlatBuffers.offset(x, 10)
             pos = FlatBuffers.union(x, o)
             if o != 0
                 return FlatBuffers.init(T, FlatBuffers.bytes(x), pos)
             end
+            throw(ArgumentError("arrow field type tag $raw is missing type metadata"))
         end
     elseif field === :dictionary
         o = FlatBuffers.offset(x, 12)
@@ -720,7 +732,7 @@ Base.propertynames(x::Schema) = (:endianness, :fields, :custom_metadata)
 function Base.getproperty(x::Schema, field::Symbol)
     if field === :endianness
         o = FlatBuffers.offset(x, 4)
-        o != 0 && return FlatBuffers.get(x, o + FlatBuffers.pos(x), Endianness.T)
+        o != 0 && return _endianness(FlatBuffers.get(x, o + FlatBuffers.pos(x), Int16))
     elseif field === :fields
         o = FlatBuffers.offset(x, 6)
         if o != 0
@@ -733,6 +745,15 @@ function Base.getproperty(x::Schema, field::Symbol)
         end
     end
     return nothing
+end
+
+function _endianness(raw::Int16)
+    try
+        return Endianness.T(raw)
+    catch err
+        err isa ArgumentError || rethrow()
+        throw(ArgumentError("unsupported arrow schema endianness tag $raw"))
+    end
 end
 
 schemaStart(b::FlatBuffers.Builder) = FlatBuffers.startobject!(b, 3)

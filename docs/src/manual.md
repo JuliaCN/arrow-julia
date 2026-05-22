@@ -81,6 +81,13 @@ Apart from letting other packages have all the fun, an `Arrow.Table` itself can 
 * `for col in tbl`: iterate through columns in the table
 * `AbstractDict` methods like `haskey(tbl, :col1)`, `get(tbl, :col1, nothing)`, `keys(tbl)`, or `values(tbl)`
 
+For untrusted IPC inputs, `Arrow.validate(file_or_bytes; convert=false)` runs
+the same reader-side structural checks as `Arrow.Table`, requires at least one
+schema message, and returns `nothing` when validation succeeds. Malformed
+metadata or buffers throw the same diagnostic `ArgumentError` that the table
+reader would throw. Pass `stream=true` to validate through the batch-wise
+`Arrow.Stream` reader path.
+
 ### Arrow types
 
 In the arrow data format, specific logical types are supported, a list of which can be found [here](https://arrow.apache.org/docs/status.html#data-types). These include booleans, integers of various bit widths, floats, decimals, time types, and binary/string. While most of these map naturally to types builtin to Julia itself, there are a few cases where the definitions are slightly different, and in these cases, by default, they are converted to more "friendly" Julia types (this auto conversion can be avoided by passing `convert=false` to `Arrow.Table`, like `Arrow.Table(file; convert=false)`). Examples of arrow to julia type mappings include:
@@ -286,12 +293,16 @@ client test design.
 The focused IPC performance receipt is `test/ipc_performance_report.jl`. It
 generates a representative primitive, boolean, UTF-8, and binary table, warms
 the runtime path, then reports Arrow IPC stream and file write timings,
-metadata-read timings, scan timings, allocations, byte sizes, throughput, row
-counts, and checksums. Metadata-read and scan timings are intentionally
-separate: constructing `Arrow.Table` or `Arrow.Stream` is a lightweight
-metadata-wrapping path, while the scan receipt proves the columns can be
-visited and checked without changing the IPC support claim into a full
-application benchmark.
+direct `Arrow.tobuffer` fast-path timings, metadata-read timings, physical
+buffer-scan timings, materialized element-scan timings, allocations, byte
+sizes, throughput, row counts, and checksums. Metadata-read, physical scan, and
+materialized scan timings are intentionally separate: constructing
+`Arrow.Table` or `Arrow.Stream` is a lightweight metadata-wrapping path, the
+physical scan receipt proves borrowed buffers can be visited without element
+materialization, and the materialized scan receipt keeps ordinary consumer
+access visible without turning the IPC support claim into a full application
+benchmark. The direct `Arrow.tobuffer` receipt tracks the single-partition
+fast path separately from the general `Arrow.write(io, ...)` path.
 
 ```julia
 julia --project=test test/ipc_performance_report.jl
@@ -299,7 +310,10 @@ julia --project=test test/ipc_performance_report.jl
 
 Set `ARROW_IPC_REPORT_ROWS` to change the row count. Optional
 `ARROW_IPC_MAX_*` environment variables can enforce local timing or allocation
-limits, but the default CI receipt keeps wall-clock timing informational.
+limits. CI gates IPC read and physical-scan allocation regressions while
+keeping wall-clock timing informational by default.
+See [Production Performance Gates](production_performance_gates.md) for the
+operator-facing gate profile.
 
 ### C Data Interface
 
@@ -462,7 +476,16 @@ four rounds against one server. Each round opens one PyArrow client and runs
 the configured reused-upload count. Set
 `ARROW_FLIGHT_PYARROW_REUSED_DOPUT_MIN_THROUGHPUT_MIB_PER_SEC` to a positive
 number to make that local soak enforce an environment-specific throughput
-floor. A second focused runner,
+floor. The large and concurrent transport receipts also accept operation-local
+throughput floors through
+`ARROW_FLIGHT_PYARROW_DOGET_MIN_THROUGHPUT_MIB_PER_SEC`,
+`ARROW_FLIGHT_PYARROW_DOPUT_MIN_THROUGHPUT_MIB_PER_SEC`,
+`ARROW_FLIGHT_PYARROW_DOEXCHANGE_MIN_THROUGHPUT_MIB_PER_SEC`,
+`ARROW_FLIGHT_PYARROW_DOGET_CONCURRENT_MIN_THROUGHPUT_MIB_PER_SEC`,
+`ARROW_FLIGHT_PYARROW_DOPUT_CONCURRENT_MIN_THROUGHPUT_MIB_PER_SEC`, and
+`ARROW_FLIGHT_PYARROW_DOEXCHANGE_CONCURRENT_MIN_THROUGHPUT_MIB_PER_SEC`;
+all default to zero so shared CI keeps wall-clock throughput informational.
+A second focused runner,
 `test/flight_nghttp2_probe.jl`,
 verifies the currently exported `Nghttp2Wrapper.jl` low-level session /
 callback / submit hooks and raw h2c substrate behavior. A third focused
@@ -474,6 +497,99 @@ latest `gRPCServer.jl` listener stack. The current nghttp2 backend is intentiona
 bounded, so the package-owned `test/flight_purehttp2_perf.jl` runner remains
 the canonical large-transport proof for the default backend while
 request-streaming C-wrapper work stays deferred.
+See [Production Performance Gates](production_performance_gates.md) for the
+deployment-local throughput floor profile.
+
+### Flight SQL Protocol Helpers
+
+Flight SQL reuses Flight RPC methods with command and action payloads packed as
+`google.protobuf.Any` messages. Arrow.jl exposes the low-level
+`Arrow.Flight.SQL` helper boundary and generated Flight SQL protobuf messages
+under `Arrow.Flight.SQL.Generated` for protocol assembly without requiring
+callers to manually build the Flight `CMD` descriptor envelope:
+
+```julia
+query = Arrow.Flight.SQL.Generated.CommandStatementQuery("select 1", UInt8[])
+descriptor = Arrow.Flight.SQL.commanddescriptor(query)
+
+request = Arrow.Flight.SQL.Generated.ActionCreatePreparedStatementRequest(
+    "select ?",
+    UInt8[],
+)
+action = Arrow.Flight.SQL.action(request)
+```
+
+`Arrow.Flight.SQL.commanddescriptor` packs the supplied typed message or raw
+payload into a Flight SQL `Any` message and stores it in a `CMD`-type Flight
+descriptor. `Arrow.Flight.SQL.action` uses the same packing rule for Flight
+actions and derives the official action type from names such as
+`ActionCreatePreparedStatementRequest` unless the caller supplies an explicit
+`type` keyword.
+
+`Arrow.Flight.SQL.doputupdateresult(count)` builds a Flight `PutResult` whose
+`app_metadata` contains the Flight SQL update count result; use
+`Arrow.Flight.SQL.doputupdatecount(result)` to decode it. `count = -1` is
+accepted for the official unknown-row-count sentinel. Prepared-statement query
+DoPut responses can use `Arrow.Flight.SQL.doputpreparedstatementresult(handle)`
+and `Arrow.Flight.SQL.doputpreparedstatementhandle(result)` for the optional
+updated handle.
+
+This is a generated protocol and packing surface, not a high-level database
+client. The helper surface has command/action stability fixtures and a
+protocol-helper performance report. The live Flight interop suite also includes
+an external Python/protobuf Flight SQL endpoint proof for statement query,
+prepared-statement bind/query, stale prepared-statement handle rejection, Flight
+core session actions used by Flight SQL, and statement ingestion against the
+packaged gRPCServer listener. High-level SQL client/server APIs remain
+follow-up production-core work in
+[Full Arrow Alignment Audit](arrow_alignment_audit.md).
+
+### ADBC ABI Boundary
+
+Arrow.jl exposes a low-level `Arrow.ADBC` module for the ADBC constants and C
+ABI handle layouts that future database driver work will need:
+
+```julia
+Arrow.ADBC.STATUS_OK
+Arrow.ADBC.OPTION_URI
+Arrow.ADBC.CONNECTION_OPTION_AUTOCOMMIT
+Arrow.ADBC.INGEST_OPTION_TARGET_TABLE
+Arrow.ADBC.Database()
+Arrow.ADBC.Connection()
+Arrow.ADBC.Statement()
+Arrow.ADBC.Driver()
+Arrow.ADBC.driverabisize(Arrow.ADBC.ADBC_VERSION_1_1_0)
+Arrow.ADBC.driverinit!(driver_init_ptr)
+Arrow.ADBC.opendriver("/path/to/libadbc_driver_sqlite.so")
+Arrow.ADBC.loaddriver("/path/to/libadbc_driver_sqlite.so")
+```
+
+`driverinit!` calls an ADBC `AdbcDriverInitFunc` function pointer with the
+official `(version, driver, error)` ABI and returns the initialized driver
+table. This is the narrow function-pointer boundary that a future driver
+manager or package extension can use after it has resolved a driver entry
+point.
+
+`opendriver` and `loaddriver` provide the low-level driver-manager boundary:
+open a shared library, derive or accept the ADBC init entrypoint, resolve it
+with `dlsym`, and initialize the driver table. They intentionally stop before
+database, connection, statement, and ingestion wrappers.
+
+ADBC statement execution returns an Arrow C Stream plus a rows-affected count.
+`Arrow.ADBC.importstream(stream_ptr; rows_affected)` borrows that result stream
+through the same C Stream importer used by `Arrow.CData.importstream`:
+
+```julia
+result = Arrow.ADBC.importstream(stream_ptr; rows_affected=rows)
+stream = Arrow.ADBC.resultstream(result)
+rows = Arrow.ADBC.rowsaffected(result)
+```
+
+This is an ABI, driver-loading, constants, and result-stream boundary. It does
+not execute statements or provide a high-level database client. Query
+execution, bulk ingestion, cancellation, partitioned result reads, external
+driver interop, and driver-specific performance receipts remain dedicated ADBC
+follow-up work.
 
 ## Writing arrow data
 

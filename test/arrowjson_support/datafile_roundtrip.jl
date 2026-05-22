@@ -52,7 +52,7 @@ function DataFile(source)
                     end
                     dictencodings[String(nm)] = (T, DictEncoding(id, IT, false))
                 end
-                field = Field(String(nm), T, dictencodings)
+                field = Field(String(nm), T, dictencodings, col)
                 field.metadata = _metadata_pairs(Arrow.getmetadata(col))
                 push!(fields, field)
             end
@@ -77,8 +77,51 @@ function DataFile(source)
     return DataFile(schema, batches, dictionaries)
 end
 
+function _schema_type_members(::Base.Type{T}) where {T}
+    T === Missing && return Base.Type[Missing]
+    S = Base.nonmissingtype(T)
+    if S <: Arrow.UnionT
+        members = Base.Type[]
+        for child in fieldtypes(eltype(S))
+            append!(members, _schema_type_members(child))
+        end
+        T !== S && push!(members, Missing)
+        return unique(members)
+    elseif T isa Union
+        members = Base.Type[]
+        for child in Base.uniontypes(T)
+            append!(members, _schema_type_members(child))
+        end
+        return unique(members)
+    else
+        return Base.Type[T]
+    end
+end
+
+function _schema_type_equal(expected::Base.Type, actual::Base.Type)
+    expected == actual && return true
+    expected_members = _schema_type_members(expected)
+    actual_members = _schema_type_members(actual)
+    length(expected_members) == length(actual_members) || return false
+    return all(member -> any(==(member), actual_members), expected_members)
+end
+
+function _schema_equal(expected::Tables.Schema, actual::Tables.Schema)
+    expected.names == actual.names || return false
+    length(expected.types) == length(actual.types) || return false
+    return all(
+        _schema_type_equal(expected.types[i], actual.types[i]) for
+        i = 1:length(expected.types)
+    )
+end
+
 function Base.isequal(df::DataFile, tbl::Arrow.Table)
-    Arrow.is_equivalent_schema(Tables.schema(df), Tables.schema(tbl)) || return false
+    expected_schema = Tables.schema(df)
+    actual_schema = Tables.schema(tbl)
+    (
+        Arrow.is_equivalent_schema(expected_schema, actual_schema) ||
+        _schema_equal(expected_schema, actual_schema)
+    ) || return false
     _metadata_equal(df.schema.metadata, Arrow.getmetadata(tbl)) || return false
     for (column_index, field) in enumerate(df.schema.fields)
         _metadata_equal(

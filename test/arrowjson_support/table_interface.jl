@@ -70,6 +70,13 @@ end
 
 Tables.columns(x::DataFile) = x
 
+function Tables.eachcolumn(f, sch::Tables.Schema, x::DataFile)
+    for i = 1:length(x.schema.fields)
+        f(Tables.getcolumn(x, i), i, Symbol(x.schema.fields[i].name))
+    end
+    return
+end
+
 function Tables.schema(x::DataFile)
     names = map(x -> x.name, x.schema.fields)
     types = map(x -> juliatype(x), x.schema.fields)
@@ -113,5 +120,7 @@ Base.size(x::ArrowArray) = (x.fielddata.count,)
 _jsonint(x::Integer) = Base.Int(x)
 _jsonint(x::AbstractString) = parse(Base.Int, x)
 _offsetvalue(x) = _jsonint(x)
+_hasjsonfield(x::AbstractDict, key::Symbol) = haskey(x, String(key)) || haskey(x, key)
+_hasjsonfield(x, key::Symbol) = hasproperty(x, key)
 _jsonfield(x::AbstractDict, key::Symbol) = haskey(x, String(key)) ? x[String(key)] : x[key]
 _jsonfield(x, key::Symbol) = getproperty(x, key)

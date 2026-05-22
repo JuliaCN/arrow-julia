@@ -99,7 +99,7 @@ function arrowvector(
             dictencode=dictencode,
             kw...,
         )
-    elseif !(x isa DictEncode) && !_keeprawmapvector(T, x)
+    elseif !(x isa DictEncode) && !(x isa Struct) && !_keeprawmapvector(T, x)
         x = ToArrow(x)
     end
     S = maybemissing(eltype(x))

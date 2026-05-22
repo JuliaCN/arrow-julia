@@ -20,5 +20,6 @@ module protocol
 import ...google
 
 include("Flight_pb.jl")
+include("sql/sql.jl")
 
 end # module protocol

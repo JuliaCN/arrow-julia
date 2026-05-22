@@ -20,7 +20,8 @@ function juliaeltype(
     list::Union{Meta.List,Meta.LargeList,Meta.ListView,Meta.LargeListView},
     convert,
 )
-    return Vector{juliaeltype(f.children[1], buildmetadata(f.children[1]), convert)}
+    child = _field_child(f, 1)
+    return Vector{juliaeltype(child, buildmetadata(child), convert)}
 end
 
 # arrowtype will call fieldoffset recursively for children
@@ -67,7 +68,8 @@ function arrowtype(b, x::ListView{T,O,A}) where {T,O,A}
 end
 
 function juliaeltype(f::Meta.Field, list::Meta.FixedSizeList, convert)
-    type = juliaeltype(f.children[1], buildmetadata(f.children[1]), convert)
+    child = _field_child(f, 1)
+    type = juliaeltype(child, buildmetadata(child), convert)
     return NTuple{Int(list.listSize),type}
 end
 
@@ -88,16 +90,11 @@ function arrowtype(b, x::FixedSizeList{T,A}) where {T,A}
 end
 
 function juliaeltype(f::Meta.Field, map::Meta.Map, convert)
-    K = juliaeltype(
-        f.children[1].children[1],
-        buildmetadata(f.children[1].children[1]),
-        convert,
-    )
-    V = juliaeltype(
-        f.children[1].children[2],
-        buildmetadata(f.children[1].children[2]),
-        convert,
-    )
+    entries = _field_child(f, 1)
+    key = _field_child(entries, 1)
+    value = _field_child(entries, 2)
+    K = juliaeltype(key, buildmetadata(key), convert)
+    V = juliaeltype(value, buildmetadata(value), convert)
     return Dict{K,V}
 end
 
@@ -126,11 +123,11 @@ end
 function juliaeltype(f::Meta.Field, list::Meta.Struct, convert)
     names = Tuple(Symbol(x.name) for x in f.children)
     types = Tuple(juliaeltype(x, buildmetadata(x), convert) for x in f.children)
-    return NamedTuple{names,Tuple{types...}}
+    return allunique(names) ? NamedTuple{names,Tuple{types...}} : Tuple{types...}
 end
 
-function arrowtype(b, x::Struct{T,S}) where {T,S}
-    names = fieldnames(Base.nonmissingtype(T))
+function arrowtype(b, x::Struct{T,S,fnames}) where {T,S,fnames}
+    names = fnames
     children = [fieldoffset(b, names[i], x.data[i]) for i = 1:length(names)]
     Meta.structStart(b)
     return Meta.Struct, Meta.structEnd(b), children
@@ -157,7 +154,7 @@ function arrowtype(
     if typeIds !== nothing
         Meta.unionStartTypeIdsVector(b, length(typeIds))
         for id in Iterators.reverse(typeIds)
-            FlatBuffers.prepend!(b, id)
+            FlatBuffers.prepend!(b, Int32(id))
         end
         TI = FlatBuffers.endvector!(b, length(typeIds))
     end

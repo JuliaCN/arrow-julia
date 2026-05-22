@@ -29,13 +29,14 @@ function build(
     @debug "building array: L = $L"
     validity = buildbitmap(batch, rb, nodeidx, bufferidx)
     bufferidx += 1
-    buffer = rb.buffers[bufferidx]
+    buffer = _record_batch_buffer(rb, bufferidx)
     meta = buildmetadata(f.custom_metadata)
     # get storage type (non-converted)
     T = juliaeltype(f, nothing, false)
     @debug "storage type for primitive: T = $T"
     bytes, A = reinterp(Base.nonmissingtype(T), batch, buffer, rb.compression)
-    len = rb.nodes[nodeidx].length
+    len = _record_batch_node(rb, nodeidx).length
+    _assert_value_count(A, len, Symbol(f.name))
     T = juliaeltype(f, meta, convert)
     @debug "final julia type for primitive: T = $T"
     return Primitive(T, bytes, validity, A, len, meta),
@@ -58,26 +59,29 @@ function build(
     @debug "building array: L = $L"
     validity = buildbitmap(batch, rb, nodeidx, bufferidx)
     bufferidx += 1
-    buffer = rb.buffers[bufferidx]
+    buffer = _record_batch_buffer(rb, bufferidx)
     meta = buildmetadata(f.custom_metadata)
     # get storage type (non-converted)
     T = juliaeltype(f, nothing, false)
     @debug "storage type for primitive: T = $T"
-    buffer = rb.buffers[bufferidx]
+    buffer = _record_batch_buffer(rb, bufferidx)
+    _assert_record_batch_buffer_bounds(batch, buffer, bufferidx)
     voff = batch.pos + buffer.offset
-    node = rb.nodes[nodeidx]
+    node = _record_batch_node(rb, nodeidx)
     if rb.compression === nothing
         decodedbytes = batch.bytes
         pos = voff
+        _assert_bool_value_byte_count(buffer.length, node.length, Symbol(f.name))
         # return ValidityBitmap(batch.bytes, voff, node.length, node.null_count)
     else
         # compressed
         ptr = pointer(batch.bytes, voff)
         _, decodedbytes = uncompress(ptr, buffer, rb.compression)
         pos = 1
+        _assert_bool_value_bytes(decodedbytes, pos, node.length, Symbol(f.name))
         # return ValidityBitmap(decodedbytes, 1, node.length, node.null_count)
     end
-    len = rb.nodes[nodeidx].length
+    len = node.length
     T = juliaeltype(f, meta, convert)
     return BoolVector{T}(decodedbytes, pos, validity, len, meta),
     nodeidx + 1,

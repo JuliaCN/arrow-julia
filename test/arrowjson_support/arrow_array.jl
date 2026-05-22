@@ -14,6 +14,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+_mapentrykey(entry) = getfield(entry, 1)
+_mapentryvalue(entry) = getfield(entry, 2)
+_decimalstoragetype(::Base.Type{<:Arrow.Decimal{P,S,T}}) where {P,S,T} = T
+_uniontypeids(::Base.Type{<:Arrow.UnionT{T,typeIds,U}}) where {T,typeIds,U} =
+    typeIds === nothing ? (0:(fieldcount(U) - 1)) : typeIds
+
+function _unionchildindex(::Base.Type{UT}, rawtypeid::Integer) where {UT<:Arrow.UnionT}
+    ids = _uniontypeids(UT)
+    index = findfirst(==(Base.Int(rawtypeid)), ids)
+    index === nothing && error("union type id $rawtypeid is not declared")
+    return index
+end
+
 function Base.getindex(x::ArrowArray{T}, i::Base.Int) where {T}
     @boundscheck checkbounds(x, i)
     S = Base.nonmissingtype(T)
@@ -32,21 +45,19 @@ function Base.getindex(x::ArrowArray{T}, i::Base.Int) where {T}
         values = ArrowArray(x.field.children[2], x.fielddata.children[2], x.dictionaries)
         physical = searchsortedfirst(run_ends, i)
         return values[physical]
-    elseif S <: UnionT
-        U = eltype(S)
-        tids = Arrow.typeids(S) === nothing ? (0:fieldcount(U)) : Arrow.typeids(S)
-        typeid = tids[x.fielddata.TYPE_ID[i]]
-        if Arrow.unionmode(S) == Arrow.Meta.UnionMode.DENSE
+    elseif x.field.type isa UnionT
+        childidx = _unionchildindex(x.field.type.typeIds, x.fielddata.TYPE_ID[i])
+        if x.field.type.mode == "DENSE"
             off = x.fielddata.OFFSET[i]
             return ArrowArray(
-                x.field.children[typeid + 1],
-                x.fielddata.children[typeid + 1],
+                x.field.children[childidx],
+                x.fielddata.children[childidx],
                 x.dictionaries,
-            )[off]
+            )[off + 1]
         else
             return ArrowArray(
-                x.field.children[typeid + 1],
-                x.fielddata.children[typeid + 1],
+                x.field.children[childidx],
+                x.fielddata.children[childidx],
                 x.dictionaries,
             )[i]
         end
@@ -82,7 +93,7 @@ function Base.getindex(x::ArrowArray{T}, i::Base.Int) where {T}
         offs = x.fielddata.OFFSET
         A = ArrowArray(x.field.children[1], x.fielddata.children[1], x.dictionaries)
         return Dict(
-            y.key => y.value for
+            _mapentrykey(y) => _mapentryvalue(y) for
             y in A[(_offsetvalue(offs[i]) + 1):_offsetvalue(offs[i + 1])]
         )
     elseif S <: Tuple
@@ -105,19 +116,33 @@ function Base.getindex(x::ArrowArray{T}, i::Base.Int) where {T}
             j = 1:length(x.field.children)
         )
         return NamedTuple{fieldnames(S)}(Tuple(data))
+    elseif S <: Tuple
+        data = (
+            ArrowArray(x.field.children[j], x.fielddata.children[j], x.dictionaries)[i] for
+            j = 1:length(x.field.children)
+        )
+        return Tuple(data)
     elseif S == Int64 || S == UInt64
         return parse(S, x.fielddata.DATA[i])
     elseif S <: Arrow.Decimal
         str = x.fielddata.DATA[i]
-        return S(parse(Int128, str))
+        return S(parse(_decimalstoragetype(S), str))
     elseif S <: Arrow.Date || S <: Arrow.Time
         val = x.fielddata.DATA[i]
         return Arrow.storagetype(S) == Int32 ? S(val) : S(parse(Int64, val))
     elseif S <: Arrow.Timestamp
+        return S(parse(Int64, x.fielddata.DATA[i]))
+    elseif S <: Arrow.Duration
         return S(parse(Int64, x.fielddata.DATA[i]))
     elseif S <: Arrow.Interval
         return _intervalvalue(S, x.fielddata.DATA[i])
     else
         return S(x.fielddata.DATA[i])
     end
+end
+
+function _unionchildindex(typeids::AbstractVector, rawtypeid::Integer)
+    index = findfirst(==(Base.Int(rawtypeid)), typeids)
+    index === nothing && error("union type id $rawtypeid is not declared")
+    return index
 end

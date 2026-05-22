@@ -41,6 +41,7 @@ include(joinpath(@__DIR__, "testappend.jl"))
 include(joinpath(@__DIR__, "integrationtest.jl"))
 include(joinpath(@__DIR__, "dates.jl"))
 include(joinpath(@__DIR__, "cdata.jl"))
+include(joinpath(@__DIR__, "adbc.jl"))
 include(joinpath(@__DIR__, "flight.jl"))
 
 struct CustomStruct
@@ -66,6 +67,7 @@ end
 
     @testset "misc" begin
         include(joinpath(@__DIR__, "runtests", "misc_core_layouts.jl"))
+        include(joinpath(@__DIR__, "runtests", "malformed_ipc.jl"))
         include(joinpath(@__DIR__, "runtests", "misc_validation_views.jl"))
         include(joinpath(@__DIR__, "runtests", "misc_issue_roundtrips.jl"))
         include(joinpath(@__DIR__, "runtests", "misc_extensions.jl"))

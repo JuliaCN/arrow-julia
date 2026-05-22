@@ -126,7 +126,7 @@ function _requirepath(path, label)
 end
 
 function _filetostream(inputname, outputname)
-    tbl = Arrow.Table(inputname)
+    tbl = Arrow.Table(inputname; convert=false)
     open(outputname, "w") do io
         Arrow.write(io, tbl; file=false)
     end
@@ -134,7 +134,7 @@ function _filetostream(inputname, outputname)
 end
 
 function _streamtofile(inputname, outputname)
-    tbl = Arrow.Table(inputname)
+    tbl = Arrow.Table(inputname; convert=false)
     Arrow.write(outputname, tbl)
     return
 end
@@ -145,7 +145,7 @@ function runcommand(jsonname, arrowname, mode, verbose; inputname="", outputname
         _requirepath(jsonname, "json file name")
         _requirepath(arrowname, "arrow file name")
         verbose && println(stderr, "Converting Arrow IPC file $arrowname to JSON $jsonname")
-        tbl = Arrow.Table(arrowname)
+        tbl = Arrow.Table(arrowname; convert=false)
         df = ArrowJSON.DataFile(tbl)
         open(jsonname, "w") do io
             JSON3.write(io, df)
@@ -162,7 +162,7 @@ function runcommand(jsonname, arrowname, mode, verbose; inputname="", outputname
         verbose &&
             println(stderr, "Validating Arrow IPC file $arrowname against JSON $jsonname")
         df = ArrowJSON.parsefile(jsonname)
-        tbl = Arrow.Table(arrowname)
+        tbl = Arrow.Table(arrowname; convert=false)
         @test isequal(df, tbl)
     elseif mode == "FILE_TO_STREAM"
         _requirepath(inputname, "input file name")

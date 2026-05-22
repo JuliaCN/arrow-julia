@@ -28,6 +28,14 @@ function writezeros(io::IO, n::Integer)
     s
 end
 
+@inline function _sizehint_iobuffer!(io::IO, n::Integer)
+    io isa IOBuffer || return nothing
+    data = getfield(io, :data)
+    data isa Vector{UInt8} || return nothing
+    sizehint!(data, max(length(data), position(io) + n))
+    return nothing
+end
+
 if isdefined(Base, :waitall)
     const _waitall = waitall
 else
@@ -226,13 +234,12 @@ end
     for col in Tables.Columns(cols)
         if col isa Map
             return
-            messagebytes(schmsg, alignment) +
-            sum(msg -> messagebytes(msg, alignment), dictmsgs; init=0) +
-            messagebytes(recbatchmsg, alignment) +
-            messagebytes(endmsg, alignment)
         end
     end
-    return nothing
+    return messagebytes(schmsg, alignment) +
+           sum(msg -> messagebytes(msg, alignment), dictmsgs; init=0) +
+           messagebytes(recbatchmsg, alignment) +
+           messagebytes(endmsg, alignment)
 end
 
 function _writedictionarymessages!(io, blocks, schref, alignment, dictencodings)

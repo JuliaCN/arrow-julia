@@ -41,7 +41,7 @@ function Table(blobs::Vector{ArrowBlob}; convert::Bool=true)
             header = batch.msg.header
             if header isa Meta.Schema
                 @debug "parsing schema message"
-                # assert endianness?
+                _assert_supported_schema_endianness(header.endianness)
                 # store custom_metadata?
                 if sch === nothing
                     for (i, field) in enumerate(header.fields)
@@ -61,23 +61,22 @@ function Table(blobs::Vector{ArrowBlob}; convert::Bool=true)
                     )
                 end
             elseif header isa Meta.DictionaryBatch
+                sch === nothing &&
+                    throw(ArgumentError("first arrow ipc message MUST be a schema message"))
                 id = header.id
                 recordbatch = header.data
                 @debug "parsing dictionary batch message: id = $id, compression = $(recordbatch.compression)"
                 @lock dictencodingslockable begin
                     dictencodings = dictencodingslockable[]
+                    _assert_dictionary_delta_has_base(dictencodings, id, header.isDelta)
                     if haskey(dictencodings, id) && header.isDelta
                         # delta
-                        field = dictencoded[id]
-                        values, _, _, _ = build(
+                        field = _dictionary_encoded_field(dictencoded, id)
+                        values = _build_dictionary_values(
                             field,
-                            field.type,
                             batch,
                             recordbatch,
                             dictencodingslockable,
-                            Int64(1),
-                            Int64(1),
-                            Int64(1),
                             convert,
                         )
                         dictencoding = dictencodings[id]
@@ -98,16 +97,12 @@ function Table(blobs::Vector{ArrowBlob}; convert::Bool=true)
                         continue
                     end
                     # new dictencoding or replace
-                    field = dictencoded[id]
-                    values, _, _, _ = build(
+                    field = _dictionary_encoded_field(dictencoded, id)
+                    values = _build_dictionary_values(
                         field,
-                        field.type,
                         batch,
                         recordbatch,
                         dictencodingslockable,
-                        Int64(1),
-                        Int64(1),
-                        Int64(1),
                         convert,
                     )
                     A = values
@@ -123,6 +118,8 @@ function Table(blobs::Vector{ArrowBlob}; convert::Bool=true)
                 end # lock
                 @debug "parsed dictionary batch message: id=$id, data=$values\n"
             elseif header isa Meta.RecordBatch
+                sch === nothing &&
+                    throw(ArgumentError("first arrow ipc message MUST be a schema message"))
                 @debug "parsing record batch message: compression = $(header.compression)"
                 push!(
                     tasks,
@@ -168,6 +165,11 @@ function Table(blobs::Vector{ArrowBlob}; convert::Bool=true)
             foreach(enumerate(rb_cols[j])) do (i, x)
                 append!(columns(t)[i], x)
             end
+        end
+    end
+    if sch !== nothing
+        foreach(enumerate(sch.fields)) do (i, field)
+            columns(t)[i] = _wrapfieldmetadata(columns(t)[i], field)
         end
     end
     for (nm, col) in zip(names(t), columns(t))
@@ -231,28 +233,43 @@ function Base.iterate(x::BatchIterator, (pos, id)=(x.startpos, 0))
     end
     pos += 4
     if pos + 3 > length(x.bytes)
-        @debug "not enough bytes left to read length of another batch message"
-        return nothing
+        throw(ArgumentError("truncated arrow ipc message length"))
     end
     msglen = readbuffer(x.bytes, pos, Int32)
+    msglen < 0 && throw(ArgumentError("arrow ipc message length must be non-negative"))
     if msglen == 0
         @debug "message has 0 length; terminating message parsing"
         return nothing
     end
     pos += 4
     if pos + msglen - 1 > length(x.bytes)
-        @debug "not enough bytes left to read Meta.Message"
-        return nothing
+        throw(
+            ArgumentError(
+                "truncated arrow ipc message metadata: declared length $msglen exceeds remaining bytes $(length(x.bytes) - pos + 1)",
+            ),
+        )
     end
     msg = FlatBuffers.getrootas(Meta.Message, x.bytes, pos - 1)
+    msg.version
     pos += msglen
     # pos now points to message body
     @debug "parsing message: pos = $pos, msglen = $msglen, bodyLength = $(msg.bodyLength)"
-    if pos + msg.bodyLength - 1 > length(x.bytes)
-        @debug "not enough bytes left to read message body"
-        return nothing
+    msg.bodyLength < 0 &&
+        throw(ArgumentError("arrow ipc message body length must be non-negative"))
+    remaining_body_bytes = length(x.bytes) - pos + 1
+    if msg.bodyLength > remaining_body_bytes
+        throw(
+            ArgumentError(
+                "truncated arrow ipc message body: declared length $(msg.bodyLength) exceeds remaining bytes $remaining_body_bytes",
+            ),
+        )
     end
     return Batch(msg, x.bytes, pos, id), (pos + msg.bodyLength, id + 1)
+end
+
+function _assert_supported_schema_endianness(endianness)
+    (endianness === nothing || endianness === Meta.Endianness.Little) && return nothing
+    throw(ArgumentError("unsupported arrow schema endianness $endianness"))
 end
 
 struct VectorIterator
@@ -266,3 +283,10 @@ buildmetadata(f::Union{Meta.Field,Meta.Schema}) = buildmetadata(f.custom_metadat
 buildmetadata(meta) = toidict(String(kv.key) => String(kv.value) for kv in meta)
 buildmetadata(::Nothing) = nothing
 buildmetadata(x::AbstractDict) = x
+
+function _wrapfieldmetadata(col, field::Meta.Field)
+    metadata = buildmetadata(field.custom_metadata)
+    metadata === nothing && return col
+    getmetadata(col) == metadata && return col
+    return _wrapmetadata(_metadatavectordata(col), metadata)
+end

@@ -64,11 +64,19 @@ struct Decimal <: Type
     name::String
     precision::Int32
     scale::Int32
+    bitWidth::Int32
 end
 
-Type(::Base.Type{Arrow.Decimal{P,S,T}}) where {P,S,T} = Decimal("decimal", P, S)
+Decimal(name::String, precision::Integer, scale::Integer) =
+    Decimal(name, Int32(precision), Int32(scale), Int32(128))
+Decimal(name::String, precision::Integer, scale::Integer, ::Nothing) =
+    Decimal(name, precision, scale)
+
+Type(::Base.Type{Arrow.Decimal{P,S,T}}) where {P,S,T} =
+    Decimal("decimal", P, S, T === Arrow.Int256 ? Int32(256) : Int32(128))
 StructTypes.StructType(::Base.Type{Decimal}) = StructTypes.Struct()
-juliatype(f, x::Decimal) = Arrow.Decimal{x.precision,x.scale,Int128}
+juliatype(f, x::Decimal) =
+    Arrow.Decimal{x.precision,x.scale,x.bitWidth == 256 ? Arrow.Int256 : Int128}
 
 mutable struct Timestamp <: Type
     name::String
@@ -98,7 +106,7 @@ end
 
 Type(::Base.Type{Arrow.Duration{U}}) where {U} = Duration("duration", unit(U))
 StructTypes.StructType(::Base.Type{Duration}) = StructTypes.Struct()
-juliatype(f, x::Duration) = Arrow.Duration{unit % (x.unit)}
+juliatype(f, x::Duration) = Arrow.Duration{unitT(x.unit)}
 
 struct Date <: Type
     name::String
@@ -146,7 +154,7 @@ juliatype(f, x::Interval) = Arrow.Interval{
 struct UnionT <: Type
     name::String
     mode::String
-    typIds::Vector{Int64}
+    typeIds::Vector{Int64}
 end
 
 Type(::Base.Type{Arrow.UnionT{T,typeIds,U}}) where {T,typeIds,U} =
@@ -154,11 +162,7 @@ Type(::Base.Type{Arrow.UnionT{T,typeIds,U}}) where {T,typeIds,U} =
 children(::Base.Type{Arrow.UnionT{T,typeIds,U}}) where {T,typeIds,U} =
     Field[Field("", fieldtype(U, i), nothing) for i = 1:fieldcount(U)]
 StructTypes.StructType(::Base.Type{UnionT}) = StructTypes.Struct()
-juliatype(f, x::UnionT) = Arrow.UnionT{
-    x.mode == "DENSE" ? Arrow.Meta.UnionMode.DENSE : Arrow.Meta.UnionMode.SPARSE,
-    Tuple(x.typeIds),
-    Tuple{(juliatype(y) for y in f.children)...},
-}
+juliatype(f, x::UnionT) = Union{(juliatype(y) for y in f.children)...}
 
 struct List <: Type
     name::String
@@ -206,12 +210,13 @@ end
 
 Type(::Base.Type{NamedTuple{names,types}}) where {names,types} = Struct("struct")
 children(::Base.Type{NamedTuple{names,types}}) where {names,types} =
-    [Field(names[i], fieldtype(types, i), nothing) for i = 1:length(names)]
+    [Field(String(names[i]), fieldtype(types, i), nothing) for i = 1:length(names)]
 StructTypes.StructType(::Base.Type{Struct}) = StructTypes.Struct()
-juliatype(f, x::Struct) = NamedTuple{
-    Tuple(Symbol(x.name) for x in f.children),
-    Tuple{(juliatype(y) for y in f.children)...},
-}
+function juliatype(f, x::Struct)
+    names = Tuple(Symbol(x.name) for x in f.children)
+    types = Tuple(juliatype(y) for y in f.children)
+    return allunique(names) ? NamedTuple{names,Tuple{types...}} : Tuple{types...}
+end
 
 struct Map <: Type
     name::String

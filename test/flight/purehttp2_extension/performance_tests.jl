@@ -18,6 +18,17 @@
 const PUREHTTP2_EXTENSION_LARGE_TRANSPORT_BYTES = 2 * 1024 * 1024
 const PUREHTTP2_EXTENSION_EXCHANGE_TRANSPORT_BYTES = 512 * 1024
 
+function purehttp2_extension_assert_minimum_throughput(
+    metric,
+    minimum_throughput_mib_per_sec::Real,
+)
+    @test metric.throughput_mib_per_sec > 0
+    if minimum_throughput_mib_per_sec > 0
+        @test metric.throughput_mib_per_sec >= minimum_throughput_mib_per_sec
+    end
+    return nothing
+end
+
 function purehttp2_extension_assert_reused_doput_metric(
     metric;
     expected_requests::Integer,
@@ -34,10 +45,7 @@ function purehttp2_extension_assert_reused_doput_metric(
     @test metric.request_p95_ns >= metric.request_median_ns
     @test metric.request_p99_ns >= metric.request_p95_ns
     @test metric.request_max_ns >= metric.request_p99_ns
-    @test metric.throughput_mib_per_sec > 0
-    if minimum_throughput_mib_per_sec > 0
-        @test metric.throughput_mib_per_sec >= minimum_throughput_mib_per_sec
-    end
+    purehttp2_extension_assert_minimum_throughput(metric, minimum_throughput_mib_per_sec)
     return nothing
 end
 
@@ -110,9 +118,22 @@ function purehttp2_extension_test_large_transport_performance(;
     doexchange_metric = flight_live_transport_metric(metrics, :grpcserver, :doexchange)
     @test doget_metric.total_bytes >= PUREHTTP2_EXTENSION_LARGE_TRANSPORT_BYTES
     @test doput_metric.request_bytes >= PUREHTTP2_EXTENSION_LARGE_TRANSPORT_BYTES
+    purehttp2_extension_assert_minimum_throughput(
+        doget_metric,
+        _flight_live_pyarrow_min_throughput_mib_per_sec(:doget),
+    )
+    purehttp2_extension_assert_minimum_throughput(
+        doput_metric,
+        _flight_live_pyarrow_min_throughput_mib_per_sec(:doput),
+    )
     purehttp2_extension_assert_reused_doput_metric(
         doput_reused_metric;
         expected_requests=_flight_live_pyarrow_reused_doput_requests(),
+        minimum_throughput_mib_per_sec=_flight_live_pyarrow_reused_doput_min_throughput_mib_per_sec(),
+    )
+    purehttp2_extension_assert_minimum_throughput(
+        doexchange_metric,
+        _flight_live_pyarrow_min_throughput_mib_per_sec(:doexchange),
     )
     @test doexchange_metric.total_bytes >= PUREHTTP2_EXTENSION_EXCHANGE_TRANSPORT_BYTES
     @test all(metric.request_bytes >= 0 for metric in metrics)
@@ -263,6 +284,13 @@ function purehttp2_extension_test_large_transport_concurrent_soak(;
         PUREHTTP2_EXTENSION_LARGE_TRANSPORT_BYTES * expected_total_requests
     expected_doexchange_total_bytes =
         PUREHTTP2_EXTENSION_EXCHANGE_TRANSPORT_BYTES * expected_total_requests
+    minimum_throughputs = (
+        doget_concurrent=_flight_live_pyarrow_min_throughput_mib_per_sec(:doget_concurrent),
+        doput_concurrent=_flight_live_pyarrow_min_throughput_mib_per_sec(:doput_concurrent),
+        doexchange_concurrent=_flight_live_pyarrow_min_throughput_mib_per_sec(
+            :doexchange_concurrent,
+        ),
+    )
     for operation_metrics in (doget_metrics, doput_metrics, doexchange_metrics)
         @test all(metric.backend == :grpcserver for metric in operation_metrics)
         @test all(
@@ -291,7 +319,12 @@ function purehttp2_extension_test_large_transport_concurrent_soak(;
             metric.request_max_ns >= metric.request_median_ns for
             metric in operation_metrics
         )
-        @test all(metric.throughput_mib_per_sec > 0 for metric in operation_metrics)
+        for metric in operation_metrics
+            purehttp2_extension_assert_minimum_throughput(
+                metric,
+                getproperty(minimum_throughputs, metric.operation),
+            )
+        end
     end
     @test all(metric.total_bytes >= expected_doget_total_bytes for metric in doget_metrics)
     @test all(

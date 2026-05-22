@@ -94,15 +94,37 @@ function juliatype(f::Field)
 end
 
 function Field(nm, ::Base.Type{T}, dictencodings) where {T}
+    name = String(nm)
     S = Arrow.maybemissing(T)
     type = Type(S)
     ch = children(S)
-    if dictencodings !== nothing && haskey(dictencodings, nm)
-        dict = dictencodings[nm]
+    if dictencodings !== nothing && haskey(dictencodings, name)
+        dict = dictencodings[name]
     else
         dict = nothing
     end
-    return Field(nm, T !== S, type, ch, dict, nothing)
+    return Field(name, T !== S, type, ch, dict, nothing)
+end
+
+function Field(nm, ::Base.Type{T}, dictencodings, col) where {T}
+    return Field(nm, T, dictencodings)
+end
+
+function Field(nm, ::Base.Type{T}, dictencodings, col::Arrow.View) where {T}
+    name = String(nm)
+    S = Arrow.maybemissing(T)
+    type = S <: Base.CodeUnits ? BinaryView("binaryview") : Utf8View("utf8view")
+    return Field(name, T !== S, type, Field[], nothing, nothing)
+end
+
+function Field(nm, ::Base.Type{T}, dictencodings, col::Arrow.ListView) where {T}
+    name = String(nm)
+    S = Arrow.maybemissing(T)
+    type =
+        eltype(getfield(col, :offsets)) === Int64 ? LargeListView("largelistview") :
+        ListView("listview")
+    child = Field("item", eltype(getfield(col, :data)), nothing, getfield(col, :data))
+    return Field(name, T !== S, type, [child], nothing, nothing)
 end
 
 mutable struct Schema
@@ -192,50 +214,46 @@ function FieldData(nm, ::Base.Type{T}, col, dictencodings) where {T}
             DATA = [ismissing(x) ? "" : _hexstring(x) for x in col]
         elseif S <: Vector
             lenfun = x -> ismissing(x) ? 0 : length(x)
-            tot = sum(lenfun, col)
+            lengths = [lenfun(x) for x in col]
+            tot = sum(lengths)
+            offsets = cumsum([0; lengths])
             if tot > 2147483647
-                OFFSET = String[String(lenfun(x)) for x in col]
-                pushfirst!(OFFSET, "0")
+                OFFSET = string.(offsets)
             else
-                OFFSET = Int32[ismissing(x) ? 0 : lenfun(x) for x in col]
-                pushfirst!(OFFSET, 0)
+                OFFSET = Int32.(offsets)
             end
             OFFSET = Offsets(OFFSET)
-            push!(
-                children,
-                FieldData(
-                    "item",
-                    eltype(S),
-                    Arrow.flatten(skipmissing(col)),
-                    dictencodings,
-                ),
-            )
+            flat_values = [item for value in skipmissing(col) for item in value]
+            push!(children, FieldData("item", eltype(S), flat_values, dictencodings))
         elseif S <: NTuple
             if Arrow.ArrowTypes.gettype(Arrow.ArrowTypes.ArrowKind(S)) == UInt8
                 DATA = [
                     ismissing(x) ? _hexstring(Arrow.ArrowTypes.default(S)) : _hexstring(x) for x in col
                 ]
             else
+                flat_values =
+                    [item for x in col for item in coalesce(x, Arrow.ArrowTypes.default(S))]
                 push!(
                     children,
                     FieldData(
                         "item",
                         Arrow.ArrowTypes.gettype(Arrow.ArrowTypes.ArrowKind(S)),
-                        Arrow.flatten(
-                            coalesce(x, Arrow.ArrowTypes.default(S)) for x in col
-                        ),
+                        flat_values,
                         dictencodings,
                     ),
                 )
             end
         elseif S <: NamedTuple
-            for (nm, typ) in zip(fieldnames(S), fieldtypes(S))
+            for (childname, typ) in zip(fieldnames(S), fieldtypes(S))
                 push!(
                     children,
                     FieldData(
-                        String(nm),
+                        String(childname),
                         typ,
-                        (getfield(x, nm) for x in col),
+                        (
+                            ismissing(x) ? Arrow.ArrowTypes.default(typ) :
+                            getfield(x, childname) for x in col
+                        ),
                         dictencodings,
                     ),
                 )
@@ -290,6 +308,22 @@ function FieldData(nm, ::Base.Type{T}, col, dictencodings) where {T}
                     dictencodings,
                 ),
             )
+        elseif S == Int64 || S == UInt64
+            DATA = [string(ismissing(x) ? Arrow.ArrowTypes.default(S) : x) for x in col]
+        elseif S <: Arrow.Decimal
+            DATA = [string(getfield(ismissing(x) ? zero(S) : x, :value)) for x in col]
+        elseif S <: Arrow.Date || S <: Arrow.Time
+            if Arrow.storagetype(S) == Int32
+                DATA = [getfield(ismissing(x) ? zero(S) : x, :x) for x in col]
+            else
+                DATA = [string(getfield(ismissing(x) ? zero(S) : x, :x)) for x in col]
+            end
+        elseif S <: Arrow.Timestamp
+            DATA = [string(getfield(ismissing(x) ? zero(S) : x, :x)) for x in col]
+        elseif S <: Arrow.Interval
+            DATA = [_interval_json_value(ismissing(x) ? zero(S) : x) for x in col]
+        elseif S <: Union{Base.Bool,Integer,AbstractFloat}
+            DATA = [ismissing(x) ? Arrow.ArrowTypes.default(S) : x for x in col]
         end
     end
     return FieldData(
@@ -304,4 +338,14 @@ function FieldData(nm, ::Base.Type{T}, col, dictencodings) where {T}
         DATA,
         children,
     )
+end
+
+function FieldData(nm, ::Base.Type{T}, col::Arrow.View, dictencodings) where {T}
+    S = Arrow.maybemissing(T)
+    type = S <: Base.CodeUnits ? BinaryView("binaryview") : Utf8View("utf8view")
+    return _view_fielddata(String(nm), type, col)
+end
+
+function FieldData(nm, ::Base.Type{T}, col::Arrow.ListView, dictencodings) where {T}
+    return _list_view_fielddata(String(nm), col, dictencodings)
 end
