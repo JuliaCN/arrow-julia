@@ -129,7 +129,10 @@ The Flight SQL report is a protocol-helper gate, not an external database
 benchmark. It measures typed command descriptors, action payloads, malformed
 decode-sensitive envelopes, `DoPutUpdateResult`, and optional prepared
 statement DoPut result metadata. Shared CI gates allocation regressions with
-`ARROW_FLIGHT_SQL_MAX_*_ALLOC_BYTES` variables.
+`ARROW_FLIGHT_SQL_MAX_*_ALLOC_BYTES` variables. Flight protobuf helpers
+pre-size their output buffers from generated encoded-size metadata, so the
+shared gate keeps command/action packing allocation bounded rather than merely
+recording it.
 
 Run the endpoint proof with:
 

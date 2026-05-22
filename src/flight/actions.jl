@@ -19,7 +19,7 @@ const CANCEL_FLIGHT_INFO_ACTION_TYPE = "CancelFlightInfo"
 const CANCEL_FLIGHT_INFO_ACTION_DESCRIPTION = "Cancel a FlightInfo query"
 
 function _protocolbytes(message)
-    io = IOBuffer()
+    io = IOBuffer(sizehint=ProtoBuf._encoded_size(message))
     encoder = ProtoBuf.ProtoEncoder(io)
     ProtoBuf.encode(encoder, message)
     return take!(io)

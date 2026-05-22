@@ -382,11 +382,11 @@ jobs:
           Pkg.instantiate()
       - name: Run Flight SQL performance report
         env:
-          ARROW_FLIGHT_SQL_MAX_COMMAND_PACK_ALLOC_BYTES: '16384'
-          ARROW_FLIGHT_SQL_MAX_COMMAND_DECODE_ALLOC_BYTES: '8192'
-          ARROW_FLIGHT_SQL_MAX_ACTION_PACK_ALLOC_BYTES: '12288'
-          ARROW_FLIGHT_SQL_MAX_ACTION_DECODE_ALLOC_BYTES: '8192'
-          ARROW_FLIGHT_SQL_MAX_PUT_RESULT_ALLOC_BYTES: '4096'
+          ARROW_FLIGHT_SQL_MAX_COMMAND_PACK_ALLOC_BYTES: '8192'
+          ARROW_FLIGHT_SQL_MAX_COMMAND_DECODE_ALLOC_BYTES: '4096'
+          ARROW_FLIGHT_SQL_MAX_ACTION_PACK_ALLOC_BYTES: '6144'
+          ARROW_FLIGHT_SQL_MAX_ACTION_DECODE_ALLOC_BYTES: '4096'
+          ARROW_FLIGHT_SQL_MAX_PUT_RESULT_ALLOC_BYTES: '2048'
           JULIA_NUM_THREADS: 'auto'
         run: julia --color=yes --project=test test/flight_sql_performance_report.jl
       - name: Run Flight SQL endpoint report
