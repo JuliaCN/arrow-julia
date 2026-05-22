@@ -15,12 +15,8 @@
 # specific language governing permissions and limitations
 # under the License.
 
-const FLIGHT_SQL_ENDPOINT_REQUIRED_MODULES = String[
-    "grpc_tools",
-    "google.protobuf.any_pb2",
-    "pyarrow",
-    "pyarrow.flight",
-]
+const FLIGHT_SQL_ENDPOINT_REQUIRED_MODULES =
+    String["grpc_tools", "google.protobuf.any_pb2", "pyarrow", "pyarrow.flight"]
 
 const FLIGHT_SQL_ENDPOINT_SMOKE = raw"""
 import base64

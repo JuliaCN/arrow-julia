@@ -16,6 +16,7 @@
 # under the License.
 
 using DataAPI
+using PooledArrays: PooledArray
 using Tables
 using UUIDs
 

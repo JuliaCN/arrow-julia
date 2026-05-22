@@ -54,14 +54,7 @@ function flight_sql_endpoint_fixture(protocol)
     prepared_info = protocol.FlightInfo(
         prepared_schema_bytes[5:end],
         query_descriptor,
-        [
-            protocol.FlightEndpoint(
-                prepared_ticket,
-                protocol.Location[],
-                nothing,
-                UInt8[],
-            ),
-        ],
+        [protocol.FlightEndpoint(prepared_ticket, protocol.Location[], nothing, UInt8[])],
         Int64(1),
         Int64(-1),
         false,
@@ -114,7 +107,8 @@ function flight_sql_endpoint_info_for_command(descriptor, fixture)
     generated = Arrow.Flight.SQL.Generated
     any = Arrow.Flight.SQL.decodeany(descriptor.cmd)
     if any.type_url == Arrow.Flight.SQL.typeurl("CommandStatementQuery")
-        command = Arrow.Flight._decodeprotocolbytes(generated.CommandStatementQuery, any.value)
+        command =
+            Arrow.Flight._decodeprotocolbytes(generated.CommandStatementQuery, any.value)
         @test command.query == "select * from production_flight_sql"
         @test command.transaction_id == b"tx-query"
         return fixture.query_info
@@ -231,8 +225,7 @@ function flight_sql_endpoint_service(protocol, fixture)
                 row_count = flight_sql_endpoint_ingest_count(descriptor, batches)
                 put!(response, Arrow.Flight.SQL.doputupdateresult(row_count))
             else
-                @test any.type_url ==
-                      Arrow.Flight.SQL.typeurl("CommandPreparedStatementQuery")
+                @test any.type_url == Arrow.Flight.SQL.typeurl("CommandPreparedStatementQuery")
                 handle = flight_sql_endpoint_prepared_bind_handle(descriptor, batches)
                 put!(response, Arrow.Flight.SQL.doputpreparedstatementresult(handle))
             end
@@ -280,10 +273,7 @@ function flight_sql_endpoint_service(protocol, fixture)
                     protocol.Result(
                         Arrow.Flight._protocolbytes(
                             protocol.SetSessionOptionsResult(
-                                Dict{
-                                    String,
-                                    protocol.var"SetSessionOptionsResult.Error",
-                                }(),
+                                Dict{String,protocol.var"SetSessionOptionsResult.Error"}(),
                             ),
                         ),
                     ),
@@ -302,7 +292,10 @@ function flight_sql_endpoint_service(protocol, fixture)
                 )
             else
                 @test action_type == "CloseSession"
-                Arrow.Flight._decodeprotocolbytes(protocol.CloseSessionRequest, action.body)
+                Arrow.Flight._decodeprotocolbytes(
+                    protocol.CloseSessionRequest,
+                    action.body,
+                )
                 put!(
                     response,
                     protocol.Result(

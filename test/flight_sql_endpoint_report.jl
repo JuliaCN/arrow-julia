@@ -101,16 +101,9 @@ function configure_flight_sql_endpoint_project!()
 
     local_grpcserver =
         maybe_locate_dependency("gRPCServer.jl", "ARROW_FLIGHT_GRPCSERVER_PATH")
-    !isnothing(local_grpcserver) && strip_temp_source_override!(
-        temp_project,
-        "gRPCServer",
-    )
-    local_purehttp2 =
-        maybe_locate_dependency("PureHTTP2.jl", "ARROW_FLIGHT_PUREHTTP2_PATH")
-    !isnothing(local_purehttp2) && strip_temp_source_override!(
-        temp_project,
-        "PureHTTP2",
-    )
+    !isnothing(local_grpcserver) && strip_temp_source_override!(temp_project, "gRPCServer")
+    local_purehttp2 = maybe_locate_dependency("PureHTTP2.jl", "ARROW_FLIGHT_PUREHTTP2_PATH")
+    !isnothing(local_purehttp2) && strip_temp_source_override!(temp_project, "PureHTTP2")
 
     Pkg.activate(temp_env)
     dev_packages =
@@ -118,11 +111,7 @@ function configure_flight_sql_endpoint_project!()
     if !isnothing(local_grpcserver)
         push!(
             dev_packages,
-            PackageSpec(
-                name="gRPCServer",
-                uuid=GRPCSERVER_UUID,
-                path=local_grpcserver,
-            ),
+            PackageSpec(name="gRPCServer", uuid=GRPCSERVER_UUID, path=local_grpcserver),
         )
     end
     if !isnothing(local_purehttp2)
