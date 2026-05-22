@@ -141,7 +141,14 @@ The endpoint report starts the packaged gRPCServer/PureHTTP2 listener and uses
 an external Python client that generates protobuf messages from the vendored
 `FlightSql.proto`. It exercises statement query, `CreatePreparedStatement`,
 prepared-statement DoPut binding, prepared-statement query, `ClosePreparedStatement`,
-and `CommandStatementIngest`. Set `ARROW_FLIGHT_SQL_ENDPOINT_MAX_QUERY_MS`,
+Flight core session actions used by Flight SQL (`SetSessionOptions`,
+`GetSessionOptions`, and `CloseSession`), and `CommandStatementIngest`. The
+server fixture consumes DoPut request streams without first buffering the full
+FlightData request, so the receipt stays closer to production request-streaming
+behavior. CI sets
+`ARROW_FLIGHT_SQL_ENDPOINT_USE_ACTIVE_PROJECT=1` after preparing the `test`
+project to avoid duplicating Julia package setup. Set
+`ARROW_FLIGHT_SQL_ENDPOINT_MAX_QUERY_MS`,
 `ARROW_FLIGHT_SQL_ENDPOINT_MAX_PREPARED_MS`, and
 `ARROW_FLIGHT_SQL_ENDPOINT_MAX_INGEST_MS` only after collecting a stable
 target-hardware baseline.

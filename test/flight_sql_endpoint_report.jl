@@ -27,6 +27,9 @@ const PUREHTTP2_UUID = Base.UUID("7d1e1b98-28e7-4969-8df9-5a308937986a")
 auto_local_flight_sql_endpoint_deps() =
     get(ENV, "ARROW_FLIGHT_DISABLE_AUTO_LOCAL_DEPS", "0") != "1"
 
+use_active_flight_sql_endpoint_project() =
+    get(ENV, "ARROW_FLIGHT_SQL_ENDPOINT_USE_ACTIVE_PROJECT", "0") == "1"
+
 function maybe_git_root(path::AbstractString)
     try
         return readchomp(pipeline(`git -C $path rev-parse --show-toplevel`; stderr=devnull))
@@ -89,31 +92,51 @@ function strip_temp_source_override!(
     return nothing
 end
 
-const TEMP_ENV = mktempdir()
-const TEMP_PROJECT = joinpath(TEMP_ENV, "Project.toml")
-cp(joinpath(TEST_ROOT, "Project.toml"), TEMP_PROJECT)
+function configure_flight_sql_endpoint_project!()
+    use_active_flight_sql_endpoint_project() && return nothing
 
-local_grpcserver = maybe_locate_dependency("gRPCServer.jl", "ARROW_FLIGHT_GRPCSERVER_PATH")
-!isnothing(local_grpcserver) && strip_temp_source_override!(TEMP_PROJECT, "gRPCServer")
-local_purehttp2 = maybe_locate_dependency("PureHTTP2.jl", "ARROW_FLIGHT_PUREHTTP2_PATH")
-!isnothing(local_purehttp2) && strip_temp_source_override!(TEMP_PROJECT, "PureHTTP2")
+    temp_env = mktempdir()
+    temp_project = joinpath(temp_env, "Project.toml")
+    cp(joinpath(TEST_ROOT, "Project.toml"), temp_project)
 
-Pkg.activate(TEMP_ENV)
-dev_packages = PackageSpec[PackageSpec(path=ARROW_ROOT), PackageSpec(path=ARROWTYPES_ROOT)]
-if !isnothing(local_grpcserver)
-    push!(
-        dev_packages,
-        PackageSpec(name="gRPCServer", uuid=GRPCSERVER_UUID, path=local_grpcserver),
+    local_grpcserver =
+        maybe_locate_dependency("gRPCServer.jl", "ARROW_FLIGHT_GRPCSERVER_PATH")
+    !isnothing(local_grpcserver) && strip_temp_source_override!(
+        temp_project,
+        "gRPCServer",
     )
-end
-if !isnothing(local_purehttp2)
-    push!(
-        dev_packages,
-        PackageSpec(name="PureHTTP2", uuid=PUREHTTP2_UUID, path=local_purehttp2),
+    local_purehttp2 =
+        maybe_locate_dependency("PureHTTP2.jl", "ARROW_FLIGHT_PUREHTTP2_PATH")
+    !isnothing(local_purehttp2) && strip_temp_source_override!(
+        temp_project,
+        "PureHTTP2",
     )
+
+    Pkg.activate(temp_env)
+    dev_packages =
+        PackageSpec[PackageSpec(path=ARROW_ROOT), PackageSpec(path=ARROWTYPES_ROOT)]
+    if !isnothing(local_grpcserver)
+        push!(
+            dev_packages,
+            PackageSpec(
+                name="gRPCServer",
+                uuid=GRPCSERVER_UUID,
+                path=local_grpcserver,
+            ),
+        )
+    end
+    if !isnothing(local_purehttp2)
+        push!(
+            dev_packages,
+            PackageSpec(name="PureHTTP2", uuid=PUREHTTP2_UUID, path=local_purehttp2),
+        )
+    end
+    Pkg.develop(dev_packages)
+    Pkg.instantiate()
+    return nothing
 end
-Pkg.develop(dev_packages)
-Pkg.instantiate()
+
+configure_flight_sql_endpoint_project!()
 
 using Arrow
 using JSON3
@@ -146,9 +169,13 @@ end
 function print_endpoint_report(result)
     println("arrow_flight_sql_endpoint_report")
     println("julia_num_threads=$(Threads.nthreads())")
+    project_mode = use_active_flight_sql_endpoint_project() ? "active" : "isolated"
+    println("julia_project_mode=$(project_mode)")
     println("query_rows=$(Int(result["query_rows"]))")
     println("prepared_rows=$(Int(result["prepared_rows"]))")
     println("ingested_rows=$(Int(result["ingested_rows"]))")
+    println("session_options=$(Int(result["session_options"]))")
+    println("session_closed=$(Bool(result["session_closed"]))")
     println("query_bytes=$(Int(result["query_bytes"]))")
     println("prepared_bytes=$(Int(result["prepared_bytes"]))")
     for label in ("query", "prepared", "ingest")

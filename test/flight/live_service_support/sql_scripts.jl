@@ -51,12 +51,14 @@ rc = protoc.main(
         f"-I{proto_root}",
         f"-I{grpc_tools_proto}",
         f"--python_out={generated_root}",
+        str(proto_root / "Flight.proto"),
         str(proto_root / "FlightSql.proto"),
     ]
 )
 if rc != 0:
     raise RuntimeError(f"FlightSql.proto generation failed with status {rc}")
 sys.path.insert(0, str(generated_root))
+Flight_pb2 = importlib.import_module("Flight_pb2")
 FlightSql_pb2 = importlib.import_module("FlightSql_pb2")
 
 client = fl.FlightClient(
@@ -187,6 +189,51 @@ close_results = list(
 )
 assert close_results == []
 
+session_option = Flight_pb2.SessionOptionValue(string_value="analytics")
+set_session_results = list(
+    client.do_action(
+        fl.Action(
+            "SetSessionOptions",
+            Flight_pb2.SetSessionOptionsRequest(
+                session_options={"catalog": session_option}
+            ).SerializeToString(),
+        ),
+        options=options,
+    )
+)
+assert len(set_session_results) == 1
+set_session = Flight_pb2.SetSessionOptionsResult()
+set_session.ParseFromString(body_bytes(set_session_results[0]))
+assert set_session.errors == {}
+
+get_session_results = list(
+    client.do_action(
+        fl.Action(
+            "GetSessionOptions",
+            Flight_pb2.GetSessionOptionsRequest().SerializeToString(),
+        ),
+        options=options,
+    )
+)
+assert len(get_session_results) == 1
+get_session = Flight_pb2.GetSessionOptionsResult()
+get_session.ParseFromString(body_bytes(get_session_results[0]))
+assert get_session.session_options["catalog"].string_value == "analytics"
+
+close_session_results = list(
+    client.do_action(
+        fl.Action(
+            "CloseSession",
+            Flight_pb2.CloseSessionRequest().SerializeToString(),
+        ),
+        options=options,
+    )
+)
+assert len(close_session_results) == 1
+close_session = Flight_pb2.CloseSessionResult()
+close_session.ParseFromString(body_bytes(close_session_results[0]))
+assert close_session.status == Flight_pb2.CloseSessionResult.CLOSED
+
 start = time.perf_counter()
 ingest_descriptor = command_descriptor(
     FlightSql_pb2.CommandStatementIngest(
@@ -222,6 +269,8 @@ print(
             "query_rows": query_table.num_rows,
             "prepared_rows": prepared_table.num_rows,
             "ingested_rows": ingest_result.record_count,
+            "session_options": len(get_session.session_options),
+            "session_closed": close_session.status == Flight_pb2.CloseSessionResult.CLOSED,
             "query_bytes": query_table.nbytes,
             "prepared_bytes": prepared_table.nbytes,
             **metrics,

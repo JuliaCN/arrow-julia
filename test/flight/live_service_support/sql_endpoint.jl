@@ -137,13 +137,15 @@ function flight_sql_endpoint_info_for_command(descriptor, fixture)
     return fixture.prepared_info
 end
 
-function flight_sql_endpoint_collect_put(request)
-    messages = collect(request)
-    @test !isempty(messages)
-    descriptor = first(messages).flight_descriptor
+function flight_sql_endpoint_stream_put(request)
+    first_state = iterate(request)
+    first_state === nothing &&
+        throw(ArgumentError("Flight SQL DoPut request must include FlightData"))
+    first_message, request_state = first_state
+    descriptor = first_message.flight_descriptor
     @test !isnothing(descriptor)
-    batches = collect(Arrow.Flight.stream(messages; include_app_metadata=true))
-    return descriptor, batches
+    messages = Iterators.flatten(((first_message,), Iterators.rest(request, request_state)))
+    return descriptor, Arrow.Flight.stream(messages)
 end
 
 function flight_sql_endpoint_ingest_count(descriptor, batches)
@@ -164,9 +166,9 @@ function flight_sql_endpoint_ingest_count(descriptor, batches)
 
     rows = 0
     for batch in batches
-        @test batch.table.id isa AbstractVector
-        @test batch.table.label isa AbstractVector
-        rows += length(batch.table.id)
+        @test batch.id isa AbstractVector
+        @test batch.label isa AbstractVector
+        rows += length(batch.id)
     end
     return rows
 end
@@ -176,9 +178,27 @@ function flight_sql_endpoint_prepared_bind_handle(descriptor, batches)
     command =
         flight_sql_endpoint_command(descriptor, generated.CommandPreparedStatementQuery)
     @test command.prepared_statement_handle == b"prepared-handle"
-    @test length(batches) == 1
-    @test batches[1].table.parameter == [7]
+    batch_count = 0
+    for batch in batches
+        batch_count += 1
+        @test batch.parameter == [7]
+    end
+    @test batch_count == 1
     return b"prepared-bound-handle"
+end
+
+function flight_sql_endpoint_session_option(protocol, value::AbstractString)
+    return protocol.SessionOptionValue(protocol.PB.OneOf(:string_value, String(value)))
+end
+
+function flight_sql_endpoint_session_result(protocol, session_options)
+    values = Dict{String,protocol.SessionOptionValue}()
+    for (name, value) in session_options
+        values[String(name)] = flight_sql_endpoint_session_option(protocol, value)
+    end
+    return protocol.Result(
+        Arrow.Flight._protocolbytes(protocol.GetSessionOptionsResult(values)),
+    )
 end
 
 function flight_sql_endpoint_service(protocol, fixture)
@@ -205,7 +225,7 @@ function flight_sql_endpoint_service(protocol, fixture)
         end,
         doput=(ctx, request, response) -> begin
             flight_sql_endpoint_assert_authenticated(ctx, fixture)
-            descriptor, batches = flight_sql_endpoint_collect_put(request)
+            descriptor, batches = flight_sql_endpoint_stream_put(request)
             any = Arrow.Flight.SQL.decodeany(descriptor.cmd)
             if any.type_url == Arrow.Flight.SQL.typeurl("CommandStatementIngest")
                 row_count = flight_sql_endpoint_ingest_count(descriptor, batches)
@@ -222,7 +242,8 @@ function flight_sql_endpoint_service(protocol, fixture)
         doaction=(ctx, action, response) -> begin
             flight_sql_endpoint_assert_authenticated(ctx, fixture)
             generated = Arrow.Flight.SQL.Generated
-            if getfield(action, Symbol("#type")) == "CreatePreparedStatement"
+            action_type = getfield(action, Symbol("#type"))
+            if action_type == "CreatePreparedStatement"
                 request = flight_sql_endpoint_action(
                     action,
                     generated.ActionCreatePreparedStatementRequest,
@@ -240,13 +261,58 @@ function flight_sql_endpoint_service(protocol, fixture)
                         Arrow.Flight._protocolbytes(Arrow.Flight.SQL.anymessage(result)),
                     ),
                 )
-            else
-                @test getfield(action, Symbol("#type")) == "ClosePreparedStatement"
+            elseif action_type == "ClosePreparedStatement"
                 request = flight_sql_endpoint_action(
                     action,
                     generated.ActionClosePreparedStatementRequest,
                 )
                 @test request.prepared_statement_handle == b"prepared-bound-handle"
+            elseif action_type == "SetSessionOptions"
+                request = Arrow.Flight._decodeprotocolbytes(
+                    protocol.SetSessionOptionsRequest,
+                    action.body,
+                )
+                @test request.session_options["catalog"].option_value.name ===
+                      :string_value
+                @test request.session_options["catalog"].option_value[] == "analytics"
+                put!(
+                    response,
+                    protocol.Result(
+                        Arrow.Flight._protocolbytes(
+                            protocol.SetSessionOptionsResult(
+                                Dict{
+                                    String,
+                                    protocol.var"SetSessionOptionsResult.Error",
+                                }(),
+                            ),
+                        ),
+                    ),
+                )
+            elseif action_type == "GetSessionOptions"
+                Arrow.Flight._decodeprotocolbytes(
+                    protocol.GetSessionOptionsRequest,
+                    action.body,
+                )
+                put!(
+                    response,
+                    flight_sql_endpoint_session_result(
+                        protocol,
+                        Dict("catalog" => "analytics"),
+                    ),
+                )
+            else
+                @test action_type == "CloseSession"
+                Arrow.Flight._decodeprotocolbytes(protocol.CloseSessionRequest, action.body)
+                put!(
+                    response,
+                    protocol.Result(
+                        Arrow.Flight._protocolbytes(
+                            protocol.CloseSessionResult(
+                                protocol.var"CloseSessionResult.Status".CLOSED,
+                            ),
+                        ),
+                    ),
+                )
             end
             close(response)
             return :flight_sql_doaction_ok
