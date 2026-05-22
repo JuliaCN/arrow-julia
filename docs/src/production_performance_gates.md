@@ -47,6 +47,10 @@ Run the default FFI, IPC, and Flight transport profile with:
 julia --project=test test/production_performance_gates.jl
 ```
 
+For transport and endpoint receipts, run Julia with all available runner
+threads, for example `JULIA_NUM_THREADS=auto`. The Flight SQL reports print
+`julia_num_threads` so retained receipts show the actual thread profile.
+
 Set `ARROW_PRODUCTION_PERFORMANCE_REPORTS=ipc,cdata,flight,flightsql,flightsqlendpoint`
 to run every current report, or provide another comma-separated subset of
 `ipc`, `cdata`, `flight`, `flightsql`, and `flightsqlendpoint` when a

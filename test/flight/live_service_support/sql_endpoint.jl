@@ -125,6 +125,14 @@ function flight_sql_endpoint_info_for_command(descriptor, fixture)
         generated.CommandPreparedStatementQuery,
         any.value,
     )
+    if command.prepared_statement_handle == b"prepared-handle"
+        throw(
+            Arrow.Flight.FlightStatusError(
+                Arrow.Flight.GRPC_STATUS_INTERNAL,
+                "stale prepared statement handle",
+            ),
+        )
+    end
     @test command.prepared_statement_handle == b"prepared-bound-handle"
     return fixture.prepared_info
 end

@@ -145,6 +145,7 @@ end
 
 function print_endpoint_report(result)
     println("arrow_flight_sql_endpoint_report")
+    println("julia_num_threads=$(Threads.nthreads())")
     println("query_rows=$(Int(result["query_rows"]))")
     println("prepared_rows=$(Int(result["prepared_rows"]))")
     println("ingested_rows=$(Int(result["ingested_rows"]))")

@@ -147,6 +147,19 @@ prepared_put = FlightSql_pb2.DoPutPreparedStatementResult()
 prepared_put.ParseFromString(prepared_put_result)
 assert prepared_put.prepared_statement_handle == b"prepared-bound-handle"
 
+try:
+    client.get_flight_info(
+        command_descriptor(
+            FlightSql_pb2.CommandPreparedStatementQuery(
+                prepared_statement_handle=prepared_result.prepared_statement_handle,
+            )
+        ),
+        options=options,
+    )
+    raise AssertionError("stale prepared statement handle unexpectedly succeeded")
+except Exception as exc:  # noqa: BLE001
+    assert "stale prepared statement handle" in str(exc)
+
 prepared_descriptor = command_descriptor(
     FlightSql_pb2.CommandPreparedStatementQuery(
         prepared_statement_handle=prepared_put.prepared_statement_handle,

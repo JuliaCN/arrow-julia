@@ -267,7 +267,7 @@ jobs:
         env:
           ARROW_FLIGHT_PYTHON: ${{ env.pythonLocation }}/bin/python
           ARROW_FLIGHT_DISABLE_AUTO_LOCAL_DEPS: '1'
-          JULIA_NUM_THREADS: '2'
+          JULIA_NUM_THREADS: 'auto'
         run: julia --color=yes --project=test test/flight_purehttp2.jl
   cdata_validation:
     name: C Data validation - Julia 1 - ubuntu-latest
@@ -346,9 +346,16 @@ jobs:
   flight_sql_performance:
     name: Flight SQL performance - Julia 1 - ubuntu-latest
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Install Flight SQL Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pyarrow grpcio grpcio-tools
       - uses: julia-actions/setup-julia@v3
         with:
           version: '1'
@@ -380,7 +387,14 @@ jobs:
           ARROW_FLIGHT_SQL_MAX_ACTION_PACK_ALLOC_BYTES: '12288'
           ARROW_FLIGHT_SQL_MAX_ACTION_DECODE_ALLOC_BYTES: '8192'
           ARROW_FLIGHT_SQL_MAX_PUT_RESULT_ALLOC_BYTES: '4096'
+          JULIA_NUM_THREADS: 'auto'
         run: julia --color=yes --project=test test/flight_sql_performance_report.jl
+      - name: Run Flight SQL endpoint report
+        env:
+          ARROW_FLIGHT_PYTHON: ${{ env.pythonLocation }}/bin/python
+          ARROW_FLIGHT_DISABLE_AUTO_LOCAL_DEPS: '1'
+          JULIA_NUM_THREADS: 'auto'
+        run: julia --color=yes --project=test test/flight_sql_endpoint_report.jl
   docs:
     name: Documentation
     runs-on: ubuntu-latest
