@@ -17,105 +17,42 @@
   under the License.
 -->
 
-# Arrow
+> **This is the Arrow.jl 3.0 development branch.** The 2.x implementation
+> has been replaced by a ground-up rewrite; the last 2.x release lives on
+> its release tags. The user-facing API (`Arrow.Table`, `Arrow.Stream`,
+> writers and builders) is the rewrite's next arc — until it lands, this
+> branch is engine + adapters, exercised by the test batteries, the
+> apache/arrow-testing conformance corpus, and a pyarrow/nanoarrow oracle
+> suite.
 
-[![docs](https://img.shields.io/badge/docs-latest-blue&logo=julia)](https://arrow.apache.org/julia/)
-[![CI](https://github.com/apache/arrow-julia/workflows/CI/badge.svg)](https://github.com/apache/arrow-julia/actions?query=workflow%3ACI)
-[![codecov](https://app.codecov.io/gh/apache/arrow-julia/branch/main/graph/badge.svg)](https://app.codecov.io/gh/apache/arrow-julia)
+This is a pure Julia implementation of the
+[Apache Arrow](https://arrow.apache.org) data standard.
 
-[![deps](https://juliahub.com/docs/Arrow/deps.svg)](https://juliahub.com/ui/Packages/Arrow/QnF3w?t=2)
-[![version](https://juliahub.com/docs/Arrow/version.svg)](https://juliahub.com/ui/Packages/Arrow/QnF3w)
-[![pkgeval](https://juliahub.com/docs/Arrow/pkgeval.svg)](https://juliahub.com/ui/Packages/Arrow/QnF3w)
+## Layout
 
-This is a pure Julia implementation of the [Apache Arrow](https://arrow.apache.org) data standard.  This package provides Julia `AbstractVector` objects for
-referencing data that conforms to the Arrow standard.  This allows users to seamlessly interface Arrow formatted data with a great deal of existing Julia code.
+- `src/ArrowCore.jl` — the private core: ownership regions, layout
+  registry, `ArrayData`, staged validation, accessors. Dependency-free and
+  trim-friendly.
+- `src/metadata/` — FlatBuffers metadata bindings and shape verifier,
+  both GENERATED from the vendored spec schemas (`src/metadata/fbs/`) by
+  `tools/fbsgen.jl`.
+- `src/ipc_read.jl`, `src/ipc_write.jl` — the IPC stream and file
+  formats: framing, resource limits, compression, dictionary lifecycles.
+- `src/cdata.jl` — the C data interface, import and export.
+- `src/scan.jl` — `Tables.Scan` pushdown over byte ranges plus
+  footer-carried statistics pruning.
+- `test/` — core unit tests, the four adapter acceptance batteries, the
+  frozen 2.x-written compatibility fixtures (`test/fixtures2x/`), and the
+  `--trim=safe` compile gate.
+- `conformance/` — the arrow-testing gold-corpus runner, the integration
+  JSON implementation, and the pyarrow/nanoarrow oracle round-trip suite.
+- `docs/dev/` — the engine design document and the codex review record of
+  the rewrite (rounds 1–28 so far).
 
-Please see this [document](https://arrow.apache.org/docs/format/Columnar.html#physical-memory-layout) for a description of the Arrow memory layout.
+The design rationale for every layer is `docs/dev/core-README.md`.
 
-## Installation
+## Status
 
-The package can be installed by typing in the following in a Julia REPL:
-
-```julia
-julia> using Pkg; Pkg.add("Arrow")
-```
-
-Arrow.jl currently requires Julia `1.12+`.
-
-## Local Development
-
-When developing on Arrow.jl it is recommended that you run the following to ensure that any
-changes to ArrowTypes.jl are immediately available to Arrow.jl without requiring a release:
-
-```sh
-julia --project -e 'using Pkg; Pkg.develop(path="src/ArrowTypes")'
-```
-
-Current write-path notes:
-  * `Arrow.tobuffer` includes a direct single-partition fast path for eligible inputs
-  * `Arrow.tobuffer(Tables.partitioner(...))` also includes a targeted direct multi-record-batch path for single-column top-level strings and single-column non-missing binary/code-units columns
-  * `Arrow.write(io, Tables.partitioner(...))` now reuses that same targeted direct multi-record-batch path instead of always going through the legacy `Writer` orchestration
-  * multi-column partitions, dictionary-encoded top-level columns, map-heavy inputs, and missing-binary partitions retain the existing writer path
-  * `test/ipc_performance_report.jl` reports warmed IPC stream/file write, direct `Arrow.tobuffer` fast-path, metadata-read, physical buffer-scan, and materialized element-scan timings plus allocation receipts for the core IPC path
-
-## Format Support
-
-This implementation supports the core Apache Arrow columnar and IPC formats,
-including support for:
-  * All primitive data types
-  * All nested data types
-  * Dictionary encodings and messages
-  * Dictionary-encoded `CategoricalArray` interop, including missing-value roundtrips through `Arrow.Table`, `copy`, and `DataFrame(...; copycols=true)`
-  * Extension types
-  * Lightweight schema/field metadata overlays via `Arrow.withmetadata(...)` for Tables.jl-compatible sources before serialization
-  * Base Julia `Enum` logical types via the `JuliaLang.Enum` extension label, with native Julia roundtrips back to the original enum type while `convert=false` and non-Julia consumers still see the primitive storage type
-  * View-backed Utf8/Binary columns, including recovery from under-reported variadic buffer counts by inferring the required external buffers from valid view elements
-  * Run-End Encoded arrays, including native `Arrow.RunEndEncoded` IPC read/write roundtrips and compressed child-buffer payloads
-  * Streaming, file, record batch, and replacement and isdelta dictionary messages
-  * A package-local Archery-style integration executable in `test/integrationtest.jl`, a tested Archery adapter surface under `dev/archery/`, an Apache Arrow monorepo registration patch artifact for the upstream `--with-julia` tester hook, and a focused subprocess smoke runner in `test/integration_cli_smoke.jl` for JSON-to-Arrow, validation, Arrow-to-JSON, file-to-stream, and stream-to-file modes across baseline, modern physical-layout, and canonical extension fixtures
-  * In-process C Data Interface export and import through `Arrow.CData`, including nested, dictionary, union, run-end encoded, logical scalar, metadata, and release-governed same-process zero-copy surfaces
-  * C Stream Interface export and import through `Arrow.CData`, using `ArrowArrayStream` callbacks over the same C Data layouts
-
-It currently doesn't include support for:
-  * Tensor or sparse tensor IPC payload semantics; Arrow.jl now recognizes those message headers explicitly and rejects them with precise errors instead of falling through to a generic unsupported-message path
-  * C Device Interface or PyCapsule protocol surfaces
-
-Flight RPC status:
-  * Experimental `Arrow.Flight` support is available in-tree
-  * Requires Julia `1.12+`
-  * Includes generated protocol bindings for the `FlightService` RPC surface while keeping generated Julia gRPC client constructors out of the protocol module and out of the current package-owned runtime
-  * Keeps the top-level Flight module shell thin, with exports and generated-protocol setup split out of `src/flight/Flight.jl`
-  * Includes high-level `FlightData <-> Arrow IPC` helpers for `Arrow.Table`, `Arrow.Stream`, and DoPut/DoExchange payload generation, `Arrow.Flight.pathdescriptor(...)` for PATH descriptors without manual proto assembly, `Arrow.Flight.cancelflightinfoaction(...)` / `Arrow.Flight.cancelflightinforesult(...)` helpers for the official `CancelFlightInfo` `DoAction` payloads, opt-in `app_metadata` surfacing through `include_app_metadata=true` on `Arrow.Flight.stream(...)` / `Arrow.Flight.table(...)`, explicit batch-wise `app_metadata=...` emission on `Arrow.Flight.flightdata(...)`, `Arrow.Flight.putflightdata!(...)`, and source-based `Arrow.Flight.doexchange(...)`, and a reusable `Arrow.Flight.withappmetadata(...)` wrapper so source-level batch metadata can stay attached without manual keyword threading
-  * Keeps the Flight IPC conversion layer modular under `src/flight/convert/`, with `src/flight/convert.jl` retained as a thin entrypoint
-  * Owns Flight protocol, descriptor, IPC, and server/runtime surfaces only; `Arrow.Flight.flight_client_runtime_capabilities()` records that package-owned interop and performance proofs run through external Python clients instead of a Julia Flight client runtime
-  * Includes a transport-agnostic server core (`Service`, `ServerCallContext`, `ServiceDescriptor`, `MethodDescriptor`) for local Flight method dispatch, path lookup, handler testing, packaged backend capability checks through `Arrow.Flight.flight_server_backend_capabilities(...)`, transport-neutral gRPC-over-HTTP/2 framing helpers, high-level `DoExchange` assembly through `Arrow.Flight.exchangeservice(...)`, `Arrow.Flight.tableservice(...)`, and `Arrow.Flight.streamservice(...)`, and source-based local invocation through `Arrow.Flight.doexchange(service, context, source; ...)`, `Arrow.Flight.table(service, context, source; ...)`, and `Arrow.Flight.stream(service, context, source; ...)`
-  * Keeps the transport-agnostic server core modular under `src/flight/server/`, with `src/flight/server.jl` retained as a thin entrypoint
-  * Treats `gRPCServer.jl` as the packaged Flight listener transport owner, exposing `Arrow.Flight.grpcserver_flight_server(...)` once the `gRPCServer.jl` extension is loaded while keeping the core server/runtime layer transport-agnostic
-  * The packaged Flight server backend contract now reports `:grpcserver` as the only packaged live listener profile and exposes a weakdep-backed `:nghttp2` profile only when `Nghttp2Wrapper.jl` is loaded; the grpcserver path reaches the latest `gRPCServer.jl` server stack while the nghttp2 backend is still limited to unary plus buffered server-streaming methods with trailer-borne `grpc-status`
-  * Includes package-owned live Python-client coverage for authenticated `Handshake`, `ListFlights`, `GetFlightInfo`, `PollFlightInfo`, `GetSchema`, `DoGet`, `DoPut`, `DoExchange`, `ListActions`, and `DoAction`, including low-level generated-stub `Handshake` token propagation and `PollFlightInfo` proofs plus the official `CancelFlightInfo` action payload, through `test/flight_purehttp2.jl`
-  * Keeps targeted Flight verification modular under `test/flight/`, with `test/flight.jl` retained as the shared default entrypoint for generated protocol, server-core, and IPC coverage, and the PureHTTP2/nghttp2 listener proofs isolated in dedicated runner files
-  * Includes `test/flight_purehttp2.jl` as the PureHTTP2-wire temporary-environment runner for shared Flight interop coverage against the gRPCServer-owned listener path
-  * Includes `test/flight_purehttp2_perf.jl` as a focused large-transport runner that benchmarks large-response `DoGet` plus large request-streaming `DoPut`, bounded same-client reused `DoPut`, and `DoExchange` on the gRPCServer-owned listener path over the PureHTTP2 substrate through a reusable backend-factory seam, and also replays env-tunable concurrent `DoGet`, connection-isolated concurrent `DoPut`, and concurrent `DoExchange` soak rounds through `ARROW_FLIGHT_PYARROW_CONCURRENT_CLIENTS`, `ARROW_FLIGHT_PYARROW_REQUESTS_PER_CLIENT`, `ARROW_FLIGHT_PYARROW_REUSED_DOPUT_REQUESTS`, and `ARROW_FLIGHT_PYARROW_SOAK_ROUNDS`; operation-specific `ARROW_FLIGHT_PYARROW_*_MIN_THROUGHPUT_MIB_PER_SEC` settings can promote local large/concurrent transport receipts from informational metrics to environment-specific throughput gates
-  * Includes `test/flight_nghttp2_probe.jl` as a substrate probe that verifies `Nghttp2Wrapper.jl` exports the low-level session / callback / submit hooks needed for the Flight adapter, proves a small `PureHTTP2` client interop smoke against `Nghttp2Wrapper.HTTP2Server`, and measures a raw 2 MiB h2c response on the C-wrapper server without widening default CI
-  * Includes `test/flight_nghttp2.jl` as the focused weakdep-backed nghttp2 listener runner; it proves live Python-client unary plus server-streaming Flight calls over `Nghttp2Wrapper.jl` and prints same-harness large `DoGet` comparison numbers against the default `PureHTTP2` backend
-  * Includes `test/flight_grpcserver.jl` as the focused weakdep-backed grpcserver transport runner; it proves descriptor bridging plus live Python-client Flight smoke over the packaged listener backend
-  * The current nghttp2 backend still does not support request-streaming `Handshake`, `DoPut`, or `DoExchange`, so the gRPCServer-owned listener path remains the canonical packaged backend and `test/flight_purehttp2_perf.jl` remains the default large-transport proof for the product lane
-  * Dedicated CI jobs now exercise the Flight interop suite on stable and nightly Linux through `test/flight_purehttp2.jl`; the gRPCServer-owned listener path is the packaged live backend direction, with Python-client smoke coverage on the same HTTP/2 runtime surface
-
-Third-party data formats:
-  * CSV, parquet and avro support via the existing [CSV.jl](https://github.com/JuliaData/CSV.jl), [Parquet.jl](https://github.com/JuliaIO/Parquet.jl) and [Avro.jl](https://github.com/JuliaData/Avro.jl) packages
-  * Other Tables.jl-compatible packages automatically supported ([DataFrames.jl](https://github.com/JuliaData/DataFrames.jl), [JSONTables.jl](https://github.com/JuliaData/JSONTables.jl), [JuliaDB.jl](https://github.com/JuliaData/JuliaDB.jl), [SQLite.jl](https://github.com/JuliaDatabases/SQLite.jl), [MySQL.jl](https://github.com/JuliaDatabases/MySQL.jl), [JDBC.jl](https://github.com/JuliaDatabases/JDBC.jl), [ODBC.jl](https://github.com/JuliaDatabases/ODBC.jl), [XLSX.jl](https://github.com/felipenoris/XLSX.jl), etc.)
-  * No current Julia packages support ORC
-
-Canonical extension highlights:
-  * `UUID` now writes the canonical `arrow.uuid` extension name by default while retaining reader compatibility with legacy `JuliaLang.UUID` metadata
-  * `Arrow.TimestampWithOffset{U}` provides a canonical `arrow.timestamp_with_offset` logical type without conflating offset-only semantics with `ZonedDateTime`
-  * `Arrow.Bool8` provides an explicit opt-in writer/reader surface for the canonical `arrow.bool8` extension without changing the default packed-bit `Bool` path
-  * `Arrow.JSONText{String}` provides a text-backed logical type for the canonical `arrow.json` extension without parsing payloads during read or write
-  * `arrow.opaque` now reads as the underlying storage type without warning, and explicit writer metadata can be generated with `Arrow.opaquemetadata(type_name, vendor_name)`
-  * `Arrow.variantmetadata()`, `Arrow.fixedshapetensormetadata(...)`, and `Arrow.variableshapetensormetadata(...)` generate canonical metadata strings for advanced canonical extensions
-  * `arrow.fixed_shape_tensor` and `arrow.variable_shape_tensor` are recognized on read as canonical passthrough extensions over their storage types, and Arrow.jl now validates their canonical metadata plus top-level storage shape before accepting them
-  * `arrow.parquet.variant` is recognized on read as a canonical passthrough extension over its storage type; Arrow.jl currently validates that its canonical metadata is the required empty string, but does not yet implement deeper variant semantics or an automatic writer surface
-  * Legacy `JuliaLang.ZonedDateTime-UTC` and `JuliaLang.ZonedDateTime` files remain readable for backward compatibility
-
-See the [full documentation](https://arrow.apache.org/julia/) for details on reading and writing arrow data.
+Conformance: 275/275 gold-corpus checks pass (36 declared skips);
+170/170 oracle round-trips against pyarrow and nanoarrow (43 skips are
+oracle capability gaps). See `conformance/` to run either.

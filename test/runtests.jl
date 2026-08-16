@@ -15,65 +15,11 @@
 # limitations under the License.
 
 using Test
-using Arrow
-using ArrowTypes
-using Tables
-using Dates
-using PooledArrays
-using TimeZones
-using UUIDs
-using Sockets
-using CategoricalArrays
-using DataAPI
-using FilePathsBase
-using DataFrames
-using JSON3
-using OffsetArrays
-import Random: randstring
-using TestSetExtensions: ExtendedTestSet
 
-# this formulation tests the loaded ArrowTypes, even if it's not the dev version
-# within the mono-repo
-include(joinpath(dirname(pathof(ArrowTypes)), "../test/tests.jl"))
+# Core unit tests (ArrowCore in isolation).
+include("core_tests.jl")
 
-include(joinpath(@__DIR__, "testtables.jl"))
-include(joinpath(@__DIR__, "testappend.jl"))
-include(joinpath(@__DIR__, "integrationtest.jl"))
-include(joinpath(@__DIR__, "dates.jl"))
-include(joinpath(@__DIR__, "cdata.jl"))
-include(joinpath(@__DIR__, "adbc.jl"))
-include(joinpath(@__DIR__, "flight.jl"))
-
-struct CustomStruct
-    x::Int
-    y::Float64
-    z::String
-end
-
-struct CustomStruct2{sym}
-    x::Int
-end
-
-module EnumRoundtripModule
-@enum RankingStrategy lexical = 1 semantic = 2 hybrid = 3
-end
-
-module WideEnumRoundtripModule
-@enum WideRanking::UInt64 tiny = 1 colossal = 0xffffffffffffffff
-end
-
-@testset ExtendedTestSet "Arrow" begin
-    include(joinpath(@__DIR__, "runtests", "roundtrip_integration.jl"))
-
-    @testset "misc" begin
-        include(joinpath(@__DIR__, "runtests", "misc_core_layouts.jl"))
-        include(joinpath(@__DIR__, "runtests", "malformed_ipc.jl"))
-        include(joinpath(@__DIR__, "runtests", "misc_validation_views.jl"))
-        include(joinpath(@__DIR__, "runtests", "misc_issue_roundtrips.jl"))
-        include(joinpath(@__DIR__, "runtests", "misc_extensions.jl"))
-        include(joinpath(@__DIR__, "runtests", "misc_tensor_display.jl"))
-        include(joinpath(@__DIR__, "runtests", "misc_table_issues.jl"))
-    end # @testset "misc"
-
-    include(joinpath(@__DIR__, "runtests", "metadata.jl"))
-end
+# The adapter acceptance batteries: assertion-dense scripts over the
+# package's internals. They ran standalone during the prove-out; here they
+# share one module that aliases the package namespace wholesale.
+include("batteries.jl")
