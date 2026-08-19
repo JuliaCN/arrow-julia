@@ -21,51 +21,33 @@
 
 # API Reference
 
-```@autodocs
-Modules = [Arrow]
-Order   = [:type, :function]
-```
-
-## Flight
-
-```@autodocs
-Modules = [Arrow.Flight]
-Order   = [:type, :function]
-```
-
-## Flight SQL
-
-```@autodocs
-Modules = [Arrow.Flight.SQL]
-Order   = [:type, :function]
-```
-
-## C Data Interface
+## Reading
 
 ```@docs
-Arrow.CData
+Arrow.Table
+Arrow.Stream
+Arrow.close!(::Arrow.Table)
 ```
 
-```@autodocs
-Modules = [Arrow.CData]
-Order   = [:type, :function]
-```
-
-## ADBC
+## Writing
 
 ```@docs
-Arrow.ADBC
+Arrow.write
+Arrow.DictEncode
 ```
 
-```@autodocs
-Modules = [Arrow.ADBC]
-Order   = [:type, :function]
+## Byte-range reads
+
+```@docs
+Arrow.RangedSource
+Arrow.RangedFile
 ```
 
-## Internals: `Arrow.FlatBuffers`
+## The C data and C stream interfaces
 
-The `FlatBuffers` module is not part of Arrow.jl's public API, and these functions may change without notice.
-
-```@autodocs
-Modules = [Arrow.FlatBuffers]
+```@docs
+Arrow.to_c_data
+Arrow.from_c_data
+Arrow.export_stream!
+Arrow.from_c_stream
 ```
