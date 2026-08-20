@@ -34,7 +34,7 @@ tbl = Arrow.Table("data.arrow")
 ```
 
 ```@contents
-Pages = ["manual.md", "security.md", "arrow_alignment_audit.md", "cdata_alignment.md", "production_performance_gates.md", "reference.md"]
+Pages = ["manual.md", "migration.md", "reference.md"]
 Depth = 3
 ```
 
