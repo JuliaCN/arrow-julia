@@ -30,8 +30,6 @@
     )
 
     @test Arrow.Flight.schemaipc(info) == schema_bytes
-    @test [batch.word for batch in Arrow.Flight.stream(messages[2:end]; schema=info)] ==
-          [["red", "blue"], ["green"]]
-    @test Arrow.Flight.table(messages[2:end]; schema=info).word ==
-          ["red", "blue", "green"]
+    @test [batch.word for batch in Arrow.Flight.stream(messages[2:end]; schema=info)] == [["red", "blue"], ["green"]]
+    @test Arrow.Flight.table(messages[2:end]; schema=info).word == ["red", "blue", "green"]
 end

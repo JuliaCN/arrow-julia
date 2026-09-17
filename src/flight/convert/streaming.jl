@@ -15,15 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-streambytes(message::Protocol.FlightData; kwargs...) =
-    streambytes(Protocol.FlightData[message]; kwargs...)
-
-function _has_schema_message(messages)
-    return any(messages) do message
-        isempty(message.data_header) && return false
-        _flight_message_header(message).header isa ArrowParent.Meta.Schema
-    end
-end
+streambytes(message::Protocol.FlightData; kwargs...) = streambytes((message,); kwargs...)
 
 function _missing_schema_message()
     return join(
@@ -36,39 +28,56 @@ function _missing_schema_message()
     )
 end
 
-function streambytes(
+function _rebuild_stream(
     messages;
     schema=nothing,
     alignment::Integer=DEFAULT_IPC_ALIGNMENT,
     end_marker::Bool=true,
+    capture_metadata::Bool=false,
 )
-    collected = _collect_messages(messages)
-    has_schema = _has_schema_message(collected)
-    has_schema || schema !== nothing || throw(ArgumentError(_missing_schema_message()))
     io = IOBuffer()
-    !has_schema && Base.write(io, schemaipc(schema; alignment=alignment))
-    for message in collected
+    metadata = Vector{Vector{UInt8}}()
+    has_schema = false
+    injected_schema = false
+    for message in messages
         if isempty(message.data_header)
             isempty(message.data_body) || throw(
                 ArgumentError("FlightData message has a body but no Arrow IPC header"),
             )
             continue
         end
-        _write_framed_message(io, message.data_header, message.data_body, alignment)
+        header = message.data_header
+        ipc_message = _flight_message_header(header)
+        kind = ipc_message.header
+        if kind isa ArrowParent.Meta.Schema
+            has_schema = true
+        elseif !has_schema && !injected_schema
+            schema === nothing && throw(ArgumentError(_missing_schema_message()))
+            Base.write(io, schemaipc(schema; alignment=alignment))
+            injected_schema = true
+        end
+        _write_framed_message(io, header, message.data_body, alignment, ipc_message)
+        if capture_metadata && kind isa ArrowParent.Meta.RecordBatch
+            push!(metadata, Vector{UInt8}(message.app_metadata))
+        end
+    end
+    if !has_schema && !injected_schema
+        schema === nothing && throw(ArgumentError(_missing_schema_message()))
+        Base.write(io, schemaipc(schema; alignment=alignment))
     end
     end_marker && _write_end_marker(io)
-    return take!(io)
+    return take!(io), metadata
 end
 
-function _record_app_metadata(messages)
-    metadata = Vector{Vector{UInt8}}()
-    for message in messages
-        isempty(message.data_header) && continue
-        header = _flight_message_header(message).header
-        header isa ArrowParent.Meta.RecordBatch || continue
-        push!(metadata, Vector{UInt8}(message.app_metadata))
-    end
-    return metadata
+function streambytes(
+    messages;
+    schema=nothing,
+    alignment::Integer=DEFAULT_IPC_ALIGNMENT,
+    end_marker::Bool=true,
+)
+    bytes, _ =
+        _rebuild_stream(messages; schema=schema, alignment=alignment, end_marker=end_marker)
+    return bytes
 end
 
 function _stream_schema(stream::ArrowParent.Stream)
@@ -121,8 +130,7 @@ function Base.iterate(x::FlightStreamWithAppMetadata, state)
     item = iterate(x.stream.stream, stream_state)
     item === nothing && return nothing
     table, next_state = item
-    return (table=table, app_metadata=x.stream.app_metadata[index]),
-    (next_state, index + 1)
+    return (table=table, app_metadata=x.stream.app_metadata[index]), (next_state, index + 1)
 end
 
 function _flight_stream(
@@ -131,16 +139,15 @@ function _flight_stream(
     alignment::Integer=DEFAULT_IPC_ALIGNMENT,
     end_marker::Bool=true,
 )
-    collected = _collect_messages(messages)
-    bytes = streambytes(
-        collected;
+    bytes, metadata = _rebuild_stream(
+        messages;
         schema=schema,
         alignment=alignment,
         end_marker=end_marker,
+        capture_metadata=true,
     )
     stream = ArrowParent.Stream(bytes; mmap=false)
     table_schema = _stream_schema(stream)
-    metadata = _record_app_metadata(collected)
     length(metadata) == length(stream) || throw(
         ArgumentError(
             "Flight record-batch metadata count does not match decoded Arrow batch count",
@@ -164,13 +171,10 @@ function stream(
     alignment::Integer=DEFAULT_IPC_ALIGNMENT,
     end_marker::Bool=true,
 )
-    convert || @warn "Arrow 3 Flight always returns public-domain materialized values" maxlog = 1
-    value = _flight_stream(
-        messages;
-        schema=schema,
-        alignment=alignment,
-        end_marker=end_marker,
-    )
+    convert ||
+        @warn "Arrow 3 Flight always returns public-domain materialized values" maxlog = 1
+    value =
+        _flight_stream(messages; schema=schema, alignment=alignment, end_marker=end_marker)
     return include_app_metadata ? FlightStreamWithAppMetadata(value) : value
 end
 
@@ -188,15 +192,15 @@ function table(
     alignment::Integer=DEFAULT_IPC_ALIGNMENT,
     end_marker::Bool=true,
 )
-    convert || @warn "Arrow 3 Flight always returns public-domain materialized values" maxlog = 1
-    collected = _collect_messages(messages)
-    bytes = streambytes(
-        collected;
+    convert ||
+        @warn "Arrow 3 Flight always returns public-domain materialized values" maxlog = 1
+    bytes, metadata = _rebuild_stream(
+        messages;
         schema=schema,
         alignment=alignment,
         end_marker=end_marker,
+        capture_metadata=include_app_metadata,
     )
     value = ArrowParent.Table(bytes; mmap=false)
-    return include_app_metadata ?
-           (table=value, app_metadata=_record_app_metadata(collected)) : value
+    return include_app_metadata ? (table=value, app_metadata=metadata) : value
 end

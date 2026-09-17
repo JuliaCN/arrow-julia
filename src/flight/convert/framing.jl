@@ -24,13 +24,14 @@ _require_flight_little_endian() =
 @inline function _read_i32(bytes::AbstractVector{UInt8}, pos::Int)
     pos >= 1 && pos + 3 <= length(bytes) ||
         throw(ArgumentError("truncated Arrow IPC framing"))
-    return reinterpret(Int32, Vector{UInt8}(@view bytes[pos:(pos + 3)]))[1]
+    return reinterpret(Int32, _read_u32(bytes, pos))
 end
 
 @inline function _read_u32(bytes::AbstractVector{UInt8}, pos::Int)
     pos >= 1 && pos + 3 <= length(bytes) ||
         throw(ArgumentError("truncated Arrow IPC framing"))
-    return reinterpret(UInt32, Vector{UInt8}(@view bytes[pos:(pos + 3)]))[1]
+    return UInt32(bytes[pos]) | (UInt32(bytes[pos + 1]) << 8) |
+           (UInt32(bytes[pos + 2]) << 16) | (UInt32(bytes[pos + 3]) << 24)
 end
 
 _padding_length(n::Integer, alignment::Integer=DEFAULT_IPC_ALIGNMENT) =
@@ -38,13 +39,16 @@ _padding_length(n::Integer, alignment::Integer=DEFAULT_IPC_ALIGNMENT) =
 
 function _write_zeros(io::IO, n::Integer)
     n <= 0 && return 0
-    return Base.write(io, zeros(UInt8, Int(n)))
+    for _ = 1:Int(n)
+        Base.write(io, UInt8(0))
+    end
+    return Int(n)
 end
 
 function _flight_message_header(data_header::AbstractVector{UInt8})
     isempty(data_header) &&
         throw(ArgumentError("FlightData message is missing the Arrow IPC header"))
-    bytes = Vector{UInt8}(data_header)
+    bytes = data_header isa Vector{UInt8} ? data_header : Vector{UInt8}(data_header)
     return ArrowParent.FB.getrootas(ArrowParent.Meta.Message, bytes, 0)
 end
 
@@ -57,12 +61,26 @@ function _write_framed_message(
     data_body::AbstractVector{UInt8},
     alignment::Integer,
 )
-    _require_flight_little_endian()
-    alignment == DEFAULT_IPC_ALIGNMENT || throw(
-        ArgumentError("Arrow 3 Flight IPC uses the standard 8-byte alignment"),
+    header = data_header isa Vector{UInt8} ? data_header : Vector{UInt8}(data_header)
+    return _write_framed_message(
+        io,
+        header,
+        data_body,
+        alignment,
+        _flight_message_header(header),
     )
-    header = Vector{UInt8}(data_header)
-    msg = _flight_message_header(header)
+end
+
+function _write_framed_message(
+    io::IO,
+    header::Vector{UInt8},
+    data_body::AbstractVector{UInt8},
+    alignment::Integer,
+    msg,
+)
+    _require_flight_little_endian()
+    alignment == DEFAULT_IPC_ALIGNMENT ||
+        throw(ArgumentError("Arrow 3 Flight IPC uses the standard 8-byte alignment"))
     bodylen = Int(msg.bodyLength)
     bodylen >= 0 || throw(ArgumentError("negative Arrow IPC body length"))
     length(data_body) == bodylen || throw(
@@ -89,10 +107,7 @@ end
 function _split_ipc_stream(bytes::AbstractVector{UInt8})
     _require_flight_little_endian()
     data = bytes
-    MessagePart = NamedTuple{
-        (:header, :body, :kind),
-        Tuple{Vector{UInt8},Vector{UInt8},Any},
-    }
+    MessagePart = NamedTuple{(:header, :body, :kind),Tuple{Vector{UInt8},Vector{UInt8},Any}}
     messages = MessagePart[]
     pos = 1
     saw_end = false

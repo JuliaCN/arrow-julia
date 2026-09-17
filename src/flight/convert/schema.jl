@@ -19,9 +19,8 @@ function _normalize_schemaipc(
     schema::AbstractVector{UInt8};
     alignment::Integer=DEFAULT_IPC_ALIGNMENT,
 )
-    alignment == DEFAULT_IPC_ALIGNMENT || throw(
-        ArgumentError("Arrow 3 Flight IPC uses the standard 8-byte alignment"),
-    )
+    alignment == DEFAULT_IPC_ALIGNMENT ||
+        throw(ArgumentError("Arrow 3 Flight IPC uses the standard 8-byte alignment"))
     bytes = Vector{UInt8}(schema)
     isempty(bytes) && throw(ArgumentError("schema bytes cannot be empty"))
     if length(bytes) >= 8 && _read_u32(bytes, 1) == _IPC_CONTINUATION

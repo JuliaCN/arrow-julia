@@ -20,11 +20,7 @@ function _rethrow_flight_status_error(error::Flight.FlightStatusError)
 end
 
 function _configured_service(service::Flight.Service)
-    return GRPCServerFlightService(
-        service,
-        STREAM_BUFFER_SIZE,
-        STREAM_BUFFER_SIZE,
-    )
+    return GRPCServerFlightService(service, STREAM_BUFFER_SIZE, STREAM_BUFFER_SIZE)
 end
 
 _configured_service(service::GRPCServerFlightService) = service

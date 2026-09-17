@@ -61,6 +61,13 @@ and delegate validation and materialization to `Arrow.Stream` and
 from the decoded IPC schema, so it does not parse and materialize a second
 `Arrow.Table` merely to discover column types.
 
+Incoming `FlightData` is consumed in one pass. Iterator and channel inputs are
+not first collected into a second message vector: framing, schema detection,
+and application-metadata extraction happen while the IPC byte buffer is
+rebuilt. Arrow 3's validated reader currently opens that complete IPC buffer,
+so receive-side byte storage is still proportional to the response; the Flight
+adapter no longer adds another response-sized layer of message retention.
+
 ```julia
 source = Tables.partitioner(((id=[1, 2],), (id=[3],)))
 messages = Arrow.Flight.flightdata(source; app_metadata=("first", "second"))

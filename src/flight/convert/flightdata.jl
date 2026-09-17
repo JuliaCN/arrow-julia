@@ -77,8 +77,8 @@ _emit_flightdata!(sink, message::Protocol.FlightData) = put!(sink, message)
 function _next_app_metadata!(sink::_FlightDataSink)
     sink.app_metadata === nothing && return UInt8[]
     item =
-        sink.app_metadata_started ?
-        iterate(sink.app_metadata, sink.app_metadata_state) : iterate(sink.app_metadata)
+        sink.app_metadata_started ? iterate(sink.app_metadata, sink.app_metadata_state) :
+        iterate(sink.app_metadata)
     item === nothing && throw(
         ArgumentError("app_metadata was exhausted before all record batches were emitted"),
     )
@@ -91,8 +91,8 @@ end
 function _finish_app_metadata!(sink::_FlightDataSink)
     sink.app_metadata === nothing && return nothing
     item =
-        sink.app_metadata_started ?
-        iterate(sink.app_metadata, sink.app_metadata_state) : iterate(sink.app_metadata)
+        sink.app_metadata_started ? iterate(sink.app_metadata, sink.app_metadata_state) :
+        iterate(sink.app_metadata)
     item === nothing ||
         throw(ArgumentError("app_metadata contains more entries than record batches"))
     return nothing
@@ -104,12 +104,7 @@ function _drain_flightdata!(sink::_FlightDataSink, bytes::Vector{UInt8})
             part.kind isa ArrowParent.Meta.RecordBatch ? _next_app_metadata!(sink) : UInt8[]
         _emit_flightdata!(
             sink.sink,
-            Protocol.FlightData(
-                sink.descriptor,
-                part.header,
-                part_metadata,
-                part.body,
-            ),
+            Protocol.FlightData(sink.descriptor, part.header, part_metadata, part.body),
         )
         sink.descriptor = nothing
     end
@@ -126,9 +121,8 @@ function _putflightdata!(
     colmetadata=nothing,
     app_metadata=nothing,
 )
-    alignment == DEFAULT_IPC_ALIGNMENT || throw(
-        ArgumentError("Arrow 3 Flight IPC uses the standard 8-byte alignment"),
-    )
+    alignment == DEFAULT_IPC_ALIGNMENT ||
+        throw(ArgumentError("Arrow 3 Flight IPC uses the standard 8-byte alignment"))
     source, app_metadata = _unwrap_app_metadata_source(source, app_metadata)
     output = _FlightDataSink(sink, descriptor, app_metadata)
     buffer = IOBuffer()

@@ -16,6 +16,3 @@
 # under the License.
 
 const DEFAULT_IPC_ALIGNMENT = 8
-
-_collect_messages(messages::AbstractVector{<:Protocol.FlightData}) = messages
-_collect_messages(messages) = collect(messages)

@@ -56,20 +56,29 @@ using Tables
     @test DataAPI.metadata(result.table, "dataset") == "flight"
     @test DataAPI.colmetadata(result.table, :label, "lang") == "en"
 
+    one_pass = (message for message in messages)
+    one_pass_result = Arrow.Flight.table(one_pass; include_app_metadata=true)
+    @test one_pass_result.table.id == [1, 2, 3]
+    @test String.(one_pass_result.app_metadata) == ["batch:0", "batch:1"]
+
+    message_channel = Channel{Arrow.Flight.Protocol.FlightData}(1) do channel
+        for message in messages
+            put!(channel, message)
+        end
+    end
+    @test [batch.id for batch in Arrow.Flight.stream(message_channel)] == [[1, 2], [3]]
+
     schema_bytes = Arrow.Flight.schemaipc(first(messages))
     schema = Arrow.Flight.Protocol.SchemaResult(schema_bytes)
     separated = Arrow.Flight.table(messages[2:end]; schema=schema)
     @test separated.id == [1, 2, 3]
     @test separated.label == ["one", "two", "three"]
+    empty_separated = Arrow.Flight.table((); schema=schema)
+    @test isempty(empty_separated.id)
 
-    wrapped = Arrow.Flight.withappmetadata(
-        source;
-        app_metadata=("wrapped:0", "wrapped:1"),
-    )
-    wrapped_result = Arrow.Flight.table(
-        Arrow.Flight.flightdata(wrapped);
-        include_app_metadata=true,
-    )
+    wrapped = Arrow.Flight.withappmetadata(source; app_metadata=("wrapped:0", "wrapped:1"))
+    wrapped_result =
+        Arrow.Flight.table(Arrow.Flight.flightdata(wrapped); include_app_metadata=true)
     @test String.(wrapped_result.app_metadata) == ["wrapped:0", "wrapped:1"]
 
     channel = Channel{Arrow.Flight.Protocol.FlightData}(8)
@@ -109,9 +118,8 @@ using Tables
     @test istaskfailed(failed_task)
     @test_throws TaskFailedException wait(failed_task)
 
-    dictionary_messages = Arrow.Flight.flightdata((
-        value=Arrow.DictEncode(["alpha", "beta", "alpha"]),
-    ))
+    dictionary_messages =
+        Arrow.Flight.flightdata((value=Arrow.DictEncode(["alpha", "beta", "alpha"]),))
     @test Arrow.Flight.table(dictionary_messages).value == ["alpha", "beta", "alpha"]
 
     @test_throws ArgumentError Arrow.Flight.table(Arrow.Flight.Protocol.FlightData[])

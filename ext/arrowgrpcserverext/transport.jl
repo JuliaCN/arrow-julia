@@ -26,11 +26,7 @@ function GRPCServerFlightService(
     request_capacity::Integer,
     response_capacity::Integer,
 )
-    return GRPCServerFlightService(
-        service,
-        Int(request_capacity),
-        Int(response_capacity),
-    )
+    return GRPCServerFlightService(service, Int(request_capacity), Int(response_capacity))
 end
 
 mutable struct GRPCServerFlightServer
@@ -106,11 +102,8 @@ function Flight.grpcserver_flight_server(
 
     actual_host = String(host)
     actual_port = _grpcserver_bind_port(actual_host, port)
-    configured_service = GRPCServerFlightService(
-        service,
-        Int(request_capacity),
-        Int(response_capacity),
-    )
+    configured_service =
+        GRPCServerFlightService(service, Int(request_capacity), Int(response_capacity))
     grpc_server = gRPCServer.GRPCServer(
         actual_host,
         actual_port;

@@ -215,7 +215,8 @@ function flight_server_core_test_exchange_helpers(fixture)
     @test collect(stream_result.vector_score) == [0.9, 0.5]
     @test Arrow.getmetadata(stream_result) == Dict("service" => "stream")
     @test DataAPI.colmetadata(stream_result, :doc_id, "response.role") == "stream-doc-id"
-    @test DataAPI.colmetadata(stream_result, :vector_score, "response.role") == "stream-score"
+    @test DataAPI.colmetadata(stream_result, :vector_score, "response.role") ==
+          "stream-score"
     @test filter(!isempty, getfield.(stream_messages, :app_metadata)) ==
           [b"response:stream"]
 
