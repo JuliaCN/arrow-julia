@@ -101,6 +101,10 @@ include("table.jl")
 include("write.jl")
 include("sharedvalues.jl")
 
+# Flight is layered over the public table facade and the package-owned IPC
+# adapters. It does not participate in ArrowCore ownership or layout policy.
+include(joinpath("flight", "Flight.jl"))
+
 @doc """
     Arrow.Field
 
@@ -211,6 +215,7 @@ AC.ValidationError
             :Limits,
             :AllocationLimitError,
             :ValidationError,
+            :Flight,
         ),
     )
 end

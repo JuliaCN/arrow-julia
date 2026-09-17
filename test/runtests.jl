@@ -51,6 +51,9 @@ include("writer_sink_tests.jl")
 # Shared acceptance/conformance support contracts and adapter composition.
 include("conformance_support_tests.jl")
 
+# Arrow Flight protocol, service, IPC, and official gRPCServer integration.
+include("flight.jl")
+
 # The CloudStore.jl extension against a local S3-compatible server.
 include("cloudstore_tests.jl")
 

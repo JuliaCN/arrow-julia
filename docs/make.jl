@@ -34,6 +34,7 @@ makedocs(;
     pages=[
         "Home" => "index.md",
         "User Manual" => "manual.md",
+        "Arrow Flight" => "flight.md",
         "Migrating from 2.x" => "migration.md",
         "API Reference" => "reference.md",
     ],
