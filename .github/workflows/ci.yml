@@ -206,7 +206,7 @@ jobs:
         run: >
           julia --color=yes --project=monorepo -e 'using Pkg; Pkg.test("Arrow")'
   test_min_arrowtypes:
-    name: Arrow.jl - ArrowTypes 2.0 compatibility
+    name: Arrow.jl 3 - minimum supported ArrowTypes 2.0
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
