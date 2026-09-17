@@ -56,7 +56,7 @@ function grpcserver_extension_test_direct_handlers(grpcserver, service, fixture)
     doget_table = Arrow.Flight.table(doget_messages; schema=fixture.info)
     @test doget_table.name == ["one", "two", "three"]
     @test Arrow.getmetadata(doget_table)["dataset"] == "native"
-    @test Arrow.getmetadata(doget_table.name)["lang"] == "en"
+    @test DataAPI.colmetadata(doget_table, :name, "lang") == "en"
 
     actions_messages, actions_closed, actions_stream =
         grpcserver_capture_server_stream(grpcserver, protocol.ActionType)
@@ -146,7 +146,7 @@ function grpcserver_extension_test_direct_handlers(grpcserver, service, fixture)
     @test doexchange_table.id == [10]
     @test doexchange_table.name == ["ten"]
     @test Arrow.getmetadata(doexchange_table)["dataset"] == "exchange"
-    @test Arrow.getmetadata(doexchange_table.name)["lang"] == "exchange"
+    @test DataAPI.colmetadata(doexchange_table, :name, "lang") == "exchange"
     @test filter(!isempty, getfield.(doexchange_messages, :app_metadata)) ==
           Vector{UInt8}.(fixture.exchange_app_metadata)
 

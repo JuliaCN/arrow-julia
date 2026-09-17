@@ -226,7 +226,7 @@ function flight_live_service(protocol, fixture)
             @test incoming[1].table.id == [1, 2]
             @test incoming[1].table.name == ["one", "two"]
             @test Arrow.getmetadata(incoming[1].table)["dataset"] == "native"
-            @test Arrow.getmetadata(incoming[1].table.name)["lang"] == "en"
+            @test DataAPI.colmetadata(incoming[1].table, :name, "lang") == "en"
             @test FlightTestSupport.app_metadata_strings(
                 getproperty.(incoming, :app_metadata),
             ) == fixture.dataset_app_metadata
@@ -244,13 +244,15 @@ function flight_live_service(protocol, fixture)
                 getproperty.(incoming, :app_metadata),
             ) == fixture.exchange_app_metadata
             @test Arrow.getmetadata(incoming[1].table)["dataset"] == "exchange"
-            @test Arrow.getmetadata(incoming[1].table.name)["lang"] == "exchange"
+            @test DataAPI.colmetadata(incoming[1].table, :name, "lang") == "exchange"
             Arrow.Flight.putflightdata!(
                 response,
                 Arrow.Flight.withappmetadata(
                     Tables.partitioner(getproperty.(incoming, :table));
                     app_metadata=getproperty.(incoming, :app_metadata),
                 );
+                metadata=fixture.exchange_metadata,
+                colmetadata=fixture.exchange_colmetadata,
                 close=true,
             )
             return :doexchange_ok

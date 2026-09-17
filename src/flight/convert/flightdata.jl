@@ -15,33 +15,20 @@
 # specific language governing permissions and limitations
 # under the License.
 
-function _sourcedefaultcolmetadata(cols)
-    sch = Tables.schema(cols)
-    isnothing(sch) && return nothing
-    colmeta = Dict{Symbol,Any}()
-    Tables.eachcolumn(sch, cols) do col, _, nm
-        meta = ArrowParent.getmetadata(col)
-        isnothing(meta) || (colmeta[nm] = meta)
-    end
-    isempty(colmeta) && return nothing
-    return ArrowParent._normalizecolmeta(colmeta)
-end
-
 struct FlightAppMetadataSource{T,M}
     source::T
     app_metadata::M
 end
 
 ArrowParent.getmetadata(x::FlightAppMetadataSource) = ArrowParent.getmetadata(x.source)
+Tables.partitions(x::FlightAppMetadataSource) = Tables.partitions(x.source)
 
 """
     Arrow.Flight.withappmetadata(source; app_metadata)
 
-Return a lightweight wrapper around `source` that carries batch-wise Flight
-`app_metadata` alongside the Arrow payload. The wrapper can be passed directly
-to [`Arrow.Flight.flightdata`](@ref), [`Arrow.Flight.putflightdata!`](@ref),
-or source-based [`Arrow.Flight.doexchange`](@ref) without manually threading
-`app_metadata=...` through each call site.
+Carry batch-wise Flight application metadata alongside a Tables.jl source.
+The wrapper changes only Flight transport metadata; Arrow 3 owns all IPC
+schema and value conversion.
 """
 withappmetadata(source; app_metadata) =
     isnothing(app_metadata) ? source : FlightAppMetadataSource(source, app_metadata)
@@ -69,341 +56,90 @@ function _normalize_app_metadata_value(value)
     )
 end
 
-function _normalize_app_metadata_source(app_metadata)
-    isnothing(app_metadata) && return nothing
-    return _is_app_metadata_value(app_metadata) ? (app_metadata,) : app_metadata
-end
-
-_app_metadata_cursor(app_metadata) =
-    let metadata_iter = _normalize_app_metadata_source(app_metadata)
-        isnothing(metadata_iter) ? nothing :
-        (iter=metadata_iter, state=nothing, started=false)
+function _record_app_metadata_values(app_metadata, count::Int)
+    isnothing(app_metadata) && return [UInt8[] for _ = 1:count]
+    values = _is_app_metadata_value(app_metadata) ? (app_metadata,) : app_metadata
+    normalized = Vector{Vector{UInt8}}()
+    for value in values
+        push!(normalized, _normalize_app_metadata_value(value))
     end
-
-function _next_app_metadata(cursor)
-    isnothing(cursor) && return UInt8[], cursor
-    iter = cursor.iter
-    next = cursor.started ? iterate(iter, cursor.state) : iterate(iter)
-    isnothing(next) && throw(
-        ArgumentError("app_metadata was exhausted before all record batches were emitted"),
+    length(normalized) == count || throw(
+        ArgumentError(
+            length(normalized) < count ?
+            "app_metadata was exhausted before all record batches were emitted" :
+            "app_metadata contains more entries than source partitions",
+        ),
     )
-    value, state = next
-    return _normalize_app_metadata_value(value), (iter=iter, state=state, started=true)
+    return normalized
 end
 
-function _ensure_app_metadata_consumed(cursor)
-    isnothing(cursor) && return nothing
-    next = cursor.started ? iterate(cursor.iter, cursor.state) : iterate(cursor.iter)
-    isnothing(next) && return nothing
-    throw(ArgumentError("app_metadata contains more entries than source partitions"))
-end
-
-function _partition_with_app_metadata(tbl, cursor)
-    app_metadata, cursor = _next_app_metadata(cursor)
-    return tbl, app_metadata, cursor
-end
-
-const MAX_TRANSPORT_SAFE_GRPC_MESSAGE_BYTES = 32_000
-
-function _transport_safe_row_ranges(rowcount::Integer)
-    midpoint = max(1, fld(Int(rowcount), 2))
-    return 1:midpoint, (midpoint + 1):Int(rowcount)
-end
-
-function _transport_safe_recordbatch_message(
-    schema::Tables.Schema,
-    cols,
-    app_metadata::Vector{UInt8},
-    alignment::Integer,
-)
-    return _flightdata_message(
-        ArrowParent.makerecordbatchmsg(schema, cols, alignment);
-        app_metadata=app_metadata,
-        alignment=alignment,
-    )
-end
-
-function _emit_transport_safe_recordbatch!(
-    emit,
-    tbl,
-    schema::Tables.Schema,
-    dictencodings::Dict{Int64,Any},
-    record_app_metadata::Vector{UInt8};
-    compress,
-    largelists::Bool,
-    denseunions::Bool,
-    dictencode::Bool,
-    dictencodenested::Bool,
-    alignment::Integer,
-    maxdepth::Integer,
-    tblmeta,
-    tblcolmetadata,
-    precomputed_cols=nothing,
-)
-    tblcols = Tables.columns(tbl)
-    cols =
-        isnothing(precomputed_cols) ?
-        ArrowParent.toarrowtable(
-            tblcols,
-            dictencodings,
-            largelists,
-            compress,
-            denseunions,
-            dictencode,
-            dictencodenested,
-            maxdepth,
-            tblmeta,
-            tblcolmetadata,
-        ) : precomputed_cols
-
-    rowcount = Tables.rowcount(cols)
-    record_message =
-        _transport_safe_recordbatch_message(schema, cols, record_app_metadata, alignment)
-
-    if !dictencode &&
-       !dictencodenested &&
-       isempty(cols.dictencodingdeltas) &&
-       rowcount > 1 &&
-       grpcmessagesize(record_message) > MAX_TRANSPORT_SAFE_GRPC_MESSAGE_BYTES
-        left_rows, right_rows = _transport_safe_row_ranges(rowcount)
-        _emit_transport_safe_recordbatch!(
-            emit,
-            Tables.subset(tbl, left_rows; viewhint=true),
-            schema,
-            dictencodings,
-            record_app_metadata;
-            compress=compress,
-            largelists=largelists,
-            denseunions=denseunions,
-            dictencode=dictencode,
-            dictencodenested=dictencodenested,
-            alignment=alignment,
-            maxdepth=maxdepth,
-            tblmeta=tblmeta,
-            tblcolmetadata=tblcolmetadata,
-            precomputed_cols=nothing,
-        )
-        _emit_transport_safe_recordbatch!(
-            emit,
-            Tables.subset(tbl, right_rows; viewhint=true),
-            schema,
-            dictencodings,
-            UInt8[];
-            compress=compress,
-            largelists=largelists,
-            denseunions=denseunions,
-            dictencode=dictencode,
-            dictencodenested=dictencodenested,
-            alignment=alignment,
-            maxdepth=maxdepth,
-            tblmeta=tblmeta,
-            tblcolmetadata=tblcolmetadata,
-            precomputed_cols=nothing,
-        )
-        return nothing
-    end
-
-    for de in cols.dictencodingdeltas
-        dictsch = Tables.Schema((:col,), (eltype(de.data),))
-        emit(
-            _flightdata_message(
-                ArrowParent.makedictionarybatchmsg(
-                    dictsch,
-                    (col=de.data,),
-                    de.id,
-                    true,
-                    alignment,
-                );
-                alignment=alignment,
-            ),
-        )
-    end
-
-    emit(record_message)
-    return nothing
-end
-
-function _emitflightdata!(
-    emit,
+function _flightdata_messages(
     source;
     descriptor::Union{Nothing,Protocol.FlightDescriptor}=nothing,
     compress=nothing,
-    largelists::Bool=false,
-    denseunions::Bool=true,
-    dictencode::Bool=false,
-    dictencodenested::Bool=false,
     alignment::Integer=DEFAULT_IPC_ALIGNMENT,
-    maxdepth::Integer=ArrowParent.DEFAULT_MAX_DEPTH,
-    metadata::Union{Nothing,Any}=nothing,
-    colmetadata::Union{Nothing,Any}=nothing,
+    metadata=nothing,
+    colmetadata=nothing,
     app_metadata=nothing,
 )
+    alignment == DEFAULT_IPC_ALIGNMENT || throw(
+        ArgumentError("Arrow 3 Flight IPC uses the standard 8-byte alignment"),
+    )
     source, app_metadata = _unwrap_app_metadata_source(source, app_metadata)
-    dictencodings = Dict{Int64,Any}()
-    schema = Ref{Tables.Schema}()
-    normalized_colmetadata = ArrowParent._normalizecolmeta(colmetadata)
-    source_meta = isnothing(metadata) ? ArrowParent.getmetadata(source) : metadata
-    source_colmetadata = isnothing(colmetadata) ? nothing : normalized_colmetadata
-    app_metadata_cursor = _app_metadata_cursor(app_metadata)
-
-    for partition in Tables.partitions(source)
-        tbl, record_app_metadata, app_metadata_cursor =
-            _partition_with_app_metadata(partition, app_metadata_cursor)
-        tblcols = Tables.columns(tbl)
-        if isnothing(metadata)
-            tblmeta = ArrowParent.getmetadata(tbl)
-            isnothing(tblmeta) && (tblmeta = source_meta)
+    bytes = ArrowParent._writebytes(
+        source;
+        file=false,
+        compress=compress,
+        metadata=metadata,
+        colmetadata=colmetadata,
+    )
+    parts = _split_ipc_stream(bytes)
+    record_count = count(part -> part.kind isa ArrowParent.Meta.RecordBatch, parts)
+    record_metadata = _record_app_metadata_values(app_metadata, record_count)
+    metadata_index = 1
+    descriptor_pending = descriptor
+    messages = Protocol.FlightData[]
+    for part in parts
+        part_metadata = if part.kind isa ArrowParent.Meta.RecordBatch
+            value = record_metadata[metadata_index]
+            metadata_index += 1
+            value
         else
-            tblmeta = metadata
+            UInt8[]
         end
-        if isnothing(colmetadata)
-            tblcolmetadata = _sourcedefaultcolmetadata(tblcols)
-            isnothing(tblcolmetadata) && (tblcolmetadata = source_colmetadata)
-        else
-            tblcolmetadata = normalized_colmetadata
-        end
-        cols = ArrowParent.toarrowtable(
-            tblcols,
-            dictencodings,
-            largelists,
-            compress,
-            denseunions,
-            dictencode,
-            dictencodenested,
-            maxdepth,
-            tblmeta,
-            tblcolmetadata,
+        push!(
+            messages,
+            Protocol.FlightData(
+                descriptor_pending,
+                part.header,
+                part_metadata,
+                part.body,
+            ),
         )
-        if !isassigned(schema)
-            schema[] = Tables.schema(cols)
-            emit(
-                _flightdata_message(
-                    ArrowParent.makeschemamsg(schema[], cols);
-                    descriptor=descriptor,
-                    alignment=alignment,
-                ),
-            )
-            if !isempty(dictencodings)
-                for (id, delock) in sort!(collect(dictencodings); by=x -> x.first, rev=true)
-                    de = delock.value
-                    dictsch = Tables.Schema((:col,), (eltype(de.data),))
-                    emit(
-                        _flightdata_message(
-                            ArrowParent.makedictionarybatchmsg(
-                                dictsch,
-                                (col=de.data,),
-                                id,
-                                false,
-                                alignment,
-                            );
-                            alignment=alignment,
-                        ),
-                    )
-                end
-            end
-        end
-        _emit_transport_safe_recordbatch!(
-            emit,
-            tbl,
-            schema[],
-            dictencodings,
-            record_app_metadata;
-            compress=compress,
-            largelists=largelists,
-            denseunions=denseunions,
-            dictencode=dictencode,
-            dictencodenested=dictencodenested,
-            alignment=alignment,
-            maxdepth=maxdepth,
-            tblmeta=tblmeta,
-            tblcolmetadata=tblcolmetadata,
-            precomputed_cols=cols,
-        )
-        descriptor = nothing
+        descriptor_pending = nothing
     end
-    _ensure_app_metadata_consumed(app_metadata_cursor)
-    return nothing
+    return messages
 end
 
 """
     Arrow.Flight.flightdata(source; kwargs...)
 
-Encode a Tables.jl-compatible `source` as a vector of Flight `FlightData`
-messages. Schema metadata, field metadata, and optional batch-wise
-`app_metadata` are preserved through the emitted message stream.
+Encode a Tables.jl source with Arrow 3's canonical IPC writer, then expose its
+schema, dictionary, and record-batch messages as Flight `FlightData` values.
 """
-function flightdata(
-    source;
-    descriptor::Union{Nothing,Protocol.FlightDescriptor}=nothing,
-    compress=nothing,
-    largelists::Bool=false,
-    denseunions::Bool=true,
-    dictencode::Bool=false,
-    dictencodenested::Bool=false,
-    alignment::Integer=DEFAULT_IPC_ALIGNMENT,
-    maxdepth::Integer=ArrowParent.DEFAULT_MAX_DEPTH,
-    metadata::Union{Nothing,Any}=nothing,
-    colmetadata::Union{Nothing,Any}=nothing,
-    app_metadata=nothing,
-)
-    messages = Protocol.FlightData[]
-    _emitflightdata!(
-        message -> push!(messages, message),
-        source;
-        descriptor=descriptor,
-        compress=compress,
-        largelists=largelists,
-        denseunions=denseunions,
-        dictencode=dictencode,
-        dictencodenested=dictencodenested,
-        alignment=alignment,
-        maxdepth=maxdepth,
-        metadata=metadata,
-        colmetadata=colmetadata,
-        app_metadata=app_metadata,
-    )
-    return messages
-end
+flightdata(source; kwargs...) = _flightdata_messages(source; kwargs...)
 
 """
     Arrow.Flight.putflightdata!(sink, source; close=false, kwargs...)
 
-Stream Flight `FlightData` messages for a Tables.jl-compatible `source` into
-`sink` without materializing the full message vector first. When `close=true`,
-the sink is closed after the final message is emitted.
+Write Arrow 3-backed `FlightData` messages to a channel-like sink. Message
+construction shares the same validated IPC path as [`flightdata`](@ref).
 """
-function putflightdata!(
-    sink,
-    source;
-    close::Bool=false,
-    descriptor::Union{Nothing,Protocol.FlightDescriptor}=nothing,
-    compress=nothing,
-    largelists::Bool=false,
-    denseunions::Bool=true,
-    dictencode::Bool=false,
-    dictencodenested::Bool=false,
-    alignment::Integer=DEFAULT_IPC_ALIGNMENT,
-    maxdepth::Integer=ArrowParent.DEFAULT_MAX_DEPTH,
-    metadata::Union{Nothing,Any}=nothing,
-    colmetadata::Union{Nothing,Any}=nothing,
-    app_metadata=nothing,
-)
+function putflightdata!(sink, source; close::Bool=false, kwargs...)
     try
-        _emitflightdata!(
-            message -> put!(sink, message),
-            source;
-            descriptor=descriptor,
-            compress=compress,
-            largelists=largelists,
-            denseunions=denseunions,
-            dictencode=dictencode,
-            dictencodenested=dictencodenested,
-            alignment=alignment,
-            maxdepth=maxdepth,
-            metadata=metadata,
-            colmetadata=colmetadata,
-            app_metadata=app_metadata,
-        )
+        for message in _flightdata_messages(source; kwargs...)
+            put!(sink, message)
+        end
     finally
         close && Base.close(sink)
     end

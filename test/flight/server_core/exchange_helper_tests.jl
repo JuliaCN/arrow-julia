@@ -34,11 +34,9 @@ function flight_server_core_test_exchange_helpers(fixture)
             table = Arrow.Flight.table(messages; convert=true)
             columns = Tables.columntable(table)
             @test Arrow.getmetadata(table) == Dict("request" => "sample")
-            @test Arrow.getmetadata(columns.doc_id) ==
-                  Dict("semantic.role" => "document-id")
-            @test Arrow.getmetadata(columns.vector_score) ==
-                  Dict("semantic.role" => "score")
-            return Arrow.withmetadata(
+            @test DataAPI.colmetadata(table, :doc_id, "semantic.role") == "document-id"
+            @test DataAPI.colmetadata(table, :vector_score, "semantic.role") == "score"
+            return _flight_metadata_table(
                 (
                     doc_id=collect(columns.doc_id),
                     vector_score=collect(columns.vector_score),
@@ -65,8 +63,8 @@ function flight_server_core_test_exchange_helpers(fixture)
     @test collect(columns.doc_id) == ["doc-a", "doc-b"]
     @test collect(columns.vector_score) == [0.9, 0.5]
     @test Arrow.getmetadata(result) == Dict("handler" => "exchange")
-    @test Arrow.getmetadata(columns.doc_id) == Dict("response.role" => "document-id")
-    @test Arrow.getmetadata(columns.vector_score) == Dict("response.role" => "score")
+    @test DataAPI.colmetadata(result, :doc_id, "response.role") == "document-id"
+    @test DataAPI.colmetadata(result, :vector_score, "response.role") == "score"
     @test filter(!isempty, getfield.(response_messages, :app_metadata)) ==
           [b"response:exchange"]
 
@@ -92,9 +90,8 @@ function flight_server_core_test_exchange_helpers(fixture)
         table -> begin
             columns = Tables.columntable(table)
             @test Arrow.getmetadata(table) == Dict("request" => "sample")
-            @test Arrow.getmetadata(columns.doc_id) ==
-                  Dict("semantic.role" => "document-id")
-            return Arrow.withmetadata(
+            @test DataAPI.colmetadata(table, :doc_id, "semantic.role") == "document-id"
+            return _flight_metadata_table(
                 (
                     doc_id=reverse(collect(columns.doc_id)),
                     vector_score=reverse(collect(columns.vector_score)),
@@ -119,9 +116,8 @@ function flight_server_core_test_exchange_helpers(fixture)
     table_result = Arrow.Flight.table(table_messages; convert=true)
     @test collect(table_result.doc_id) == ["doc-b", "doc-a"]
     @test Arrow.getmetadata(table_result) == Dict("service" => "table")
-    @test Arrow.getmetadata(table_result.doc_id) == Dict("response.role" => "table-doc-id")
-    @test Arrow.getmetadata(table_result.vector_score) ==
-          Dict("response.role" => "table-score")
+    @test DataAPI.colmetadata(table_result, :doc_id, "response.role") == "table-doc-id"
+    @test DataAPI.colmetadata(table_result, :vector_score, "response.role") == "table-score"
     @test filter(!isempty, getfield.(table_messages, :app_metadata)) == [b"response:table"]
     table_result_with_app = Arrow.Flight.table(
         Arrow.Flight.doexchange(
@@ -156,7 +152,7 @@ function flight_server_core_test_exchange_helpers(fixture)
     @test FlightTestSupport.app_metadata_strings(request_app_table.app_metadata) ==
           ["response:table-request-app"]
 
-    batch_a = Arrow.withmetadata(
+    batch_a = _flight_metadata_table(
         (doc_id=["doc-a"], vector_score=[0.9]);
         metadata=Dict("request" => "stream-a"),
         colmetadata=Dict(
@@ -164,7 +160,7 @@ function flight_server_core_test_exchange_helpers(fixture)
             :vector_score => Dict("semantic.role" => "score"),
         ),
     )
-    batch_b = Arrow.withmetadata(
+    batch_b = _flight_metadata_table(
         (doc_id=["doc-b"], vector_score=[0.5]);
         metadata=Dict("request" => "stream-b"),
         colmetadata=Dict(
@@ -178,12 +174,10 @@ function flight_server_core_test_exchange_helpers(fixture)
             @test length(tables) == 2
             @test Arrow.getmetadata(tables[1]) == Dict("request" => "stream-a")
             @test Arrow.getmetadata(tables[2]) == Dict("request" => "stream-a")
-            @test Arrow.getmetadata(tables[1].doc_id) ==
-                  Dict("semantic.role" => "document-id")
-            @test Arrow.getmetadata(tables[2].doc_id) ==
-                  Dict("semantic.role" => "document-id")
+            @test DataAPI.colmetadata(tables[1], :doc_id, "semantic.role") == "document-id"
+            @test DataAPI.colmetadata(tables[2], :doc_id, "semantic.role") == "document-id"
             columns = Tables.columntable(vcat(Tables.rowtable.(tables)...))
-            return Arrow.withmetadata(
+            return _flight_metadata_table(
                 (
                     doc_id=collect(columns.doc_id),
                     vector_score=collect(columns.vector_score),
@@ -201,6 +195,11 @@ function flight_server_core_test_exchange_helpers(fixture)
         Arrow.Flight.flightdata(
             Tables.partitioner((batch_a, batch_b));
             descriptor=descriptor,
+            metadata=Dict("request" => "stream-a"),
+            colmetadata=Dict(
+                :doc_id => Dict("semantic.role" => "document-id"),
+                :vector_score => Dict("semantic.role" => "score"),
+            ),
         ),
     )
     stream_response = Channel{fixture.protocol.FlightData}(3)
@@ -215,10 +214,8 @@ function flight_server_core_test_exchange_helpers(fixture)
     @test collect(stream_result.doc_id) == ["doc-a", "doc-b"]
     @test collect(stream_result.vector_score) == [0.9, 0.5]
     @test Arrow.getmetadata(stream_result) == Dict("service" => "stream")
-    @test Arrow.getmetadata(stream_result.doc_id) ==
-          Dict("response.role" => "stream-doc-id")
-    @test Arrow.getmetadata(stream_result.vector_score) ==
-          Dict("response.role" => "stream-score")
+    @test DataAPI.colmetadata(stream_result, :doc_id, "response.role") == "stream-doc-id"
+    @test DataAPI.colmetadata(stream_result, :vector_score, "response.role") == "stream-score"
     @test filter(!isempty, getfield.(stream_messages, :app_metadata)) ==
           [b"response:stream"]
 
@@ -230,13 +227,18 @@ function flight_server_core_test_exchange_helpers(fixture)
     )
     @test collect(local_result.doc_id) == ["doc-b", "doc-a"]
     @test Arrow.getmetadata(local_result) == Dict("service" => "table")
-    @test Arrow.getmetadata(local_result.doc_id) == Dict("response.role" => "table-doc-id")
+    @test DataAPI.colmetadata(local_result, :doc_id, "response.role") == "table-doc-id"
 
     local_stream = Arrow.Flight.stream(
         stream_service,
         fixture.context,
         Tables.partitioner((batch_a, batch_b));
         descriptor=descriptor,
+        metadata=Dict("request" => "stream-a"),
+        colmetadata=Dict(
+            :doc_id => Dict("semantic.role" => "document-id"),
+            :vector_score => Dict("semantic.role" => "score"),
+        ),
         include_app_metadata=true,
     )
     local_batches = collect(local_stream)
@@ -245,8 +247,8 @@ function flight_server_core_test_exchange_helpers(fixture)
     @test FlightTestSupport.app_metadata_string(local_batches[1].app_metadata) ==
           "response:stream"
     @test Arrow.getmetadata(local_batches[1].table) == Dict("service" => "stream")
-    @test Arrow.getmetadata(local_batches[1].table.doc_id) ==
-          Dict("response.role" => "stream-doc-id")
+    @test DataAPI.colmetadata(local_batches[1].table, :doc_id, "response.role") ==
+          "stream-doc-id"
 
     request_app_stream_service = Arrow.Flight.streamservice(
         request_stream -> begin

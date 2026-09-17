@@ -19,17 +19,19 @@ function _normalize_schemaipc(
     schema::AbstractVector{UInt8};
     alignment::Integer=DEFAULT_IPC_ALIGNMENT,
 )
+    alignment == DEFAULT_IPC_ALIGNMENT || throw(
+        ArgumentError("Arrow 3 Flight IPC uses the standard 8-byte alignment"),
+    )
     bytes = Vector{UInt8}(schema)
     isempty(bytes) && throw(ArgumentError("schema bytes cannot be empty"))
-    if length(bytes) >= 8 &&
-       ArrowParent.readbuffer(bytes, 1, UInt32) == ArrowParent.CONTINUATION_INDICATOR_BYTES
+    if length(bytes) >= 8 && _read_u32(bytes, 1) == _IPC_CONTINUATION
         return bytes
     end
     if length(bytes) >= 4
-        metalen = ArrowParent.readbuffer(bytes, 1, Int32)
+        metalen = Int(_read_i32(bytes, 1))
         if metalen >= 0 && metalen == length(bytes) - 4
             io = IOBuffer()
-            Base.write(io, ArrowParent.CONTINUATION_INDICATOR_BYTES)
+            Base.write(io, _IPC_CONTINUATION)
             Base.write(io, bytes)
             return take!(io)
         end
@@ -49,8 +51,6 @@ schemaipc(schema::AbstractVector{UInt8}; alignment::Integer=DEFAULT_IPC_ALIGNMEN
     _normalize_schemaipc(schema; alignment=alignment)
 
 function schemaipc(message::Protocol.FlightData; alignment::Integer=DEFAULT_IPC_ALIGNMENT)
-    isempty(message.data_header) &&
-        throw(ArgumentError("FlightData message is missing the Arrow IPC header"))
     io = IOBuffer()
     _write_framed_message(io, message.data_header, message.data_body, alignment)
     return take!(io)
@@ -59,7 +59,11 @@ end
 function schemaipc(source; kwargs...)
     alignment = get(kwargs, :alignment, DEFAULT_IPC_ALIGNMENT)
     messages = flightdata(source; kwargs...)
-    isempty(messages) &&
+    schema_message = findfirst(
+        message -> _flight_message_header(message).header isa ArrowParent.Meta.Schema,
+        messages,
+    )
+    schema_message === nothing &&
         throw(ArgumentError("cannot derive schema bytes from an empty Flight source"))
-    return schemaipc(first(messages); alignment=alignment)
+    return schemaipc(messages[schema_message]; alignment=alignment)
 end

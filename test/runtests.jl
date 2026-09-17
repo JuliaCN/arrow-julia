@@ -15,65 +15,52 @@
 # limitations under the License.
 
 using Test
+using Aqua
 using Arrow
-using ArrowTypes
-using Tables
-using Dates
-using PooledArrays
-using TimeZones
-using UUIDs
-using Sockets
-using CategoricalArrays
-using DataAPI
-using FilePathsBase
-using DataFrames
-using JSON3
-using OffsetArrays
-import Random: randstring
-using TestSetExtensions: ExtendedTestSet
 
-# this formulation tests the loaded ArrowTypes, even if it's not the dev version
-# within the mono-repo
-include(joinpath(dirname(pathof(ArrowTypes)), "../test/tests.jl"))
+# Core unit tests (ArrowCore in isolation).
+include("core_tests.jl")
 
-include(joinpath(@__DIR__, "testtables.jl"))
-include(joinpath(@__DIR__, "testappend.jl"))
-include(joinpath(@__DIR__, "integrationtest.jl"))
-include(joinpath(@__DIR__, "dates.jl"))
-include(joinpath(@__DIR__, "cdata.jl"))
-include(joinpath(@__DIR__, "adbc.jl"))
-include(joinpath(@__DIR__, "flight.jl"))
+# The public facade (Arrow.Table / Arrow.Stream / Arrow.write).
+include("facade_tests.jl")
+include("sharedvalues.jl")
 
-struct CustomStruct
-    x::Int
-    y::Float64
-    z::String
-end
+# ArrowTypes logical-type lowering, extension metadata, and lifting.
+include("arrowtypes_compat_tests.jl")
 
-struct CustomStruct2{sym}
-    x::Int
-end
+# Seeded end-to-end properties over public IPC paths.
+include("property_tests.jl")
 
-module EnumRoundtripModule
-@enum RankingStrategy lexical = 1 semantic = 2 hybrid = 3
-end
+# Persist only referenced content from shared Utf8View/BinaryView buffers.
+include("ipc_view_output_tests.jl")
+include("ipc_dictionary_tests.jl")
 
-module WideEnumRoundtripModule
-@enum WideRanking::UInt64 tiny = 1 colossal = 0xffffffffffffffff
-end
+# Read-then-rewrite fidelity through the facade, plus reader-budget accounting.
+include("rewrite_regressions.jl")
+include("detached_values_tests.jl")
 
-@testset ExtendedTestSet "Arrow" begin
-    include(joinpath(@__DIR__, "runtests", "roundtrip_integration.jl"))
+# The Arrow 2.x compatibility surface (getmetadata, tobuffer, curried write,
+# removed-keyword warnings, typed scan overrides) and the ArrowTimeZonesExt
+# child suite.
+include("compat_tests.jl")
 
-    @testset "misc" begin
-        include(joinpath(@__DIR__, "runtests", "misc_core_layouts.jl"))
-        include(joinpath(@__DIR__, "runtests", "malformed_ipc.jl"))
-        include(joinpath(@__DIR__, "runtests", "misc_validation_views.jl"))
-        include(joinpath(@__DIR__, "runtests", "misc_issue_roundtrips.jl"))
-        include(joinpath(@__DIR__, "runtests", "misc_extensions.jl"))
-        include(joinpath(@__DIR__, "runtests", "misc_tensor_display.jl"))
-        include(joinpath(@__DIR__, "runtests", "misc_table_issues.jl"))
-    end # @testset "misc"
+# The incremental writer (Arrow.Writer) and stream append (Arrow.append).
+include("incremental_writer_tests.jl")
+include("writer_sink_tests.jl")
 
-    include(joinpath(@__DIR__, "runtests", "metadata.jl"))
-end
+# Shared acceptance/conformance support contracts and adapter composition.
+include("conformance_support_tests.jl")
+
+# Arrow Flight protocol, service, IPC, and official gRPCServer integration.
+include("flight.jl")
+
+# The CloudStore.jl extension against a local S3-compatible server.
+include("cloudstore_tests.jl")
+
+# The adapter acceptance batteries: assertion-dense scripts over the
+# package's internals, sharing one explicit private support module.
+include("batteries.jl")
+
+# Package hygiene: compat bounds, stale dependencies, ambiguities, exports,
+# and unbound type parameters.
+Aqua.test_all(Arrow)

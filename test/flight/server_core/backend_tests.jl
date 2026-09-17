@@ -57,32 +57,8 @@ function flight_server_core_test_backend_profiles()
         @test occursin("retired", legacy_message)
     end
 
-    nghttp2 = Arrow.Flight.flight_server_backend_capabilities(:nghttp2)
-    @test nghttp2.backend == :nghttp2
-    @test !nghttp2.request_streaming
-    @test !nghttp2.response_streaming
-    @test !nghttp2.response_trailers
-    @test !nghttp2.bidirectional_doexchange
-    @test length(nghttp2.blockers) >= 2
-    @test occursin("Nghttp2Wrapper", nghttp2.blockers[1])
-    @test occursin("gRPCServer.jl", nghttp2.blockers[2])
-    @test !Arrow.Flight.flight_server_backend_supported(:nghttp2)
+    @test_throws ArgumentError Arrow.Flight.flight_server_backend_capabilities(:nghttp2)
     @test_throws ArgumentError Arrow.Flight.flight_server_backend_capabilities(:unknown)
-
-    failure = try
-        Arrow.Flight.require_flight_server_backend(
-            :nghttp2;
-            subject="test Flight server backend",
-        )
-        nothing
-    catch error
-        error
-    end
-    @test failure isa ArgumentError
-    message = sprint(showerror, failure)
-    @test occursin("backend :nghttp2", message)
-    @test occursin("Nghttp2Wrapper", message)
-    @test occursin("gRPCServer.jl", message)
 end
 
 function flight_server_core_test_client_runtime_boundary()

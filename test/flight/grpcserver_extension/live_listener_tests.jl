@@ -26,7 +26,7 @@ function grpcserver_extension_test_live_listener(grpcserver, service, fixture)
         service;
         host="127.0.0.1",
         port=0,
-        max_active_requests=2,
+        max_concurrent_requests=2,
         request_capacity=4,
         response_capacity=4,
     )
@@ -34,12 +34,10 @@ function grpcserver_extension_test_live_listener(grpcserver, service, fixture)
     try
         @test isopen(flight_server)
         @test flight_server.port > 0
-        @test flight_server.request_gate.max_active_requests == 2
-        @test flight_server.request_gate.active_requests[] == 0
+        @test flight_server.server.config.max_concurrent_requests == 2
         pyarrow_smoke_ran =
             flight_live_pyarrow_smoke(flight_server.host, flight_server.port, fixture)
         @test pyarrow_smoke_ran || isnothing(FlightTestSupport.pyarrow_flight_python())
-        @test flight_server.request_gate.active_requests[] == 0
     finally
         Arrow.Flight.stop!(flight_server; force=true)
     end

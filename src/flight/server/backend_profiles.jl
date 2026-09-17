@@ -56,38 +56,11 @@ function flight_server_backend_capabilities(backend::Symbol=:grpcserver)
             true,
             String[],
         )
-    elseif backend == :nghttp2
-        if !nghttp2_extension_loaded()
-            return FlightServerBackendCapabilities(
-                :nghttp2,
-                false,
-                false,
-                false,
-                false,
-                String[
-                    "Arrow.jl ships the nghttp2 backend behind the optional Nghttp2Wrapper.jl extension; load Nghttp2Wrapper to activate it",
-                    "The packaged live Flight listener backend now lives behind gRPCServer.jl",
-                ],
-            )
-        end
-
-        return FlightServerBackendCapabilities(
-            :nghttp2,
-            false,
-            true,
-            true,
-            false,
-            String[
-                "Arrow Flight request-streaming methods Handshake, DoPut, and DoExchange are still unsupported on the nghttp2 backend",
-                "The current nghttp2 backend is not the packaged live backend; gRPCServer.jl owns the supported Flight listener path",
-                "Future work still needs request-streaming and bidirectional proof before :nghttp2 can satisfy the full Flight server contract",
-            ],
-        )
     end
 
     throw(
         ArgumentError(
-            "Unsupported Arrow Flight server backend :$(backend); expected one of :grpcserver or :nghttp2",
+            "Unsupported Arrow Flight server backend :$(backend); expected :grpcserver",
         ),
     )
 end

@@ -15,129 +15,41 @@
 # specific language governing permissions and limitations
 # under the License.
 
-mutable struct FlightBodyBuffer <: IO
-    data::Vector{UInt8}
-    pos::Int
+const _IPC_CONTINUATION = UInt32(0xffffffff)
+
+_require_flight_little_endian() =
+    Base.ENDIAN_BOM == UInt32(0x04030201) ||
+    throw(ArgumentError("Arrow Flight IPC requires a little-endian host"))
+
+@inline function _read_i32(bytes::AbstractVector{UInt8}, pos::Int)
+    pos >= 1 && pos + 3 <= length(bytes) ||
+        throw(ArgumentError("truncated Arrow IPC framing"))
+    return reinterpret(Int32, Vector{UInt8}(@view bytes[pos:(pos + 3)]))[1]
 end
 
-FlightBodyBuffer(n::Integer) = FlightBodyBuffer(Vector{UInt8}(undef, n), 1)
-
-@inline function _ensureflightbodycapacity(io::FlightBodyBuffer, n::Integer)
-    io.pos + n - 1 <= length(io.data) || throw(
-        ArgumentError("FlightData body buffer exceeded expected Arrow IPC body length"),
-    )
-    return nothing
+@inline function _read_u32(bytes::AbstractVector{UInt8}, pos::Int)
+    pos >= 1 && pos + 3 <= length(bytes) ||
+        throw(ArgumentError("truncated Arrow IPC framing"))
+    return reinterpret(UInt32, Vector{UInt8}(@view bytes[pos:(pos + 3)]))[1]
 end
 
-@inline function Base.unsafe_write(io::FlightBodyBuffer, p::Ptr{UInt8}, n::UInt)
-    len = Int(n)
-    _ensureflightbodycapacity(io, len)
-    data = io.data
-    GC.@preserve data unsafe_copyto!(pointer(data, io.pos), p, len)
-    io.pos += len
-    return len
-end
+_padding_length(n::Integer, alignment::Integer=DEFAULT_IPC_ALIGNMENT) =
+    mod(-Int(n), Int(alignment))
 
-@inline function Base.write(io::FlightBodyBuffer, x::UInt8)
-    _ensureflightbodycapacity(io, 1)
-    @inbounds io.data[io.pos] = x
-    io.pos += 1
-    return 1
-end
-
-@inline function Base.write(io::FlightBodyBuffer, data::StridedVector{UInt8})
-    GC.@preserve data begin
-        return Base.unsafe_write(io, pointer(data), UInt(length(data)))
-    end
-end
-
-@inline function Base.write(io::FlightBodyBuffer, data::Vector{UInt8})
-    GC.@preserve data begin
-        return Base.unsafe_write(io, pointer(data), UInt(length(data)))
-    end
-end
-
-function ArrowParent.writezeros(io::FlightBodyBuffer, n::Integer)
+function _write_zeros(io::IO, n::Integer)
     n <= 0 && return 0
-    _ensureflightbodycapacity(io, n)
-    fill!(view(io.data, (io.pos):(io.pos + n - 1)), 0x00)
-    io.pos += n
-    return n
+    return Base.write(io, zeros(UInt8, Int(n)))
 end
 
-function ArrowParent.writearray(
-    io::FlightBodyBuffer,
-    ::Type{UInt8},
-    col::ArrowParent.ToList{UInt8,stringtype},
-) where {stringtype}
-    total = length(col)
-    _ensureflightbodycapacity(io, total)
-    pos = io.pos
-    body = io.data
-    off = ArrowParent._tolistoffset(col)
-    data = ArrowParent._tolistdata(col)
-    if off == 0
-        for chunk in data
-            chunk === missing && continue
-            bytes = stringtype ? ArrowParent._codeunits(chunk) : chunk
-            n = stringtype ? ArrowParent._ncodeunits(chunk) : length(bytes)
-            GC.@preserve body bytes begin
-                unsafe_copyto!(pointer(body, pos), pointer(bytes), n)
-            end
-            pos += n
-        end
-    else
-        len = length(data)
-        @inbounds for i = 1:len
-            chunk = data[i + off]
-            chunk === missing && continue
-            bytes = stringtype ? ArrowParent._codeunits(chunk) : chunk
-            n = stringtype ? ArrowParent._ncodeunits(chunk) : length(bytes)
-            GC.@preserve body bytes begin
-                unsafe_copyto!(pointer(body, pos), pointer(bytes), n)
-            end
-            pos += n
-        end
-    end
-    io.pos = pos
-    return total
+function _flight_message_header(data_header::AbstractVector{UInt8})
+    isempty(data_header) &&
+        throw(ArgumentError("FlightData message is missing the Arrow IPC header"))
+    bytes = Vector{UInt8}(data_header)
+    return ArrowParent.FB.getrootas(ArrowParent.Meta.Message, bytes, 0)
 end
 
-function _takeflightbody!(io::FlightBodyBuffer)
-    len = io.pos - 1
-    len == length(io.data) || resize!(io.data, len)
-    return io.data
-end
-
-function _message_body(msg::ArrowParent.Message, alignment::Integer)
-    msg.columns === nothing && return UInt8[]
-    io = FlightBodyBuffer(Int(msg.bodylen))
-    for col in Tables.Columns(msg.columns)
-        ArrowParent.writebuffer(io, col, alignment)
-    end
-    return _takeflightbody!(io)
-end
-
-_flightdata_bytes(bytes::Vector{UInt8}) = bytes
-_flightdata_bytes(bytes::AbstractVector{UInt8}) = Vector{UInt8}(bytes)
-_flightdata_bytes(bytes) = Vector{UInt8}(bytes)
-
-function _flightdata_message(
-    msg::ArrowParent.Message;
-    descriptor::Union{Nothing,Protocol.FlightDescriptor}=nothing,
-    app_metadata::AbstractVector{UInt8}=UInt8[],
-    alignment::Integer=DEFAULT_IPC_ALIGNMENT,
-)
-    body = _message_body(msg, alignment)
-    length(body) == msg.bodylen ||
-        throw(ArgumentError("FlightData body length mismatch while encoding Arrow IPC"))
-    return Protocol.FlightData(
-        descriptor,
-        _flightdata_bytes(msg.msgflatbuf),
-        _flightdata_bytes(app_metadata),
-        body,
-    )
-end
+_flight_message_header(message::Protocol.FlightData) =
+    _flight_message_header(message.data_header)
 
 function _write_framed_message(
     io::IO,
@@ -145,17 +57,72 @@ function _write_framed_message(
     data_body::AbstractVector{UInt8},
     alignment::Integer,
 )
-    metalen = ArrowParent.padding(length(data_header), alignment)
-    Base.write(io, ArrowParent.CONTINUATION_INDICATOR_BYTES)
+    _require_flight_little_endian()
+    alignment == DEFAULT_IPC_ALIGNMENT || throw(
+        ArgumentError("Arrow 3 Flight IPC uses the standard 8-byte alignment"),
+    )
+    header = Vector{UInt8}(data_header)
+    msg = _flight_message_header(header)
+    bodylen = Int(msg.bodyLength)
+    bodylen >= 0 || throw(ArgumentError("negative Arrow IPC body length"))
+    length(data_body) == bodylen || throw(
+        ArgumentError(
+            "FlightData body length $(length(data_body)) does not match Arrow IPC header $bodylen",
+        ),
+    )
+    metalen = length(header) + _padding_length(length(header), alignment)
+    Base.write(io, _IPC_CONTINUATION)
     Base.write(io, Int32(metalen))
-    Base.write(io, data_header)
-    ArrowParent.writezeros(io, ArrowParent.paddinglength(length(data_header), alignment))
+    Base.write(io, header)
+    _write_zeros(io, metalen - length(header))
     Base.write(io, data_body)
-    return
+    return nothing
 end
 
 function _write_end_marker(io::IO)
-    Base.write(io, ArrowParent.CONTINUATION_INDICATOR_BYTES)
+    _require_flight_little_endian()
+    Base.write(io, _IPC_CONTINUATION)
     Base.write(io, Int32(0))
-    return
+    return nothing
+end
+
+function _split_ipc_stream(bytes::AbstractVector{UInt8})
+    _require_flight_little_endian()
+    data = Vector{UInt8}(bytes)
+    region = ArrowParent.AC.heapregion(data)
+    try
+        ArrowParent.framemessages(region, ArrowParent.Limits())
+    finally
+        ArrowParent.AC.release!(region)
+    end
+
+    MessagePart = NamedTuple{
+        (:header, :body, :kind),
+        Tuple{Vector{UInt8},Vector{UInt8},Any},
+    }
+    messages = MessagePart[]
+    pos = 1
+    while pos <= length(data)
+        length(data) - pos + 1 >= 8 ||
+            throw(ArgumentError("truncated Arrow IPC prefix at byte $(pos - 1)"))
+        _read_u32(data, pos) == _IPC_CONTINUATION ||
+            throw(ArgumentError("missing Arrow IPC continuation marker"))
+        metalen = Int(_read_i32(data, pos + 4))
+        metalen == 0 && break
+        metalen > 0 || throw(ArgumentError("negative Arrow IPC metadata length"))
+        metastart = pos + 8
+        metaend = metastart + metalen - 1
+        metaend <= length(data) || throw(ArgumentError("truncated Arrow IPC metadata"))
+        header = Vector{UInt8}(@view data[metastart:metaend])
+        msg = _flight_message_header(header)
+        bodylen = Int(msg.bodyLength)
+        bodylen >= 0 || throw(ArgumentError("negative Arrow IPC body length"))
+        bodystart = metaend + 1
+        bodyend = bodystart + bodylen - 1
+        bodyend <= length(data) || throw(ArgumentError("truncated Arrow IPC body"))
+        body = bodylen == 0 ? UInt8[] : Vector{UInt8}(@view data[bodystart:bodyend])
+        push!(messages, (header=header, body=body, kind=msg.header))
+        pos = bodyend + 1
+    end
+    return messages
 end

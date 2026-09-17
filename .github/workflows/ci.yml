@@ -61,7 +61,9 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          RELEASE_DEFAULT=0 dev/release/release_rc.sh 100
+          RELEASE_DEFAULT=0 dev/release/release_rc.sh 100 > release-rc-output.txt
+          cat release-rc-output.txt
+          grep -F "The vote will be open for at least 72 hours." release-rc-output.txt
       - uses: actions/cache@v6
         with:
           path: ~/.julia/artifacts
@@ -75,20 +77,15 @@ jobs:
                           -e 's/"$//g')
           VERIFY_DEFAULT=0 dev/release/verify_rc.sh ${version} 100
   test:
-    name: ${{ matrix.pkg.name }} - Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.nthreads }} threads - ${{ github.event_name }}
+    name: Arrow.jl - Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.nthreads }} threads - ${{ github.event_name }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
-        pkg:
-          - name: Arrow.jl
-            dir: '.'
-          - name: ArrowTypes.jl
-            dir: './src/ArrowTypes'
         version:
           - 'min'
-          - 'lts'
+          - '1.11'
           - '1' # automatically expands to the latest stable 1.x release of Julia
           - 'pre' # expands to latest alpha, beta or RC, if available, otherwise same as `1`
         os:
@@ -102,6 +99,7 @@ jobs:
       - uses: julia-actions/setup-julia@v3
         with:
           version: ${{ matrix.version }}
+          project: '.'
       - uses: actions/cache@v6
         env:
           cache-name: cache-artifacts
@@ -112,50 +110,61 @@ jobs:
             ${{ runner.os }}-test-${{ env.cache-name }}-
             ${{ runner.os }}-test-
             ${{ runner.os }}-
-      - name: Bootstrap Arrow.jl lts unregistered deps
-        if: matrix.pkg.name == 'Arrow.jl' && matrix.version == 'lts'
-        shell: julia --project=. {0}
-        run: |
-          using Pkg, TOML
-          ENV["JULIA_PKG_PRECOMPILE_AUTO"] = "0"
-          for manifest_path in ("Manifest.toml", joinpath("test", "Manifest.toml"))
-              isfile(manifest_path) && rm(manifest_path; force=true)
-          end
-          project = TOML.parsefile("Project.toml")
-          grpcserver_source = get(get(project, "sources", Dict{String, Any}()), "gRPCServer", nothing)
-          grpcserver_source isa AbstractDict || error("Project.toml [sources].gRPCServer must be set for Arrow.jl lts CI bootstrap")
-          Pkg.Registry.add("General")
-          Pkg.add([
-              PackageSpec(
-                  name="gRPCServer",
-                  url=grpcserver_source["url"],
-                  rev=grpcserver_source["rev"],
-              ),
-              PackageSpec(
-                  name="gRPCClient",
-                  url="https://github.com/tao3k/gRPCClient.jl.git",
-                  rev="faa9107a19f65e56c5c566c71d0844aaca651612",
-              ),
-          ])
-          Pkg.develop(PackageSpec(path="src/ArrowTypes"))
-      - uses: julia-actions/julia-buildpkg@v1.6
-        with:
-          project: ${{ matrix.pkg.dir }}
-      - name: Dev local ArrowTypes for Arrow.jl tests
-        if: matrix.pkg.name == 'Arrow.jl'
+      # Julia 1.10 needs the local ArrowTypes source developed explicitly.
+      - name: Dev local subpackages
         shell: julia --project=. {0}
         run: |
           using Pkg
-          Pkg.develop(PackageSpec(path="src/ArrowTypes"))
+          Pkg.develop([PackageSpec(path="src/ArrowTypes")])
+      - uses: julia-actions/julia-buildpkg@v1.6
       - uses: julia-actions/julia-runtest@v1
         env:
           JULIA_NUM_THREADS: ${{ matrix.nthreads }}
+      - uses: julia-actions/julia-processcoverage@v1
+        with:
+          directories: src,ext
+      - uses: codecov/codecov-action@v7
+        with:
+          files: lcov.info
+  # The subpackages' own suites: one job each, on the package's minimum
+  # supported Julia. The full Arrow.jl matrix above exercises both packages'
+  # code on every version, OS, and thread count.
+  test-subpackages:
+    name: ${{ matrix.pkg.name }} - Julia min - ${{ github.event_name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        pkg:
+          - name: ArrowTypes.jl
+            dir: './src/ArrowTypes'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: 'min'
+          project: ${{ matrix.pkg.dir }}
+      - uses: actions/cache@v6
+        env:
+          cache-name: cache-artifacts
+        with:
+          path: ~/.julia/artifacts
+          key: ${{ runner.os }}-test-${{ env.cache-name }}-${{ hashFiles('**/Project.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-test-${{ env.cache-name }}-
+            ${{ runner.os }}-test-
+            ${{ runner.os }}-
+      - uses: julia-actions/julia-buildpkg@v1.6
+        with:
+          project: ${{ matrix.pkg.dir }}
+      - uses: julia-actions/julia-runtest@v1
         with:
           project: ${{ matrix.pkg.dir }}
       - uses: julia-actions/julia-processcoverage@v1
-        if: matrix.pkg.name == 'Arrow.jl' && matrix.version == '1' && matrix.os == 'macos-latest' && matrix.nthreads == 1
+        with:
+          directories: ${{ matrix.pkg.dir }}/src
       - uses: codecov/codecov-action@v7
-        if: matrix.pkg.name == 'Arrow.jl' && matrix.version == '1' && matrix.os == 'macos-latest' && matrix.nthreads == 1
         with:
           files: lcov.info
   test_monorepo:
@@ -196,214 +205,82 @@ jobs:
         continue-on-error: false
         run: >
           julia --color=yes --project=monorepo -e 'using Pkg; Pkg.test("Arrow")'
-  integration_cli:
-    name: Integration CLI smoke - Julia 1 - ubuntu-latest
+  test_min_arrowtypes:
+    name: Arrow.jl - ArrowTypes 2.0 compatibility
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
       - uses: julia-actions/setup-julia@v3
         with:
-          version: '1'
+          version: '1.10'
+          project: '.'
       - uses: actions/cache@v6
-        env:
-          cache-name: cache-integration-cli-artifacts
         with:
           path: ~/.julia/artifacts
-          key: ${{ runner.os }}-integration-cli-${{ env.cache-name }}-${{ hashFiles('**/Project.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-integration-cli-${{ env.cache-name }}-
-            ${{ runner.os }}-integration-cli-
-            ${{ runner.os }}-
-      - name: Dev local Arrow packages for integration CLI
-        shell: julia --project=test {0}
-        run: |
-          using Pkg
-          Pkg.develop([PackageSpec(path="."), PackageSpec(path="src/ArrowTypes")])
-          Pkg.instantiate()
-      - name: Check Archery Julia tester syntax
-        run: python3 -m py_compile dev/archery/tester_julia.py
-      - name: Run Archery adapter smoke
-        run: julia --color=yes --project=test test/archery_adapter_smoke.jl
-      - name: Run Archery upstream patch smoke
-        run: julia --color=yes --project=test test/archery_upstream_patch_smoke.jl
-      - name: Run integration CLI smoke
-        run: julia --color=yes --project=test test/integration_cli_smoke.jl
-  flight_purehttp2:
-    name: Arrow Flight PureHTTP2 interop - Julia 1 - ubuntu-latest
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
-        with:
-          python-version: '3.11'
-      - name: Install Flight Python dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install pyarrow grpcio grpcio-tools
-      - uses: julia-actions/setup-julia@v3
-        with:
-          version: '1'
-      - uses: actions/cache@v6
-        env:
-          cache-name: cache-artifacts
-        with:
-          path: ~/.julia/artifacts
-          key: ${{ runner.os }}-flight-${{ env.cache-name }}-${{ hashFiles('**/Project.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-flight-${{ env.cache-name }}-
-            ${{ runner.os }}-flight-
-            ${{ runner.os }}-
-      - uses: julia-actions/julia-buildpkg@v1.6
-        with:
-          project: .
-      - name: Dev local ArrowTypes for Arrow.jl tests
+          key: min-arrowtypes-${{ runner.os }}-${{ hashFiles('Project.toml') }}
+          restore-keys: min-arrowtypes-${{ runner.os }}-
+      - name: Resolve the minimum supported ArrowTypes version
         shell: julia --project=. {0}
         run: |
           using Pkg
-          Pkg.develop(PackageSpec(path="src/ArrowTypes"))
-      - name: Run Arrow Flight PureHTTP2 interop tests
-        env:
-          ARROW_FLIGHT_PYTHON: ${{ env.pythonLocation }}/bin/python
-          ARROW_FLIGHT_DISABLE_AUTO_LOCAL_DEPS: '1'
-          JULIA_NUM_THREADS: 'auto'
-        run: julia --color=yes --project=test test/flight_purehttp2.jl
-  cdata_validation:
-    name: C Data validation - Julia 1 - ubuntu-latest
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
+          Pkg.add(PackageSpec(name="ArrowTypes", version=v"2.0.0"))
+          Pkg.pin(PackageSpec(name="ArrowTypes"))
+      - name: Test custom-type file and stream round trips
+        run: julia --startup-file=no --history-file=no --project=. test/min_arrowtypes_compat.jl
+  test_windows:
+    name: ${{ matrix.pkg.name }} - Julia latest - Windows - 2 threads
+    runs-on: windows-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        pkg:
+          - name: Arrow.jl
+            dir: '.'
+          - name: ArrowTypes.jl
+            dir: './src/ArrowTypes'
     steps:
       - uses: actions/checkout@v7
       - uses: julia-actions/setup-julia@v3
         with:
           version: '1'
+          project: ${{ matrix.pkg.dir }}
       - uses: actions/cache@v6
-        env:
-          cache-name: cache-cdata-artifacts
         with:
           path: ~/.julia/artifacts
-          key: ${{ runner.os }}-cdata-${{ env.cache-name }}-${{ hashFiles('**/Project.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-cdata-${{ env.cache-name }}-
-            ${{ runner.os }}-cdata-
-            ${{ runner.os }}-
-      - uses: julia-actions/julia-buildpkg@v1.6
-        with:
-          project: .
-      - name: Configure C Data validation environment
-        shell: julia --project=test {0}
+          key: windows-test-${{ hashFiles('**/Project.toml') }}
+          restore-keys: windows-test-
+      - name: Prepare Arrow.jl development dependencies
+        if: matrix.pkg.name == 'Arrow.jl'
+        shell: julia --project=. {0}
         run: |
           using Pkg
-          Pkg.develop(PackageSpec(path="."))
-          Pkg.develop(PackageSpec(path="src/ArrowTypes"))
-          Pkg.resolve()
-          Pkg.instantiate()
-      - name: Run C Data validation report
+          Pkg.develop([PackageSpec(path="src/ArrowTypes")])
+      - uses: julia-actions/julia-buildpkg@v1.6
+        with:
+          project: ${{ matrix.pkg.dir }}
+      - uses: julia-actions/julia-runtest@v1
         env:
-          ARROW_CDATA_MAX_EXPORT_ALLOC_BYTES: '6656'
-          ARROW_CDATA_MAX_IMPORT_ALLOC_BYTES: '4096'
-          ARROW_CDATA_MAX_STREAM_EXPORT_ALLOC_BYTES: '6656'
-          ARROW_CDATA_MAX_STREAM_IMPORT_ALLOC_BYTES: '4096'
-        run: julia --color=yes --project=test test/cdata_validation_report.jl
-  ipc_performance:
-    name: IPC performance - Julia 1 - ubuntu-latest
+          JULIA_NUM_THREADS: 2
+        with:
+          project: ${{ matrix.pkg.dir }}
+  trim:
+    name: ArrowCore and DataStrings JuliaC trim-safe compile
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
       - uses: julia-actions/setup-julia@v3
         with:
-          version: '1'
+          version: '1.12.6'
       - uses: actions/cache@v6
-        env:
-          cache-name: cache-ipc-artifacts
         with:
           path: ~/.julia/artifacts
-          key: ${{ runner.os }}-ipc-${{ env.cache-name }}-${{ hashFiles('**/Project.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-ipc-${{ env.cache-name }}-
-            ${{ runner.os }}-ipc-
-            ${{ runner.os }}-
-      - uses: julia-actions/julia-buildpkg@v1.6
-        with:
-          project: .
-      - name: Configure IPC performance environment
-        shell: julia --project=test {0}
-        run: |
-          using Pkg
-          Pkg.develop(PackageSpec(path="."))
-          Pkg.develop(PackageSpec(path="src/ArrowTypes"))
-          Pkg.resolve()
-          Pkg.instantiate()
-      - name: Run IPC performance report
-        env:
-          ARROW_IPC_MAX_STREAM_READ_ALLOC_BYTES: '32768'
-          ARROW_IPC_MAX_FILE_READ_ALLOC_BYTES: '32768'
-          ARROW_IPC_MAX_STREAM_PHYSICAL_SCAN_ALLOC_BYTES: '1024'
-          ARROW_IPC_MAX_FILE_PHYSICAL_SCAN_ALLOC_BYTES: '1024'
-        run: julia --color=yes --project=test test/ipc_performance_report.jl
-  flight_sql_performance:
-    name: Flight SQL performance - Julia 1 - ubuntu-latest
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
-        with:
-          python-version: '3.11'
-      - name: Install Flight SQL Python dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install pyarrow grpcio grpcio-tools
-      - uses: julia-actions/setup-julia@v3
-        with:
-          version: '1'
-      - uses: actions/cache@v6
-        env:
-          cache-name: cache-flight-sql-artifacts
-        with:
-          path: ~/.julia/artifacts
-          key: ${{ runner.os }}-flight-sql-${{ env.cache-name }}-${{ hashFiles('**/Project.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-flight-sql-${{ env.cache-name }}-
-            ${{ runner.os }}-flight-sql-
-            ${{ runner.os }}-
-      - uses: julia-actions/julia-buildpkg@v1.6
-        with:
-          project: .
-      - name: Configure Flight SQL performance environment
-        shell: julia --project=test {0}
-        run: |
-          using Pkg
-          Pkg.develop(PackageSpec(path="."))
-          Pkg.develop(PackageSpec(path="src/ArrowTypes"))
-          Pkg.resolve()
-          Pkg.instantiate()
-      - name: Run Flight SQL performance report
-        env:
-          ARROW_FLIGHT_SQL_MAX_COMMAND_PACK_ALLOC_BYTES: '8192'
-          ARROW_FLIGHT_SQL_MAX_COMMAND_DECODE_ALLOC_BYTES: '4096'
-          ARROW_FLIGHT_SQL_MAX_ACTION_PACK_ALLOC_BYTES: '6144'
-          ARROW_FLIGHT_SQL_MAX_ACTION_DECODE_ALLOC_BYTES: '4096'
-          ARROW_FLIGHT_SQL_MAX_PUT_RESULT_ALLOC_BYTES: '2048'
-          JULIA_NUM_THREADS: 'auto'
-        run: julia --color=yes --project=test test/flight_sql_performance_report.jl
-      - name: Run Flight wire performance report
-        env:
-          ARROW_FLIGHT_WIRE_MAX_TICKET_FRAME_ALLOC_BYTES: '1024'
-          ARROW_FLIGHT_WIRE_MAX_FLIGHTDATA_SIZE_ALLOC_BYTES: '1024'
-          ARROW_FLIGHT_WIRE_MAX_FLIGHTDATA_FRAME_ALLOC_BYTES: '81920'
-          ARROW_FLIGHT_WIRE_MAX_FLIGHTDATA_EMIT_ALLOC_BYTES: '750000'
-          JULIA_NUM_THREADS: 'auto'
-        run: julia --color=yes --project=test test/flight_wire_performance_report.jl
-      - name: Run Flight SQL endpoint report
-        env:
-          ARROW_FLIGHT_PYTHON: ${{ env.pythonLocation }}/bin/python
-          ARROW_FLIGHT_DISABLE_AUTO_LOCAL_DEPS: '1'
-          ARROW_FLIGHT_SQL_ENDPOINT_USE_ACTIVE_PROJECT: '1'
-          JULIA_NUM_THREADS: 'auto'
-        run: julia --color=yes --project=test test/flight_sql_endpoint_report.jl
+          key: trim-${{ runner.os }}-${{ hashFiles('test/trim/Project.toml') }}
+          restore-keys: trim-${{ runner.os }}-
+      - name: Compile and run the trim-safe ArrowCore and DataStrings workload
+        run: julia --startup-file=no --history-file=no test/trim_compile_tests.jl
   docs:
     name: Documentation
     runs-on: ubuntu-latest
@@ -413,29 +290,16 @@ jobs:
       - uses: julia-actions/setup-julia@v3
         with:
           version: '1'
-      - uses: actions/cache@v6
-        env:
-          cache-name: cache-docs-artifacts
-        with:
-          path: ~/.julia/artifacts
-          key: ${{ runner.os }}-docs-${{ env.cache-name }}-${{ hashFiles('Project.toml', 'Manifest.toml', 'docs/Project.toml', 'docs/Manifest.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-docs-${{ env.cache-name }}-
-            ${{ runner.os }}-docs-
-            ${{ runner.os }}-
-      - name: Configure doc environment
+      - name: Prepare Arrow.jl development dependencies for the docs
         shell: julia --project=docs {0}
         run: |
           using Pkg
-          Pkg.develop(PackageSpec(path="."))
-          Pkg.develop(PackageSpec(path="src/ArrowTypes"))
-          Pkg.resolve()
-          Pkg.instantiate()
-      - name: Build and deploy docs
+          Pkg.develop([PackageSpec(path="."), PackageSpec(path="src/ArrowTypes")])
+      - uses: julia-actions/julia-buildpkg@v1.7.0
+      - uses: julia-actions/julia-docdeploy@v1.3.1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DOCUMENTER_KEY: ${{ secrets.DOCUMENTER_KEY }}
-        run: julia --project=docs docs/make.jl
   Format:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -443,11 +307,9 @@ jobs:
       - uses: julia-actions/setup-julia@v3
       - uses: actions/checkout@v7
       - name: Install JuliaFormatter and format
-        # This will use the latest version by default but you can set the version like so:
-        # julia  -e 'using Pkg; Pkg.add(PackageSpec(name="JuliaFormatter", version="0.13.0"))'
         run: |
-          julia  -e 'using Pkg; Pkg.add(PackageSpec(name="JuliaFormatter"))'
-          julia  -e 'using JuliaFormatter; format(".", verbose=true)'
+          julia -e 'using Pkg; Pkg.add(PackageSpec(name="JuliaFormatter", version="2.12.4"))'
+          julia -e 'using JuliaFormatter; format(".", verbose=true)'
       - name: Format check
         run: |
           julia -e '

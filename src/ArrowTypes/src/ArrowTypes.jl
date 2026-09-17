@@ -15,8 +15,10 @@
 # limitations under the License.
 
 """
-The ArrowTypes module provides the [`ArrowTypes.Arrowtype`](@ref) interface trait that objects can define
-in order to signal how they should be serialized in the arrow format.
+The ArrowTypes module defines traits and hooks that packages can implement to
+describe how their Julia types map to the Arrow format. Arrow consumers,
+including Arrow.jl 2.x and 3.x, use this interface without requiring the
+package that owns a custom type to depend on Arrow.jl.
 """
 module ArrowTypes
 
@@ -33,27 +35,6 @@ export ArrowKind,
     StructKind,
     UnionKind,
     DictEncodedKind,
-    PhysicalLayout,
-    NullLayout,
-    PrimitiveLayout,
-    BooleanLayout,
-    VariableBinaryLayout,
-    VariableBinaryViewLayout,
-    FixedSizeBinaryLayout,
-    VariableListLayout,
-    VariableListViewLayout,
-    FixedSizeListLayout,
-    StructLayout,
-    UnionLayout,
-    DictionaryEncodedLayout,
-    RunEndEncodedLayout,
-    physicallayout,
-    offsettype,
-    indextype,
-    bytewidth,
-    listsize,
-    unionmode,
-    runendtype,
     toarrow,
     arrowname,
     fromarrow,
@@ -62,88 +43,30 @@ export ArrowKind,
 """
     ArrowTypes.ArrowKind(T)
 
-For a give type `T`, define it's "arrow type kind", or the general category of arrow types it should be treated as. Must be one of:
+For a given type `T`, define its "arrow type kind", or the general category of arrow types it should be treated as. Must be one of:
   * [`ArrowTypes.NullKind`](@ref): `Missing` is the only type defined as `NullKind`
-  * [`ArrowTypes.PrimitiveKind`](@ref): `<:Integer`, `<:AbstractFloat`, along with `Arrow.Decimal`, and the various `Arrow.ArrowTimeType` subtypes
+  * [`ArrowTypes.PrimitiveKind`](@ref): `<:Integer`, `<:AbstractFloat`, along with decimal and temporal types
   * [`ArrowTypes.BoolKind`](@ref): only `Bool`
   * [`ArrowTypes.ListKind`](@ref): any `AbstractString` or `AbstractArray`
-  * [`ArrowTypes.FixedSizeList`](@ref): `NTuple{N, T}`
+  * [`ArrowTypes.FixedSizeListKind`](@ref): `NTuple{N, T}`
   * [`ArrowTypes.MapKind`](@ref): any `AbstractDict`
   * [`ArrowTypes.StructKind`](@ref): any `NamedTuple` or plain struct (mutable or otherwise)
   * [`ArrowTypes.UnionKind`](@ref): any `Union`
-  * [`ArrowTypes.DictEncodedKind`](@ref): array types that implement the `DataAPI.refpool` interface
+  * [`ArrowTypes.DictEncodedKind`](@ref): a kind a consumer may map its own dictionary-encoded array types to; ArrowTypes defines no such mapping itself
 
-The list of `ArrowKind`s listed above translate to different ways to physically store data as supported by the arrow data format.
-See the docs for each for an idea of whether they might be an appropriate fit for a custom type.
-Note that custom types need to satisfy any additional "interface methods" as required by the various `ArrowKind`
-types. By default, if a type in julia is declared like `primitive type ...` it is considered a `PrimitiveKind`
-and if `struct` or `mutable struct` it's considered a `StructKind`. Also note that types will rarely need to define `ArrowKind`;
-much more common is to define `ArrowType(T)` and `toarrow(x::T)` to transform `T` to a natively supported arrow type, which will
-already have its `ArrowKind` defined.
+The `ArrowKind`s describe general Arrow storage categories. Each consumer
+decides which categories, layouts, and extra interface methods it supports.
+By default, a Julia `primitive type` is a `PrimitiveKind`, and a `struct` or
+`mutable struct` is a `StructKind`. Types rarely need to define `ArrowKind`.
+It is more common to define `ArrowType(T)` and `toarrow(x::T)` to lower `T` to
+a natively supported Arrow type, which already has an `ArrowKind`. In
+particular, an `ArrowKind` override alone does not select an arbitrary
+physical layout in a consumer.
 """
 abstract type ArrowKind end
 
 ArrowKind(x::T) where {T} = ArrowKind(T)
 ArrowKind(::Type{T}) where {T} = isprimitivetype(T) ? PrimitiveKind() : StructKind()
-
-"""
-    ArrowTypes.PhysicalLayout
-
-Official Arrow physical memory layout descriptors, mirroring the terminology from the
-Arrow columnar format specification. These traits are narrower than [`ArrowKind`](@ref):
-they describe the on-wire/in-memory buffer shape instead of the broader serializer
-dispatch category used internally by Arrow.jl.
-"""
-abstract type PhysicalLayout end
-
-struct NullLayout <: PhysicalLayout end
-struct PrimitiveLayout{T} <: PhysicalLayout end
-struct BooleanLayout <: PhysicalLayout end
-struct VariableBinaryLayout{OffsetT} <: PhysicalLayout end
-struct VariableBinaryViewLayout <: PhysicalLayout end
-struct FixedSizeBinaryLayout{N} <: PhysicalLayout end
-struct VariableListLayout{OffsetT} <: PhysicalLayout end
-struct VariableListViewLayout{OffsetT} <: PhysicalLayout end
-struct FixedSizeListLayout{N} <: PhysicalLayout end
-struct StructLayout <: PhysicalLayout end
-struct UnionLayout{Mode} <: PhysicalLayout end
-struct DictionaryEncodedLayout{IndexT} <: PhysicalLayout end
-struct RunEndEncodedLayout{RunEndT} <: PhysicalLayout end
-
-offsettype(::VariableBinaryLayout{OffsetT}) where {OffsetT} = OffsetT
-offsettype(::VariableListLayout{OffsetT}) where {OffsetT} = OffsetT
-offsettype(::VariableListViewLayout{OffsetT}) where {OffsetT} = OffsetT
-indextype(::DictionaryEncodedLayout{IndexT}) where {IndexT} = IndexT
-
-bytewidth(::FixedSizeBinaryLayout{N}) where {N} = N
-
-listsize(::FixedSizeListLayout{N}) where {N} = N
-
-UnionLayout() = UnionLayout{:unknown}()
-unionmode(::UnionLayout{Mode}) where {Mode} = Mode
-
-runendtype(::RunEndEncodedLayout{RunEndT}) where {RunEndT} = RunEndT
-
-physicallayout(::Type{Missing}) = NullLayout()
-physicallayout(::Type{Nothing}) = NullLayout()
-physicallayout(::Type{Bool}) = BooleanLayout()
-physicallayout(::Type{T}) where {T<:Integer} = PrimitiveLayout{ArrowType(T)}()
-physicallayout(::Type{T}) where {T<:AbstractFloat} = PrimitiveLayout{ArrowType(T)}()
-physicallayout(::Type{T}) where {T<:Enum} = PrimitiveLayout{ArrowType(T)}()
-physicallayout(::Type{T}) where {T<:AbstractString} = VariableBinaryLayout{Int32}()
-physicallayout(::Type{T}) where {T<:Base.CodeUnits} = VariableBinaryLayout{Int32}()
-physicallayout(::Type{T}) where {T<:AbstractArray} = VariableListLayout{Int32}()
-physicallayout(::Type{T}) where {T<:AbstractSet} = VariableListLayout{Int32}()
-physicallayout(::Type{NTuple{N,T}}) where {N,T} = FixedSizeListLayout{N}()
-physicallayout(::Type{UUID}) = FixedSizeBinaryLayout{16}()
-physicallayout(::Type{IPv6}) = FixedSizeBinaryLayout{16}()
-physicallayout(::Type{T}) where {T<:NamedTuple} = StructLayout()
-physicallayout(::Type{T}) where {T<:Tuple} = StructLayout()
-physicallayout(::Type{T}) where {T<:AbstractDict} = VariableListLayout{Int32}()
-physicallayout(::Union) = UnionLayout()
-physicallayout(::Type{T}) where {T} =
-    ArrowType(T) === T ? (isprimitivetype(T) ? PrimitiveLayout{T}() : StructLayout()) :
-    physicallayout(ArrowType(T))
 
 """
     ArrowTypes.ArrowType(T) = S
@@ -152,9 +75,9 @@ Interface method to define the natively supported arrow type `S` that a given ty
 Useful when a custom type wants a "serialization hook" or otherwise needs to be transformed/converted into a natively
 supported arrow type for serialization. If a type defines `ArrowType`, it must also define a corresponding
 [`ArrowTypes.toarrow(x::T)`](@ref) method which does the actual conversion from `T` to `S`.
-Note that custom structs defined like `struct T` or `mutable struct T` are natively supported in serialization, so unless
-_additional_ transformation/customization is desired, a custom type `T` can serialize with no `ArrowType` definition (by default,
-each field of a struct is serialized, using the results of `fieldnames(T)` and `getfield(x, i)`).
+Some consumers can serialize plain structs by discovering their fields; check
+the consumer's supported write types. Define `ArrowType` and `toarrow` when a
+custom type needs a different storage representation.
 Note that defining these methods only deal with custom _serialization_ to the arrow format; to be able to _deserialize_ custom
 types at all, see the docs for [`ArrowTypes.arrowname`](@ref), [`ArrowTypes.arrowmetadata`](@ref), [`ArrowTypes.JuliaType`](@ref),
 and [`ArrowTypes.fromarrow`](@ref).
@@ -222,15 +145,18 @@ arrowmetadata(::Type{Any}) = EMPTY_STRING
     ArrowTypes.JuliaType(::Val{Symbol(name)}, ::Type{S}, arrowmetadata::String) = T
 
 Interface method to define the custom Julia logical type `T` that a serialized metadata label should be converted to when
-deserializing. When reading arrow data, and a logical type label is encountered for a column, it will call
-`ArrowTypes.JuliaType(Val(Symbol(name)), S, arrowmetadata)` to see if a Julia type has been "registered" for deserialization. The `name`
+deserializing. To resolve a logical type label, a reader calls
+`ArrowTypes.JuliaType(Val(name_symbol), S, arrowmetadata)` with the corresponding existing Julia `Symbol`. The `name`
 used when defining the method *must* correspond to the same `name` when defining `ArrowTypes.arrowname(::Type{T}) = Symbol(name)`.
 The use of `Val(Symbol(...))` is to allow overloading a method on a specific logical type label. The `S` 2nd argument passed to
 `JuliaType` is the native arrow serialized type. This can be useful for parametric Julia types that wish to correctly parameterize
 their custom type based on what was serialized. The 3rd argument `arrowmetadata` is any metadata that was stored when the logical
 type was serialized as the result of calling `ArrowTypes.arrowmetadata(T)`. Note the 2nd and 3rd arguments are optional when
 overloading if unneeded.
-When defining [`ArrowTypes.arrowname`](@ref) and `ArrowTypes.JuliaType`, you may also want to implement [`ArrowTypes.fromarrow`]
+Readers must not intern an unknown, input-controlled name only to probe this interface: resolve the label with a non-interning
+lookup and call `JuliaType(Val(...))` only when the corresponding `Symbol` already exists, preserving ordinary Arrow storage
+values otherwise.
+When defining [`ArrowTypes.arrowname`](@ref) and `ArrowTypes.JuliaType`, you may also want to implement [`ArrowTypes.fromarrow`](@ref)
 in order to customize how a custom type `T` should be constructed from the native arrow data type. See its docs for more details.
 """
 function JuliaType end
@@ -268,7 +194,7 @@ fromarrow(::Type{Union{Missing,T}}, x::T) where {T} = x
 fromarrow(::Type{Union{Missing,T}}, x::T) where {T<:NamedTuple} = x # ambiguity fix
 fromarrow(::Type{Union{Missing,T}}, x) where {T} = fromarrow(T, x)
 
-"NullKind data is actually not physically stored since the data is constant; just the length is needed"
+"NullKind data is not stored physically — the value is constant, so only the length is needed."
 struct NullKind <: ArrowKind end
 
 ArrowKind(::Type{Missing}) = NullKind()
@@ -293,116 +219,11 @@ arrowname(::Type{Char}) = CHAR
 JuliaType(::Val{CHAR}) = Char
 fromarrow(::Type{Char}, x::UInt32) = Char(x)
 
-ArrowType(::Type{T}) where {T<:Enum} = Base.Enums.basetype(T)
-toarrow(x::T) where {T<:Enum} = Base.Enums.basetype(T)(x)
-const ENUM = Symbol("JuliaLang.Enum")
-arrowname(::Type{T}) where {T<:Enum} = ENUM
-
-function _qualifiedtypepath(::Type{T}) where {T}
-    module_path = join(string.(Base.fullname(parentmodule(T))), ".")
-    return string(module_path, ".", nameof(T))
-end
-
-function _enum_labels(::Type{T}) where {T<:Enum}
-    B = Base.Enums.basetype(T)
-    return join((string(instance, ":", B(instance)) for instance in instances(T)), ",")
-end
-
-function _parseenumlabels(labels::AbstractString, ::Type{B}) where {B<:Integer}
-    pairs = Pair{String,B}[]
-    isempty(labels) && return pairs
-    for entry in split(labels, ',')
-        isempty(entry) && return nothing
-        delimiter = findfirst(==(':'), entry)
-        delimiter === nothing && return nothing
-        label = entry[1:prevind(entry, delimiter)]
-        value = entry[nextind(entry, delimiter):end]
-        isempty(label) && return nothing
-        parsed = tryparse(B, value)
-        parsed === nothing && return nothing
-        push!(pairs, label => parsed)
-    end
-    return pairs
-end
-
-function _enumlabelsmatch(::Type{T}, labels::AbstractString) where {T<:Enum}
-    B = Base.Enums.basetype(T)
-    parsed = _parseenumlabels(labels, B)
-    parsed === nothing && return false
-    expected = [string(instance) => B(instance) for instance in instances(T)]
-    length(parsed) == length(expected) || return false
-    parsed_dict = Dict(parsed)
-    length(parsed_dict) == length(parsed) || return false
-    return parsed_dict == Dict(expected)
-end
-
-function arrowmetadata(::Type{T}) where {T<:Enum}
-    return string("type=", _qualifiedtypepath(T), ";labels=", _enum_labels(T))
-end
-
-function _parsemetadata(metadata::AbstractString)
-    parsed = Dict{String,String}()
-    isempty(metadata) && return parsed
-    for entry in split(metadata, ';')
-        isempty(entry) && continue
-        delimiter = findfirst(==('='), entry)
-        delimiter === nothing && continue
-        key = entry[1:prevind(entry, delimiter)]
-        value = entry[nextind(entry, delimiter):end]
-        parsed[key] = value
-    end
-    return parsed
-end
-
-function _rootmodule(name::Symbol)
-    name === :Main && return Main
-    if isdefined(Main, name)
-        candidate = getfield(Main, name)
-        candidate isa Module && return candidate
-    end
-    try
-        return Base.root_module(Main, name)
-    catch
-        return nothing
-    end
-end
-
-function _resolvequalifiedtype(path::AbstractString)
-    parts = split(path, '.')
-    length(parts) < 2 && return nothing
-    current = _rootmodule(Symbol(first(parts)))
-    current isa Module || return nothing
-    for part in parts[2:(end - 1)]
-        symbol = Symbol(part)
-        isdefined(current, symbol) || return nothing
-        current = getfield(current, symbol)
-        current isa Module || return nothing
-    end
-    type_symbol = Symbol(last(parts))
-    isdefined(current, type_symbol) || return nothing
-    return getfield(current, type_symbol)
-end
-
-function JuliaType(::Val{ENUM}, S, metadata::String)
-    parsed = _parsemetadata(metadata)
-    haskey(parsed, "type") || return nothing
-    haskey(parsed, "labels") || return nothing
-    T = _resolvequalifiedtype(parsed["type"])
-    T isa DataType || return nothing
-    T <: Enum || return nothing
-    storage_type = Base.nonmissingtype(S)
-    Base.Enums.basetype(T) === storage_type || return nothing
-    _enumlabelsmatch(T, parsed["labels"]) || return nothing
-    return T
-end
-
-fromarrow(::Type{T}, x::Integer) where {T<:Enum} = T(x)
-
-"BoolKind data is stored with values packed down to individual bits; so instead of a traditional Bool being 1 byte/8 bits, 8 Bool values would be packed into a single byte"
+"BoolKind data is bit-packed: 8 values per byte, not 1 byte per value."
 struct BoolKind <: ArrowKind end
 ArrowKind(::Type{Bool}) = BoolKind()
 
-"ListKind data are stored in two separate buffers; one buffer contains all the original data elements flattened into one long buffer; the 2nd buffer contains an offset into the 1st buffer for how many elements make up the original array element"
+"ListKind data is stored in two buffers: one holds every element flattened; the other holds the start offset of each list, so element i spans offsets[i]:offsets[i+1]-1."
 struct ListKind{stringtype} <: ArrowKind end
 
 ListKind() = ListKind{false}()
@@ -410,7 +231,7 @@ isstringtype(::ListKind{stringtype}) where {stringtype} = stringtype
 isstringtype(::Type{ListKind{stringtype}}) where {stringtype} = stringtype
 
 ArrowKind(::Type{<:AbstractString}) = ListKind{true}()
-# Treate Base.CodeUnits as Binary arrow type
+# Treat Base.CodeUnits as a Binary arrow type
 ArrowKind(::Type{<:Base.CodeUnits}) = ListKind{true}()
 
 fromarrow(::Type{T}, ptr::Ptr{UInt8}, len::Int) where {T} =
@@ -424,6 +245,8 @@ toarrow(x::Symbol) = String(x)
 const SYMBOL = Symbol("JuliaLang.Symbol")
 arrowname(::Type{Symbol}) = SYMBOL
 JuliaType(::Val{SYMBOL}) = Symbol
+# Arrow.jl's IPC reader checks that a Symbol payload is already interned before
+# it calls this compatibility hook. Direct ArrowTypes callers remain trusted.
 _symbol(ptr, len) = ccall(:jl_symbol_n, Ref{Symbol}, (Ptr{UInt8}, Int), ptr, len)
 fromarrow(::Type{Symbol}, ptr::Ptr{UInt8}, len::Int) = _symbol(ptr, len)
 
@@ -449,11 +272,9 @@ ArrowKind(::Type{NTuple{N,T}}) where {N,T} = FixedSizeListKind{N,T}()
 ArrowKind(::Type{UUID}) = FixedSizeListKind{16,UInt8}()
 ArrowType(::Type{UUID}) = NTuple{16,UInt8}
 toarrow(x::UUID) = _cast(NTuple{16,UInt8}, x.value)
-const UUIDSYMBOL = Symbol("arrow.uuid")
-const LEGACY_UUIDSYMBOL = Symbol("JuliaLang.UUID")
+const UUIDSYMBOL = Symbol("JuliaLang.UUID")
 arrowname(::Type{UUID}) = UUIDSYMBOL
 JuliaType(::Val{UUIDSYMBOL}) = UUID
-JuliaType(::Val{LEGACY_UUIDSYMBOL}) = UUID
 fromarrow(::Type{UUID}, x::NTuple{16,UInt8}) = UUID(_cast(UInt128, x))
 
 ArrowKind(::Type{IPv4}) = PrimitiveKind()
@@ -472,6 +293,8 @@ arrowname(::Type{IPv6}) = IPV6_SYMBOL
 JuliaType(::Val{IPV6_SYMBOL}) = IPv6
 fromarrow(::Type{IPv6}, x::NTuple{16,UInt8}) = IPv6(_cast(UInt128, x))
 
+# Not a plain reinterpret: the Ref round trip keeps the UInt128 ↔
+# NTuple{16,UInt8} conversion allocation- and trim-safe without a bitcast.
 function _cast(::Type{Y}, x)::Y where {Y}
     y = Ref{Y}()
     _unsafe_cast!(y, Ref(x), 1)
@@ -493,6 +316,16 @@ struct StructKind <: ArrowKind end
 
 ArrowKind(::Type{<:NamedTuple}) = StructKind()
 
+"""
+    ArrowTypes.fromarrowstruct(::Type{T}, ::Val{fnames}, x...) => T
+
+Optional `StructKind` deserialization hook. The field values `x` are passed
+together with their serialized field names `fnames` (a tuple of Symbols), so
+`T` can be reconstructed agnostic to the field order the serializer used.
+When a method is defined for `T`, it takes precedence over
+[`ArrowTypes.fromarrow`](@ref) in `StructKind` deserialization; the default
+forwards to `fromarrow(T, x...)`.
+"""
 @inline fromarrowstruct(T::Type, ::Val, x...) = fromarrow(T, x...)
 
 fromarrow(
@@ -511,14 +344,6 @@ arrowname(::Type{Tuple{}}) = TUPLE
 JuliaType(::Val{TUPLE}, ::Type{NamedTuple{names,types}}) where {names,types<:Tuple} = types
 fromarrow(::Type{T}, x::NamedTuple) where {T<:Tuple} = Tuple(x)
 
-# Complex
-const COMPLEX = Symbol("JuliaLang.Complex")
-arrowname(::Type{<:Complex}) = COMPLEX
-JuliaType(::Val{COMPLEX}, ::Type{NamedTuple{names,Tuple{T,T}}}) where {names,T<:Real} =
-    Complex{T}
-fromarrowstruct(::Type{T}, ::Val{(:re, :im)}, re, im) where {T<:Complex} = T(re, im)
-fromarrowstruct(::Type{T}, ::Val{(:im, :re)}, im, re) where {T<:Complex} = T(re, im)
-
 # VersionNumber
 const VERSION_NUMBER = Symbol("JuliaLang.VersionNumber")
 ArrowKind(::Type{VersionNumber}) = StructKind()
@@ -530,7 +355,7 @@ function fromarrow(::Type{VersionNumber}, v::NamedTuple)
     VersionNumber(v.major, v.minor, v.patch, v.prerelease, v.build)
 end
 
-"MapKind data are stored similarly to ListKind, where elements are flattened, and a 2nd offsets buffer contains the individual list element length data"
+"MapKind data is stored like ListKind: flattened key-value entries plus an offsets buffer delimiting each map."
 struct MapKind <: ArrowKind end
 
 ArrowKind(::Type{<:AbstractDict}) = MapKind()
@@ -540,7 +365,7 @@ struct UnionKind <: ArrowKind end
 
 ArrowKind(::Union) = UnionKind()
 
-"DictEncodedKind store a small pool of unique values in one buffer, with a full-length buffer of integer offsets into the small value pool"
+"`DictEncodedKind` stores a category pool in one buffer and a full-length buffer of integer indices into it. A category pool may contain unused or duplicate physical entries."
 struct DictEncodedKind <: ArrowKind end
 
 """
@@ -554,7 +379,6 @@ function default end
 default(T) = zero(T)
 default(::Type{Symbol}) = Symbol()
 default(::Type{Char}) = '\0'
-default(::Type{T}) where {T<:Enum} = first(instances(T))
 default(::Type{<:AbstractString}) = ""
 default(::Type{Any}) = nothing
 default(::Type{Missing}) = missing
@@ -584,67 +408,19 @@ default(::Type{NamedTuple{names,types}}) where {names,types} =
     NamedTuple{names}(Tuple(default(fieldtype(types, i)) for i = 1:length(names)))
 
 function promoteunion(T, S)
-    T === S && return T
     new = promote_type(T, S)
     return isabstracttype(new) ? Union{T,S} : new
 end
 
-function _toarroweltype(x)
-    state = iterate(x)
-    state === nothing && return Missing
-    y, st = state
-    srcT = Union{}
-    stable = false
-    T = Missing
-    if y !== missing
-        srcT = typeof(y)
-        mapped = ArrowType(srcT)
-        stable = isconcretetype(mapped)
-        T = stable ? mapped : typeof(toarrow(y))
-    end
-    while true
-        state = iterate(x, st)
-        state === nothing && return T
-        y, st = state
-        if y === missing
-            S = Missing
-        elseif srcT === Union{}
-            srcT = typeof(y)
-            mapped = ArrowType(srcT)
-            stable = isconcretetype(mapped)
-            S = stable ? mapped : typeof(toarrow(y))
-        elseif stable && typeof(y) === srcT
-            continue
-        else
-            S = typeof(toarrow(y))
-            if stable && typeof(y) !== srcT
-                stable = false
-            end
-        end
-        S === T && continue
-        T = promoteunion(T, S)
-    end
-end
+"""
+    ArrowTypes.ToArrow(x) -> AbstractVector
 
-@inline _hasoffsetaxes(data) = Base.has_offset_axes(data)
-@inline _offsetshift(data) = _hasoffsetaxes(data) ? firstindex(data) - 1 : 0
-@inline _hasonebasedaxes(data) = !_hasoffsetaxes(data)
-
-# lazily call toarrow(x) on getindex for each x in data
+A lazy view over `x` that applies [`ArrowTypes.toarrow`](@ref) on `getindex`,
+with a concrete element type. Returns `x` itself when its element type is
+already a concrete natively supported arrow type indexed from 1.
+"""
 struct ToArrow{T,A} <: AbstractVector{T}
     data::A
-    offset::Int
-    needsconvert::Bool
-end
-@inline _sourcedata(x::ToArrow) = getfield(x, :data)
-@inline _sourceoffset(x::ToArrow) = getfield(x, :offset)
-@inline _needsconvert(x::ToArrow) = getfield(x, :needsconvert)
-@inline _sourcevalue(x::ToArrow, i::Integer) =
-    @inbounds getindex(_sourcedata(x), i + _sourceoffset(x))
-
-function ToArrow{T,A}(data::A) where {T,A}
-    needsconvert = !(eltype(A) === T && concrete_or_concreteunion(T))
-    return ToArrow{T,A}(data, _offsetshift(data), needsconvert)
 end
 
 concrete_or_concreteunion(T) =
@@ -654,14 +430,15 @@ concrete_or_concreteunion(T) =
 function ToArrow(x::A) where {A}
     S = eltype(A)
     T = ArrowType(S)
-    if S === T && concrete_or_concreteunion(S) && _hasonebasedaxes(x)
+    fi = firstindex(x)
+    if S === T && concrete_or_concreteunion(S) && fi == 1
         return x
     elseif !concrete_or_concreteunion(T)
         # arrow needs concrete types, so try to find a concrete common type, preferring unions
         if isempty(x)
             return Missing[]
         end
-        T = _toarroweltype(x)
+        T = mapreduce(typeof ∘ toarrow, promoteunion, x)
         if T === Missing && concrete_or_concreteunion(S)
             T = promoteunion(T, typeof(toarrow(default(S))))
         end
@@ -672,6 +449,9 @@ end
 Base.IndexStyle(::Type{<:ToArrow}) = Base.IndexLinear()
 Base.size(x::ToArrow) = (length(x.data),)
 Base.eltype(::Type{TA}) where {T,A,TA<:ToArrow{T,A}} = T
+# A conversion failure means "try the other Union branch"; anything else
+# (including InterruptException) must propagate.
+const _CONVERSION_ERRORS = Union{MethodError,InexactError,OverflowError,TypeError}
 function _convert(::Type{T}, x) where {T}
     if x isa T
         return x
@@ -679,39 +459,17 @@ function _convert(::Type{T}, x) where {T}
         # T was a promoted Union and x is not already one of
         # the concrete Union types, so we need to just try
         # to convert, recursively, to one of the Union types
-        # unfortunately not much we can do more efficiently here
         try
             return _convert(T.a, x)
-        catch
+        catch err
+            err isa _CONVERSION_ERRORS || rethrow()
             return _convert(T.b, x)
         end
     else
         return convert(T, x)
     end
 end
-
-@inline function _toarrowvalue(x::ToArrow{T}, value) where {T}
-    _needsconvert(x) || return value
-    return _convert(T, toarrow(value))
-end
-
-Base.@propagate_inbounds function Base.getindex(x::ToArrow{T}, i::Int) where {T}
-    value = _sourcevalue(x, i)
-    return _toarrowvalue(x, value)
-end
-
-function Base.iterate(x::ToArrow)
-    state = iterate(x.data)
-    state === nothing && return nothing
-    value, st = state
-    return _toarrowvalue(x, value), st
-end
-
-function Base.iterate(x::ToArrow, st)
-    state = iterate(x.data, st)
-    state === nothing && return nothing
-    value, st = state
-    return _toarrowvalue(x, value), st
-end
+Base.getindex(x::ToArrow{T}, i::Int) where {T} =
+    _convert(T, toarrow(getindex(x.data, i + firstindex(x.data) - 1)))
 
 end # module ArrowTypes

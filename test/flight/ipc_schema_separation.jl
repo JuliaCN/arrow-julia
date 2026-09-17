@@ -16,11 +16,11 @@
 # under the License.
 
 @testset "Flight IPC schema separation" begin
-    source = Tables.partitioner(((word=["red", "blue"],), (word=["red", "green"],)))
-    messages = Arrow.Flight.flightdata(source; dictencode=true)
+    source = Tables.partitioner(((word=["red", "blue"],), (word=["green"],)))
+    messages = Arrow.Flight.flightdata(source)
     schema_bytes = Arrow.Flight.schemaipc(first(messages))
     info = Arrow.Flight.Protocol.FlightInfo(
-        schema_bytes[5:end],
+        schema_bytes,
         nothing,
         Arrow.Flight.Protocol.FlightEndpoint[],
         Int64(-1),
@@ -28,28 +28,10 @@
         false,
         UInt8[],
     )
-    payload = messages[2:end]
-    message_headers = [
-        Arrow.FlatBuffers.getrootas(
-            Arrow.Meta.Message,
-            Arrow.Flight.streambytes(message),
-            8,
-        ).header for message in messages
-    ]
-    dictionary_headers =
-        filter(header -> header isa Arrow.Meta.DictionaryBatch, message_headers)
 
-    @test length(messages) >= 5
-    @test length(dictionary_headers) == 2
-    @test count(header -> !header.isDelta, dictionary_headers) == 1
-    @test count(header -> header.isDelta, dictionary_headers) == 1
     @test Arrow.Flight.schemaipc(info) == schema_bytes
-
-    batches = collect(Arrow.Flight.stream(payload; schema=info))
-    @test length(batches) == 2
-    @test isequal(batches[1].word, ["red", "blue"])
-    @test isequal(batches[2].word, ["red", "green"])
-
-    tbl = Arrow.Flight.table(payload; schema=info)
-    @test isequal(tbl.word, ["red", "blue", "red", "green"])
+    @test [batch.word for batch in Arrow.Flight.stream(messages[2:end]; schema=info)] ==
+          [["red", "blue"], ["green"]]
+    @test Arrow.Flight.table(messages[2:end]; schema=info).word ==
+          ["red", "blue", "green"]
 end

@@ -64,6 +64,19 @@ jobs:
           JULIA_NUM_THREADS: ${{ matrix.nthreads }}
         with:
           project: ${{ matrix.pkg.dir }}
+      - name: Process Arrow.jl coverage
+        if: matrix.pkg.name == 'Arrow.jl'
+        uses: julia-actions/julia-processcoverage@v1
+        with:
+          directories: src,ext
+      - name: Process subpackage coverage
+        if: matrix.pkg.name != 'Arrow.jl'
+        uses: julia-actions/julia-processcoverage@v1
+        with:
+          directories: ${{ matrix.pkg.dir }}/src
+      - uses: codecov/codecov-action@v7
+        with:
+          files: lcov.info
   test_monorepo:
     name: Monorepo dev - Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.arch }} - ${{ github.event_name }}
     runs-on: ${{ matrix.os }}
@@ -102,44 +115,3 @@ jobs:
         continue-on-error: false
         run: >
           julia --color=yes --project=monorepo -e 'using Pkg; Pkg.test("Arrow")'
-  flight_purehttp2:
-    name: Arrow Flight PureHTTP2 interop - Julia nightly - ubuntu-latest
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
-        with:
-          python-version: '3.11'
-      - name: Install Flight Python dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install pyarrow grpcio grpcio-tools
-      - uses: julia-actions/setup-julia@v3
-        with:
-          version: 'nightly'
-          arch: x64
-      - uses: actions/cache@v6
-        env:
-          cache-name: cache-artifacts
-        with:
-          path: ~/.julia/artifacts
-          key: ${{ runner.os }}-flight-${{ env.cache-name }}-${{ hashFiles('**/Project.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-flight-${{ env.cache-name }}-
-            ${{ runner.os }}-flight-
-            ${{ runner.os }}-
-      - uses: julia-actions/julia-buildpkg@v1.6
-        with:
-          project: .
-      - name: Dev local ArrowTypes for Arrow.jl tests
-        shell: julia --project=. {0}
-        run: |
-          using Pkg
-          Pkg.develop(PackageSpec(path="src/ArrowTypes"))
-      - name: Run Arrow Flight PureHTTP2 interop tests
-        env:
-          ARROW_FLIGHT_PYTHON: ${{ env.pythonLocation }}/bin/python
-          ARROW_FLIGHT_DISABLE_AUTO_LOCAL_DEPS: '1'
-          JULIA_NUM_THREADS: '2'
-        run: julia --color=yes --project=test test/flight_purehttp2.jl

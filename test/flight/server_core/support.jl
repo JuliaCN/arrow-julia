@@ -15,6 +15,18 @@
 # specific language governing permissions and limitations
 # under the License.
 
+function _flight_metadata_table(table; metadata=nothing, colmetadata=nothing)
+    io = IOBuffer()
+    Arrow.write(
+        io,
+        table;
+        file=false,
+        metadata=metadata,
+        colmetadata=colmetadata,
+    )
+    return Arrow.Table(take!(io); mmap=false)
+end
+
 function flight_server_core_fixture()
     protocol = Arrow.Flight.Protocol
     context = Arrow.Flight.ServerCallContext(
@@ -69,7 +81,7 @@ function flight_server_core_fixture()
             return :doaction_ok
         end,
     )
-    sample_table = Arrow.withmetadata(
+    sample_table = _flight_metadata_table(
         (doc_id=["doc-a", "doc-b"], vector_score=[0.9, 0.5]);
         metadata=Dict("request" => "sample"),
         colmetadata=Dict(

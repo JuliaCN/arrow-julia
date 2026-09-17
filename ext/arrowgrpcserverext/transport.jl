@@ -15,21 +15,10 @@
 # specific language governing permissions and limitations
 # under the License.
 
-mutable struct GRPCServerRequestGate
-    max_active_requests::Int
-    active_requests::Threads.Atomic{Int}
-end
-
-function GRPCServerRequestGate(max_active_requests::Integer)
-    max_active_requests > 0 || throw(ArgumentError("max_active_requests must be positive"))
-    return GRPCServerRequestGate(Int(max_active_requests), Threads.Atomic{Int}(0))
-end
-
 struct GRPCServerFlightService
     service::Flight.Service
     request_capacity::Int
     response_capacity::Int
-    request_gate::GRPCServerRequestGate
 end
 
 function GRPCServerFlightService(
@@ -41,7 +30,6 @@ function GRPCServerFlightService(
         service,
         Int(request_capacity),
         Int(response_capacity),
-        GRPCServerRequestGate(DEFAULT_MAX_ACTIVE_REQUESTS),
     )
 end
 
@@ -52,8 +40,6 @@ mutable struct GRPCServerFlightServer
     port::Int
     request_capacity::Int
     response_capacity::Int
-    request_gate::GRPCServerRequestGate
-    accept_task::Union{Nothing,Task}
 end
 
 function _grpcserver_bind_address(host::AbstractString)
@@ -105,58 +91,30 @@ function _wait_for_grpcserver_listener(
     error("gRPCServer Flight listener did not reach RUNNING state before timeout")
 end
 
-function _try_acquire_request!(gate::GRPCServerRequestGate)
-    while true
-        active_requests = gate.active_requests[]
-        active_requests >= gate.max_active_requests && return false
-        Threads.atomic_cas!(gate.active_requests, active_requests, active_requests + 1) ==
-        active_requests && return true
-    end
-end
-
-function _release_request!(gate::GRPCServerRequestGate)
-    while true
-        active_requests = gate.active_requests[]
-        active_requests <= 0 && return nothing
-        Threads.atomic_cas!(gate.active_requests, active_requests, active_requests - 1) ==
-        active_requests && return nothing
-    end
-end
-
-function _throw_request_limit_error(gate::GRPCServerRequestGate)
-    throw(
-        gRPCServer.GRPCError(
-            gRPCServer.StatusCode.RESOURCE_EXHAUSTED,
-            "active request limit $(gate.max_active_requests) reached",
-        ),
-    )
-end
-
 function Flight.grpcserver_flight_server(
     service::Flight.Service;
     host::AbstractString="127.0.0.1",
     port::Integer=8815,
-    max_active_requests::Integer=DEFAULT_MAX_ACTIVE_REQUESTS,
+    max_concurrent_requests::Integer=1024,
     request_capacity::Integer=Flight.DEFAULT_STREAM_BUFFER,
     response_capacity::Integer=Flight.DEFAULT_STREAM_BUFFER,
 )
-    max_active_requests > 0 || throw(ArgumentError("max_active_requests must be positive"))
+    max_concurrent_requests > 0 ||
+        throw(ArgumentError("max_concurrent_requests must be positive"))
     request_capacity > 0 || throw(ArgumentError("request_capacity must be positive"))
     response_capacity > 0 || throw(ArgumentError("response_capacity must be positive"))
 
     actual_host = String(host)
     actual_port = _grpcserver_bind_port(actual_host, port)
-    request_gate = GRPCServerRequestGate(Int(max_active_requests))
     configured_service = GRPCServerFlightService(
         service,
         Int(request_capacity),
         Int(response_capacity),
-        request_gate,
     )
     grpc_server = gRPCServer.GRPCServer(
         actual_host,
         actual_port;
-        max_concurrent_requests=Int(max_active_requests),
+        max_concurrent_requests=Int(max_concurrent_requests),
     )
     gRPCServer.register!(grpc_server, configured_service)
     gRPCServer.start!(grpc_server)
@@ -175,14 +133,11 @@ function Flight.grpcserver_flight_server(
         actual_port,
         Int(request_capacity),
         Int(response_capacity),
-        request_gate,
-        grpc_server.accept_task,
     )
 end
 
 function Flight.stop!(server::GRPCServerFlightServer; force::Bool=false)
     gRPCServer.stop!(server.server; force=force)
-    server.accept_task = nothing
     return server
 end
 

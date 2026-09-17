@@ -15,7 +15,6 @@
 # specific language governing permissions and limitations
 # under the License.
 
-using PooledArrays
 using Tables
 
 include("flight/support.jl")
@@ -25,6 +24,7 @@ include("flight/sql_tests.jl")
 include("flight/server_core.jl")
 include("flight/ipc_conversion.jl")
 include("flight/ipc_schema_separation.jl")
+include("flight/grpcserver_extension.jl")
 
 @testset "Flight generated protocol surface" begin
     flight_test_generated_protocol_formatter_surface()

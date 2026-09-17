@@ -21,51 +21,70 @@
 
 # API Reference
 
-```@autodocs
-Modules = [Arrow]
-Order   = [:type, :function]
-```
-
-## Flight
-
-```@autodocs
-Modules = [Arrow.Flight]
-Order   = [:type, :function]
-```
-
-## Flight SQL
-
-```@autodocs
-Modules = [Arrow.Flight.SQL]
-Order   = [:type, :function]
-```
-
-## C Data Interface
+## Read
 
 ```@docs
-Arrow.CData
+Arrow.Table
+Arrow.Stream
+Arrow.Limits
+Arrow.release!(::Arrow.Table)
+Base.copy(::Arrow.Table)
+Arrow.getmetadata
 ```
 
-```@autodocs
-Modules = [Arrow.CData]
-Order   = [:type, :function]
-```
-
-## ADBC
+## Write
 
 ```@docs
-Arrow.ADBC
+Arrow.write
+Arrow.Writer
+Arrow.write(::Arrow.Writer, ::Any)
+Arrow.append
+Arrow.tobuffer
+Arrow.DictEncode
 ```
 
-```@autodocs
-Modules = [Arrow.ADBC]
-Order   = [:type, :function]
+## Byte-range reads
+
+```@docs
+Arrow.AbstractArrowSource
+Arrow.sourcelength
+Arrow.readrange
+Arrow.concurrentreads
 ```
 
-## Internals: `Arrow.FlatBuffers`
+## The C data and C stream interfaces
 
-The `FlatBuffers` module is not part of Arrow.jl's public API, and these functions may change without notice.
+The low-level value and ABI types are public but not exported.
 
-```@autodocs
-Modules = [Arrow.FlatBuffers]
+```@docs
+Arrow.Field
+Arrow.Schema
+Arrow.ArrayData
+Arrow.RecordBatch
+Arrow.fromjulia
+Arrow.batch
+Arrow.materialize
+Arrow.CArrowSchema
+Arrow.CArrowArray
+Arrow.CArrowArrayStream
+```
+
+```@docs
+Arrow.to_c_data
+Arrow.from_c_data
+Arrow.export_stream!
+Arrow.from_c_stream
+Arrow.ForeignOwner
+Arrow.ImportedStream
+Arrow.nextbatch!
+Arrow.release!(::Arrow.ForeignOwner)
+Arrow.release!(::Arrow.ImportedStream)
+Arrow.reap!
+```
+
+## Errors
+
+```@docs
+Arrow.AllocationLimitError
+Arrow.ValidationError
 ```

@@ -24,7 +24,6 @@ function _configured_service(service::Flight.Service)
         service,
         STREAM_BUFFER_SIZE,
         STREAM_BUFFER_SIZE,
-        GRPCServerRequestGate(DEFAULT_MAX_ACTIVE_REQUESTS),
     )
 end
 
@@ -34,21 +33,10 @@ function _transport_method(method::Flight.MethodDescriptor)
     return Flight.TransportMethodDescriptor(method)
 end
 
-function _with_request_gate(handler::Function, request_gate::GRPCServerRequestGate)
-    return function (args...)
-        _try_acquire_request!(request_gate) || _throw_request_limit_error(request_gate)
-        try
-            return handler(args...)
-        finally
-            _release_request!(request_gate)
-        end
-    end
-end
-
 function _unary_handler(service, method::Flight.MethodDescriptor)
     configured = _configured_service(service)
     transport_method = _transport_method(method)
-    return _with_request_gate(configured.request_gate) do context, request
+    return function (context, request)
         return Flight.transport_unary_call(
             configured.service,
             _call_context(context),
@@ -62,7 +50,7 @@ end
 function _server_streaming_handler(service, method::Flight.MethodDescriptor)
     configured = _configured_service(service)
     transport_method = _transport_method(method)
-    return _with_request_gate(configured.request_gate) do context, request, stream
+    return function (context, request, stream)
         Flight.transport_server_streaming_call(
             configured.service,
             _call_context(context),
@@ -80,7 +68,7 @@ end
 function _client_streaming_handler(service, method::Flight.MethodDescriptor)
     configured = _configured_service(service)
     transport_method = _transport_method(method)
-    return _with_request_gate(configured.request_gate) do context, stream
+    return function (context, stream)
         return Flight.transport_client_streaming_call(
             configured.service,
             _call_context(context),
@@ -95,7 +83,7 @@ end
 function _bidi_streaming_handler(service, method::Flight.MethodDescriptor)
     configured = _configured_service(service)
     transport_method = _transport_method(method)
-    return _with_request_gate(configured.request_gate) do context, stream
+    return function (context, stream)
         Flight.transport_bidi_streaming_call(
             configured.service,
             _call_context(context),

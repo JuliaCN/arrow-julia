@@ -39,7 +39,6 @@ function gRPCServer.service_descriptor(service::GRPCServerFlightService)
             _proto_type_name(method.request_type),
             _proto_type_name(method.response_type),
             _handler(service, method),
-            live_streaming=method.request_streaming,
         )
     end
     return gRPCServer.ServiceDescriptor(descriptor.name, methods, nothing)
