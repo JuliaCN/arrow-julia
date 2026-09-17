@@ -30,8 +30,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.x'
       - name: Run Release audit tool (Rat)
@@ -47,7 +47,7 @@ jobs:
           - macos-latest
           - ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Install dependencies
         if: matrix.os == 'macos-latest'
         run: |
@@ -62,7 +62,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           RELEASE_DEFAULT=0 dev/release/release_rc.sh 100
-      - uses: actions/cache@v5
+      - uses: actions/cache@v6
         with:
           path: ~/.julia/artifacts
           key: ${{ runner.os }}-release-${{ hashFiles('**/Project.toml') }}
@@ -98,11 +98,11 @@ jobs:
           - 1
           - 2
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: julia-actions/setup-julia@v3
         with:
           version: ${{ matrix.version }}
-      - uses: actions/cache@v5
+      - uses: actions/cache@v6
         env:
           cache-name: cache-artifacts
         with:
@@ -172,12 +172,12 @@ jobs:
         arch:
           - x64
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: julia-actions/setup-julia@v3
         with:
           version: ${{ matrix.version }}
           arch: ${{ matrix.arch }}
-      - uses: actions/cache@v5
+      - uses: actions/cache@v6
         env:
           cache-name: cache-artifacts
         with:
@@ -201,11 +201,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: julia-actions/setup-julia@v3
         with:
           version: '1'
-      - uses: actions/cache@v5
+      - uses: actions/cache@v6
         env:
           cache-name: cache-integration-cli-artifacts
         with:
@@ -234,8 +234,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.11'
       - name: Install Flight Python dependencies
@@ -245,7 +245,7 @@ jobs:
       - uses: julia-actions/setup-julia@v3
         with:
           version: '1'
-      - uses: actions/cache@v5
+      - uses: actions/cache@v6
         env:
           cache-name: cache-artifacts
         with:
@@ -274,11 +274,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: julia-actions/setup-julia@v3
         with:
           version: '1'
-      - uses: actions/cache@v5
+      - uses: actions/cache@v6
         env:
           cache-name: cache-cdata-artifacts
         with:
@@ -311,11 +311,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: julia-actions/setup-julia@v3
         with:
           version: '1'
-      - uses: actions/cache@v5
+      - uses: actions/cache@v6
         env:
           cache-name: cache-ipc-artifacts
         with:
@@ -348,8 +348,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.11'
       - name: Install Flight SQL Python dependencies
@@ -359,7 +359,7 @@ jobs:
       - uses: julia-actions/setup-julia@v3
         with:
           version: '1'
-      - uses: actions/cache@v5
+      - uses: actions/cache@v6
         env:
           cache-name: cache-flight-sql-artifacts
         with:
@@ -409,11 +409,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: julia-actions/setup-julia@v3
         with:
           version: '1'
-      - uses: actions/cache@v5
+      - uses: actions/cache@v6
         env:
           cache-name: cache-docs-artifacts
         with:
@@ -441,7 +441,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: julia-actions/setup-julia@v3
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Install JuliaFormatter and format
         # This will use the latest version by default but you can set the version like so:
         # julia  -e 'using Pkg; Pkg.add(PackageSpec(name="JuliaFormatter", version="0.13.0"))'
