@@ -71,6 +71,17 @@ function _record_app_metadata(messages)
     return metadata
 end
 
+function _stream_schema(stream::ArrowParent.Stream)
+    fields = ArrowParent._batchfields(getfield(stream, :src))
+    names = Symbol[Symbol(field.name) for field in fields]
+    types = Type[ArrowParent._declaredeltype(field) for field in fields]
+    return Tables.Schema(
+        names,
+        types;
+        stored=length(names) > ArrowParent._MAX_TYPED_SCHEMA_FIELDS,
+    )
+end
+
 struct FlightStream{S,M}
     stream::S
     schema::Tables.Schema
@@ -128,7 +139,7 @@ function _flight_stream(
         end_marker=end_marker,
     )
     stream = ArrowParent.Stream(bytes; mmap=false)
-    table_schema = Tables.schema(ArrowParent.Table(bytes; mmap=false))
+    table_schema = _stream_schema(stream)
     metadata = _record_app_metadata(collected)
     length(metadata) == length(stream) || throw(
         ArgumentError(

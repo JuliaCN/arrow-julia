@@ -56,24 +56,68 @@ function _normalize_app_metadata_value(value)
     )
 end
 
-function _record_app_metadata_values(app_metadata, count::Int)
-    isnothing(app_metadata) && return [UInt8[] for _ = 1:count]
-    values = _is_app_metadata_value(app_metadata) ? (app_metadata,) : app_metadata
-    normalized = Vector{Vector{UInt8}}()
-    for value in values
-        push!(normalized, _normalize_app_metadata_value(value))
-    end
-    length(normalized) == count || throw(
-        ArgumentError(
-            length(normalized) < count ?
-            "app_metadata was exhausted before all record batches were emitted" :
-            "app_metadata contains more entries than source partitions",
-        ),
-    )
-    return normalized
+mutable struct _FlightDataSink{S,M}
+    sink::S
+    descriptor::Union{Nothing,Protocol.FlightDescriptor}
+    app_metadata::M
+    app_metadata_state::Any
+    app_metadata_started::Bool
 end
 
-function _flightdata_messages(
+function _FlightDataSink(sink, descriptor, app_metadata)
+    values =
+        isnothing(app_metadata) ? nothing :
+        _is_app_metadata_value(app_metadata) ? (app_metadata,) : app_metadata
+    return _FlightDataSink(sink, descriptor, values, nothing, false)
+end
+
+_emit_flightdata!(sink::AbstractVector, message::Protocol.FlightData) = push!(sink, message)
+_emit_flightdata!(sink, message::Protocol.FlightData) = put!(sink, message)
+
+function _next_app_metadata!(sink::_FlightDataSink)
+    sink.app_metadata === nothing && return UInt8[]
+    item =
+        sink.app_metadata_started ?
+        iterate(sink.app_metadata, sink.app_metadata_state) : iterate(sink.app_metadata)
+    item === nothing && throw(
+        ArgumentError("app_metadata was exhausted before all record batches were emitted"),
+    )
+    value, state = item
+    sink.app_metadata_state = state
+    sink.app_metadata_started = true
+    return _normalize_app_metadata_value(value)
+end
+
+function _finish_app_metadata!(sink::_FlightDataSink)
+    sink.app_metadata === nothing && return nothing
+    item =
+        sink.app_metadata_started ?
+        iterate(sink.app_metadata, sink.app_metadata_state) : iterate(sink.app_metadata)
+    item === nothing ||
+        throw(ArgumentError("app_metadata contains more entries than record batches"))
+    return nothing
+end
+
+function _drain_flightdata!(sink::_FlightDataSink, bytes::Vector{UInt8})
+    for part in _split_ipc_stream(bytes)
+        part_metadata =
+            part.kind isa ArrowParent.Meta.RecordBatch ? _next_app_metadata!(sink) : UInt8[]
+        _emit_flightdata!(
+            sink.sink,
+            Protocol.FlightData(
+                sink.descriptor,
+                part.header,
+                part_metadata,
+                part.body,
+            ),
+        )
+        sink.descriptor = nothing
+    end
+    return length(bytes)
+end
+
+function _putflightdata!(
+    sink,
     source;
     descriptor::Union{Nothing,Protocol.FlightDescriptor}=nothing,
     compress=nothing,
@@ -86,38 +130,57 @@ function _flightdata_messages(
         ArgumentError("Arrow 3 Flight IPC uses the standard 8-byte alignment"),
     )
     source, app_metadata = _unwrap_app_metadata_source(source, app_metadata)
-    bytes = ArrowParent._writebytes(
-        source;
+    output = _FlightDataSink(sink, descriptor, app_metadata)
+    buffer = IOBuffer()
+    writer = ArrowParent.Writer(
+        buffer;
         file=false,
         compress=compress,
         metadata=metadata,
         colmetadata=colmetadata,
     )
-    parts = _split_ipc_stream(bytes)
-    record_count = count(part -> part.kind isa ArrowParent.Meta.RecordBatch, parts)
-    record_metadata = _record_app_metadata_values(app_metadata, record_count)
-    metadata_index = 1
-    descriptor_pending = descriptor
-    messages = Protocol.FlightData[]
-    for part in parts
-        part_metadata = if part.kind isa ArrowParent.Meta.RecordBatch
-            value = record_metadata[metadata_index]
-            metadata_index += 1
-            value
-        else
-            UInt8[]
+    try
+        wrote_partition = false
+        for partition in Tables.partitions(source)
+            ArrowParent.write(writer, partition)
+            _drain_flightdata!(output, take!(buffer))
+            wrote_partition = true
         end
-        push!(
-            messages,
-            Protocol.FlightData(
-                descriptor_pending,
-                part.header,
-                part_metadata,
-                part.body,
-            ),
-        )
-        descriptor_pending = nothing
+        wrote_partition || throw(ArgumentError("cannot encode an empty Flight source"))
+        close(writer)
+        _drain_flightdata!(output, take!(buffer))
+        _finish_app_metadata!(output)
+    catch
+        try
+            close(writer)
+        catch
+            # Preserve the encoding, metadata, or downstream sink error.
+        end
+        rethrow()
     end
+    return sink
+end
+
+function _flightdata_messages(
+    source;
+    descriptor::Union{Nothing,Protocol.FlightDescriptor}=nothing,
+    compress=nothing,
+    alignment::Integer=DEFAULT_IPC_ALIGNMENT,
+    metadata=nothing,
+    colmetadata=nothing,
+    app_metadata=nothing,
+)
+    messages = Protocol.FlightData[]
+    _putflightdata!(
+        messages,
+        source;
+        descriptor=descriptor,
+        compress=compress,
+        alignment=alignment,
+        metadata=metadata,
+        colmetadata=colmetadata,
+        app_metadata=app_metadata,
+    )
     return messages
 end
 
@@ -132,14 +195,14 @@ flightdata(source; kwargs...) = _flightdata_messages(source; kwargs...)
 """
     Arrow.Flight.putflightdata!(sink, source; close=false, kwargs...)
 
-Write Arrow 3-backed `FlightData` messages to a channel-like sink. Message
-construction shares the same validated IPC path as [`flightdata`](@ref).
+Incrementally write Arrow 3-backed `FlightData` messages to a channel-like
+sink. Encoding and downstream backpressure are bounded to one source partition:
+the schema and each record batch are published before the next partition is
+requested. [`flightdata`](@ref) is the collecting convenience API.
 """
 function putflightdata!(sink, source; close::Bool=false, kwargs...)
     try
-        for message in _flightdata_messages(source; kwargs...)
-            put!(sink, message)
-        end
+        _putflightdata!(sink, source; kwargs...)
     finally
         close && Base.close(sink)
     end

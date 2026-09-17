@@ -88,27 +88,25 @@ end
 
 function _split_ipc_stream(bytes::AbstractVector{UInt8})
     _require_flight_little_endian()
-    data = Vector{UInt8}(bytes)
-    region = ArrowParent.AC.heapregion(data)
-    try
-        ArrowParent.framemessages(region, ArrowParent.Limits())
-    finally
-        ArrowParent.AC.release!(region)
-    end
-
+    data = bytes
     MessagePart = NamedTuple{
         (:header, :body, :kind),
         Tuple{Vector{UInt8},Vector{UInt8},Any},
     }
     messages = MessagePart[]
     pos = 1
+    saw_end = false
     while pos <= length(data)
         length(data) - pos + 1 >= 8 ||
             throw(ArgumentError("truncated Arrow IPC prefix at byte $(pos - 1)"))
         _read_u32(data, pos) == _IPC_CONTINUATION ||
             throw(ArgumentError("missing Arrow IPC continuation marker"))
         metalen = Int(_read_i32(data, pos + 4))
-        metalen == 0 && break
+        if metalen == 0
+            saw_end = true
+            pos += 8
+            break
+        end
         metalen > 0 || throw(ArgumentError("negative Arrow IPC metadata length"))
         metastart = pos + 8
         metaend = metastart + metalen - 1
@@ -124,5 +122,10 @@ function _split_ipc_stream(bytes::AbstractVector{UInt8})
         push!(messages, (header=header, body=body, kind=msg.header))
         pos = bodyend + 1
     end
+    pos == length(data) + 1 || throw(
+        ArgumentError(
+            saw_end ? "bytes follow the Arrow IPC end marker" : "trailing Arrow IPC bytes",
+        ),
+    )
     return messages
 end

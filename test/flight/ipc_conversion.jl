@@ -78,6 +78,37 @@ using Tables
     wait(task)
     @test Arrow.Flight.table(channel_messages).id == [1, 2, 3]
 
+    # Encoding is genuinely incremental: the first batch reaches a bounded
+    # downstream sink before the second source partition is even available.
+    partitions = Channel{NamedTuple}(0)
+    streamed = Channel{Arrow.Flight.Protocol.FlightData}(1)
+    streaming_task = @async Arrow.Flight.putflightdata!(
+        streamed,
+        Tables.partitioner(partitions);
+        close=true,
+    )
+    put!(partitions, (id=Int64[10], label=["ten"]))
+    schema_message = take!(streamed)
+    first_batch = take!(streamed)
+    @test Arrow.Flight.table([schema_message, first_batch]).id == [10]
+    @test !istaskdone(streaming_task)
+    put!(partitions, (id=Int64[20], label=["twenty"]))
+    close(partitions)
+    remaining = collect(streamed)
+    wait(streaming_task)
+    @test Arrow.Flight.table([schema_message, first_batch, remaining...]).id == [10, 20]
+
+    failed_stream = Channel{Arrow.Flight.Protocol.FlightData}(4)
+    failed_task = @async Arrow.Flight.putflightdata!(
+        failed_stream,
+        Tables.partitioner(((id=Int64[1],), (different=Int64[2],)));
+        close=true,
+    )
+    partial = collect(failed_stream)
+    @test length(partial) == 2 # schema plus the valid first record batch
+    @test istaskfailed(failed_task)
+    @test_throws TaskFailedException wait(failed_task)
+
     dictionary_messages = Arrow.Flight.flightdata((
         value=Arrow.DictEncode(["alpha", "beta", "alpha"]),
     ))

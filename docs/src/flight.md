@@ -46,11 +46,20 @@ gRPC status handling remain owned by `gRPCServer.jl`.
 
 ## IPC conversion
 
-`Arrow.Flight.flightdata` encodes any Tables.jl source with the Arrow 3 IPC
-writer and splits the resulting standard stream into `FlightData` messages.
+`Arrow.Flight.putflightdata!` drives Arrow 3's incremental IPC writer one
+partition at a time and drains each staged IPC publication into `FlightData`
+messages. It publishes the schema and each record batch before requesting the
+next Tables.jl partition, so a bounded channel or gRPC stream applies
+backpressure to encoding as well as transport. The largest in-flight Arrow
+allocation is therefore one source partition, rather than the whole response.
+`Arrow.Flight.flightdata` uses the same path but collects the messages for
+callers that explicitly need a vector.
+
 `Arrow.Flight.stream` and `Arrow.Flight.table` rebuild a standard IPC stream
 and delegate validation and materialization to `Arrow.Stream` and
-`Arrow.Table`.
+`Arrow.Table`. `Arrow.Flight.stream` derives its Tables.jl schema directly
+from the decoded IPC schema, so it does not parse and materialize a second
+`Arrow.Table` merely to discover column types.
 
 ```julia
 source = Tables.partitioner(((id=[1, 2],), (id=[3],)))
@@ -59,6 +68,12 @@ messages = Arrow.Flight.flightdata(source; app_metadata=("first", "second"))
 batches = collect(Arrow.Flight.stream(messages; include_app_metadata=true))
 table = Arrow.Flight.table(messages)
 ```
+
+Prefer `putflightdata!` in server handlers. `flightdata` intentionally retains
+all encoded messages and is best suited to small responses, tests, and unary
+metadata construction. Incremental publication means an error in a later
+partition is reported after earlier valid batches may already have reached the
+peer; this is the normal gRPC streaming failure model.
 
 The Flight layer owns only Flight framing, descriptors, and application
 metadata. Arrow 3 owns schema inference, dictionary encoding, compression,
@@ -78,8 +93,10 @@ messages = Arrow.Flight.flightdata(
 )
 ```
 
-This matches the Arrow 3 writer contract and avoids inferring stream-wide
-schema metadata from an arbitrary first partition.
+The first partition fixes the stream schema, following the Arrow 3 incremental
+writer contract. Later partitions must have the same names and compatible
+types. Explicit metadata avoids inferring stream-wide schema metadata from an
+arbitrary first partition.
 
 ## API reference
 
