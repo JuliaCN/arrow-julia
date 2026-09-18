@@ -22,6 +22,7 @@ function grpcserver_extension_test_live_listener(grpcserver, service, fixture)
         @test pyarrow_smoke_ran || isnothing(FlightTestSupport.pyarrow_flight_python())
     end
 
+    configured = Ref(false)
     flight_server = Arrow.Flight.grpcserver_flight_server(
         service;
         host="127.0.0.1",
@@ -31,6 +32,10 @@ function grpcserver_extension_test_live_listener(grpcserver, service, fixture)
         response_capacity=4,
         max_message_size=8 * 1024 * 1024,
         enable_health_check=true,
+        configure_server=server -> begin
+            configured[] = true
+            grpcserver.add_interceptor!(server, grpcserver.MetricsInterceptor())
+        end,
     )
 
     try
@@ -39,9 +44,14 @@ function grpcserver_extension_test_live_listener(grpcserver, service, fixture)
         @test flight_server.server.config.max_concurrent_requests == 2
         @test flight_server.server.config.max_message_size == 8 * 1024 * 1024
         @test flight_server.server.config.enable_health_check
+        @test configured[]
         pyarrow_smoke_ran =
             flight_live_pyarrow_smoke(flight_server.host, flight_server.port, fixture)
         @test pyarrow_smoke_ran || isnothing(FlightTestSupport.pyarrow_flight_python())
+        metrics = Arrow.Flight.flight_server_metrics(flight_server)
+        @test metrics.active_calls == 0
+        @test metrics.calls_started >= (pyarrow_smoke_ran ? 1 : 0)
+        @test metrics.calls_completed >= (pyarrow_smoke_ran ? 1 : 0)
     finally
         Arrow.Flight.stop!(flight_server; force=true)
     end

@@ -20,6 +20,7 @@ struct GRPCServerFlightService
     request_capacity::Int
     response_capacity::Int
     secure::Bool
+    runtime::Union{Nothing,Flight.FlightServerRuntime}
 end
 
 function GRPCServerFlightService(
@@ -27,12 +28,14 @@ function GRPCServerFlightService(
     request_capacity::Integer,
     response_capacity::Integer,
     secure::Bool=false,
+    runtime::Union{Nothing,Flight.FlightServerRuntime}=nothing,
 )
     return GRPCServerFlightService(
         service,
         Int(request_capacity),
         Int(response_capacity),
         secure,
+        runtime,
     )
 end
 
@@ -43,6 +46,7 @@ mutable struct GRPCServerFlightServer
     port::Int
     request_capacity::Int
     response_capacity::Int
+    runtime::Flight.FlightServerRuntime
 end
 
 function _grpcserver_bind_address(host::AbstractString)
@@ -101,6 +105,10 @@ function Flight.grpcserver_flight_server(
     max_concurrent_requests::Integer=1024,
     request_capacity::Integer=Flight.DEFAULT_STREAM_BUFFER,
     response_capacity::Integer=Flight.DEFAULT_STREAM_BUFFER,
+    max_inflight_bytes::Integer=2 * 1024 * 1024 * 1024,
+    call_reservation_bytes::Union{Nothing,Integer}=nothing,
+    cleanup_grace_seconds::Real=1.0,
+    configure_server::Function=server -> nothing,
     server_kwargs...,
 )
     max_concurrent_requests > 0 ||
@@ -116,11 +124,25 @@ function Flight.grpcserver_flight_server(
         max_concurrent_requests=Int(max_concurrent_requests),
         server_kwargs...,
     )
+    reservation = if isnothing(call_reservation_bytes)
+        Int64(grpc_server.config.max_receive_message_length) +
+        Int64(grpc_server.config.max_send_message_length)
+    else
+        Int64(call_reservation_bytes)
+    end
+    runtime = Flight.FlightServerRuntime(
+        max_active_calls=Int(max_concurrent_requests),
+        max_reserved_bytes=max_inflight_bytes,
+        call_reservation_bytes=reservation,
+        cleanup_grace_seconds=cleanup_grace_seconds,
+    )
+    configure_server(grpc_server)
     configured_service = GRPCServerFlightService(
         service,
         Int(request_capacity),
         Int(response_capacity),
         !isnothing(grpc_server.config.tls),
+        runtime,
     )
     gRPCServer.register!(grpc_server, configured_service)
     gRPCServer.start!(grpc_server)
@@ -139,8 +161,12 @@ function Flight.grpcserver_flight_server(
         actual_port,
         Int(request_capacity),
         Int(response_capacity),
+        runtime,
     )
 end
+
+Flight.flight_server_metrics(server::GRPCServerFlightServer) =
+    Flight.flight_server_metrics(server.runtime)
 
 function Flight.stop!(server::GRPCServerFlightServer; force::Bool=false, timeout::Real=0.0)
     gRPCServer.stop!(server.server; force=force, timeout=Float64(timeout))

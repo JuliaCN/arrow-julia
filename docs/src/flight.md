@@ -46,8 +46,16 @@ server = Arrow.Flight.grpcserver_flight_server(
     idle_timeout=300.0,
     request_capacity=4,
     response_capacity=4,
+    max_inflight_bytes=2 * 1024 * 1024 * 1024,
+    cleanup_grace_seconds=1.0,
+    configure_server=server -> gRPCServer.add_interceptor!(
+        server,
+        gRPCServer.MetricsInterceptor(),
+    ),
     enable_health_check=true,
 )
+# Atomic aggregate admission/traffic/cleanup counters:
+Arrow.Flight.flight_server_metrics(server)
 # Arrow.Flight.stop!(server; timeout=30.0)
 ```
 
@@ -56,9 +64,13 @@ server = Arrow.Flight.grpcserver_flight_server(
 second HTTP/2 listener. Lifecycle, HTTP/2, streaming, cancellation, TLS, and
 gRPC status handling remain owned by `gRPCServer.jl`.
 
-All keywords other than `request_capacity` and `response_capacity` are passed
-to `gRPCServer.GRPCServer`. In particular, configure production TLS with its
-`tls` option and set explicit receive/send message limits: the transport's
+Arrow owns `request_capacity`, `response_capacity`, `max_inflight_bytes`,
+`call_reservation_bytes`, `cleanup_grace_seconds`, and `configure_server`;
+remaining keywords are passed to `gRPCServer.GRPCServer`. The configuration
+callback runs after construction and before service registration/start, so it
+is the place to install official authentication, authorization, rate-limit,
+audit, and telemetry interceptors. In particular, configure production TLS
+with its `tls` option and set explicit receive/send message limits: the transport's
 default message size can be smaller than a legitimate Arrow record batch.
 `gRPCServer` validates these options against the selected HTTP/2 backend and
 rejects unsupported settings instead of silently ignoring them; for example,
@@ -67,6 +79,15 @@ configuration-level `drain_timeout` (use `stop!(server; timeout=...)`).
 Channel capacities bound queued decoded messages; increasing them may improve
 throughput but increases per-request memory by roughly the size of the queued
 record batches.
+
+The Flight runtime reserves one receive-limit plus one send-limit worth of
+memory per admitted call by default. `max_inflight_bytes` and
+`max_concurrent_requests` therefore form server-wide admission gates. Override
+`call_reservation_bytes` only with measured knowledge of the application's
+buffer geometry. A rejected call returns `RESOURCE_EXHAUSTED` before its Flight
+handler starts. Transport cleanup waits at most `cleanup_grace_seconds` for a
+handler that ignored cancellation; the handler task is not force-killed, but is
+detached and reported through `cleanup_timeouts` and `orphan_tasks`.
 
 Every handler receives an `Arrow.Flight.ServerCallContext` containing request
 metadata, request ID, method, authority, peer, TLS state, deadline, trace
@@ -128,6 +149,11 @@ all encoded messages and is best suited to small responses, tests, and unary
 metadata construction. Incremental publication means an error in a later
 partition is reported after earlier valid batches may already have reached the
 peer; this is the normal gRPC streaming failure model.
+Use `max_rows_per_batch` to slice large Tables.jl partitions before IPC
+encoding, and set `max_flightdata_bytes` below the configured gRPC send limit
+to reject an oversized encoded payload with `RESOURCE_EXHAUSTED` before send.
+The byte limit is a final guard, not a fragmentation protocol: a single row
+whose buffers exceed the limit must be changed by the application.
 
 The Flight layer owns only Flight framing, descriptors, and application
 metadata. Arrow 3 owns schema inference, dictionary encoding, compression,

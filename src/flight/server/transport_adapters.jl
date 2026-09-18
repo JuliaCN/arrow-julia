@@ -89,7 +89,7 @@ function _transport_handler_result(task::Task, producer::Union{Nothing,Task}=not
     istaskfailed(task) && (task_error = task.exception)
 
     producer_error = nothing
-    if !isnothing(producer)
+    if !isnothing(producer) && istaskdone(producer)
         try
             wait(producer)
         catch
@@ -102,7 +102,11 @@ function _transport_handler_result(task::Task, producer::Union{Nothing,Task}=not
     return nothing
 end
 
-function _transport_task_result(task::Task)
+function _transport_task_result(task::Task, context::ServerCallContext)
+    while !istaskdone(task)
+        checkcall(context)
+        sleep(0.001)
+    end
     try
         wait(task)
     catch
@@ -111,9 +115,40 @@ function _transport_task_result(task::Task)
     return fetch(task)
 end
 
-function _transport_cleanup_task(task::Union{Nothing,Task})
+function _take_transport_response!(response::Channel, context::ServerCallContext)
+    while true
+        checkcall(context)
+        isready(response) && return Some(take!(response))
+        !isopen(response) && return nothing
+        sleep(0.001)
+    end
+end
+
+function _transport_cleanup_task(
+    task::Union{Nothing,Task},
+    runtime::Union{Nothing,FlightServerRuntime}=nothing,
+)
     isnothing(task) && return nothing
     istaskdone(task) && return nothing
+    if runtime !== nothing
+        status = timedwait(
+            () -> istaskdone(task),
+            runtime.cleanup_grace_seconds;
+            pollint=min(0.01, max(runtime.cleanup_grace_seconds / 10, 0.001)),
+        )
+        if status === :timed_out
+            _observe_cleanup_timeout!(runtime)
+            errormonitor(@async begin
+                try
+                    wait(task)
+                catch
+                finally
+                    _observe_orphan_finished!(runtime)
+                end
+            end)
+            return nothing
+        end
+    end
     try
         wait(task)
     catch
@@ -130,10 +165,16 @@ function _transport_close_request!(request::Channel)
     return nothing
 end
 
-function _pump_transport_messages!(request::Channel, messages, context::ServerCallContext)
+function _pump_transport_messages!(
+    request::Channel,
+    messages,
+    context::ServerCallContext,
+    runtime::Union{Nothing,FlightServerRuntime}=nothing,
+)
     try
         for message in messages
             checkcall(context)
+            _observe_flight_request!(runtime, message)
             put!(request, message)
         end
         checkcall(context)
@@ -153,14 +194,23 @@ function transport_unary_call(
     method::TransportMethodDescriptor,
     request;
     on_status_error::Function=_default_transport_status_error,
+    runtime::Union{Nothing,FlightServerRuntime}=nothing,
 )
+    lease = nothing
+    failed = true
     try
+        runtime !== nothing && (lease = _enter_flight_call(runtime))
+        _observe_flight_request!(runtime, request)
         checkcall(context)
         result = dispatch(service, context, method.method, request)
         checkcall(context)
+        _observe_flight_response!(runtime, result)
+        failed = false
         return result
     catch error
         _rethrow_transport_status_error(error, on_status_error)
+    finally
+        lease !== nothing && _leave_flight_call!(lease, failed)
     end
 end
 
@@ -172,8 +222,16 @@ function transport_server_streaming_call(
     emit::Function;
     response_capacity::Integer=DEFAULT_STREAM_BUFFER,
     on_status_error::Function=_default_transport_status_error,
+    runtime::Union{Nothing,FlightServerRuntime}=nothing,
 )
+    lease = nothing
+    failed = true
     response = Channel{method.method.response_type}(response_capacity)
+    try
+        runtime !== nothing && (lease = _enter_flight_call(runtime))
+    catch error
+        _rethrow_transport_status_error(error, on_status_error)
+    end
     task = _transport_spawn() do
         try
             checkcall(context)
@@ -189,18 +247,24 @@ function transport_server_streaming_call(
         end
     end
     try
-        for message in response
-            checkcall(context)
+        _observe_flight_request!(runtime, request)
+        while true
+            item = _take_transport_response!(response, context)
+            item === nothing && break
+            message = something(item)
+            _observe_flight_response!(runtime, message)
             emit(message)
         end
         _transport_handler_result(task)
         checkcall(context)
+        failed = false
         return nothing
     catch error
         _rethrow_transport_status_error(error, on_status_error)
     finally
         isopen(response) && close(response)
-        _transport_cleanup_task(task)
+        _transport_cleanup_task(task, runtime)
+        lease !== nothing && _leave_flight_call!(lease, failed)
     end
 end
 
@@ -211,10 +275,18 @@ function transport_client_streaming_call(
     messages;
     request_capacity::Integer=DEFAULT_STREAM_BUFFER,
     on_status_error::Function=_default_transport_status_error,
+    runtime::Union{Nothing,FlightServerRuntime}=nothing,
 )
+    lease = nothing
+    failed = true
     request = Channel{method.method.request_type}(request_capacity)
+    try
+        runtime !== nothing && (lease = _enter_flight_call(runtime))
+    catch error
+        _rethrow_transport_status_error(error, on_status_error)
+    end
     producer = _transport_spawn() do
-        _pump_transport_messages!(request, messages, context)
+        _pump_transport_messages!(request, messages, context, runtime)
     end
     task = _transport_spawn() do
         try
@@ -227,16 +299,19 @@ function transport_client_streaming_call(
         end
     end
     try
-        result = _transport_task_result(task)
+        result = _transport_task_result(task, context)
         _transport_handler_result(task, producer)
         checkcall(context)
+        _observe_flight_response!(runtime, result)
+        failed = false
         return result
     catch error
         _rethrow_transport_status_error(error, on_status_error)
     finally
         _transport_close_request!(request)
-        _transport_cleanup_task(task)
-        _transport_cleanup_task(producer)
+        _transport_cleanup_task(task, runtime)
+        _transport_cleanup_task(producer, runtime)
+        lease !== nothing && _leave_flight_call!(lease, failed)
     end
 end
 
@@ -246,7 +321,15 @@ function transport_client_streaming_live_call(
     method::TransportMethodDescriptor,
     request::Channel{T};
     on_status_error::Function=_default_transport_status_error,
+    runtime::Union{Nothing,FlightServerRuntime}=nothing,
 ) where {T}
+    lease = nothing
+    failed = true
+    try
+        runtime !== nothing && (lease = _enter_flight_call(runtime))
+    catch error
+        _rethrow_transport_status_error(error, on_status_error)
+    end
     task = _transport_spawn() do
         try
             checkcall(context)
@@ -258,14 +341,17 @@ function transport_client_streaming_live_call(
         end
     end
     try
-        result = _transport_task_result(task)
+        result = _transport_task_result(task, context)
         _transport_handler_result(task)
         checkcall(context)
+        _observe_flight_response!(runtime, result)
+        failed = false
         return result
     catch error
         _rethrow_transport_status_error(error, on_status_error)
     finally
-        _transport_cleanup_task(task)
+        _transport_cleanup_task(task, runtime)
+        lease !== nothing && _leave_flight_call!(lease, failed)
     end
 end
 
@@ -278,11 +364,19 @@ function transport_bidi_streaming_call(
     request_capacity::Integer=DEFAULT_STREAM_BUFFER,
     response_capacity::Integer=DEFAULT_STREAM_BUFFER,
     on_status_error::Function=_default_transport_status_error,
+    runtime::Union{Nothing,FlightServerRuntime}=nothing,
 )
+    lease = nothing
+    failed = true
     request = Channel{method.method.request_type}(request_capacity)
     response = Channel{method.method.response_type}(response_capacity)
+    try
+        runtime !== nothing && (lease = _enter_flight_call(runtime))
+    catch error
+        _rethrow_transport_status_error(error, on_status_error)
+    end
     producer = _transport_spawn() do
-        _pump_transport_messages!(request, messages, context)
+        _pump_transport_messages!(request, messages, context, runtime)
     end
     task = _transport_spawn() do
         try
@@ -295,21 +389,26 @@ function transport_bidi_streaming_call(
         end
     end
     try
-        for message in response
-            checkcall(context)
+        while true
+            item = _take_transport_response!(response, context)
+            item === nothing && break
+            message = something(item)
+            _observe_flight_response!(runtime, message)
             emit(message)
         end
         _transport_close_request!(request)
         _transport_handler_result(task, producer)
         checkcall(context)
+        failed = false
         return nothing
     catch error
         _rethrow_transport_status_error(error, on_status_error)
     finally
         _transport_close_request!(request)
         isopen(response) && close(response)
-        _transport_cleanup_task(task)
-        _transport_cleanup_task(producer)
+        _transport_cleanup_task(task, runtime)
+        _transport_cleanup_task(producer, runtime)
+        lease !== nothing && _leave_flight_call!(lease, failed)
     end
 end
 
@@ -321,8 +420,16 @@ function transport_bidi_streaming_live_call(
     emit::Function;
     response_capacity::Integer=DEFAULT_STREAM_BUFFER,
     on_status_error::Function=_default_transport_status_error,
+    runtime::Union{Nothing,FlightServerRuntime}=nothing,
 ) where {T}
+    lease = nothing
+    failed = true
     response = Channel{method.method.response_type}(response_capacity)
+    try
+        runtime !== nothing && (lease = _enter_flight_call(runtime))
+    catch error
+        _rethrow_transport_status_error(error, on_status_error)
+    end
     task = _transport_spawn() do
         try
             checkcall(context)
@@ -334,17 +441,22 @@ function transport_bidi_streaming_live_call(
         end
     end
     try
-        for message in response
-            checkcall(context)
+        while true
+            item = _take_transport_response!(response, context)
+            item === nothing && break
+            message = something(item)
+            _observe_flight_response!(runtime, message)
             emit(message)
         end
         _transport_handler_result(task)
         checkcall(context)
+        failed = false
         return nothing
     catch error
         _rethrow_transport_status_error(error, on_status_error)
     finally
         isopen(response) && close(response)
-        _transport_cleanup_task(task)
+        _transport_cleanup_task(task, runtime)
+        lease !== nothing && _leave_flight_call!(lease, failed)
     end
 end

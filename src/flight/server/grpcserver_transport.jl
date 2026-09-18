@@ -19,10 +19,11 @@
     grpcserver_flight_server(service::Service; kwargs...)
 
 Start an Arrow Flight server on the official `gRPCServer.jl` backend. Flight
-owns `request_capacity` and `response_capacity`; all other server keywords are
-forwarded to `gRPCServer.GRPCServer`, including TLS, message-size, concurrency,
-queueing, timeout, health, reflection, compression, and HTTP/2 settings where
-the selected backend supports them.
+owns channel capacity, Flight resource admission, bounded cleanup, and the
+pre-start `configure_server` callback; remaining server keywords are forwarded
+to `gRPCServer.GRPCServer`, including TLS, message-size, concurrency, queueing,
+timeout, health, reflection, compression, and HTTP/2 settings where the selected
+backend supports them.
 Load `gRPCServer` in the active Julia session to activate the extension.
 """
 function grpcserver_flight_server(args...; kwargs...)

@@ -121,6 +121,34 @@ using Tables
     wait(task)
     @test Arrow.Flight.table(channel_messages).id == [1, 2, 3]
 
+    sliced_messages = Arrow.Flight.flightdata(
+        (id=collect(Int64, 1:5), payload=fill("bounded", 5));
+        max_rows_per_batch=2,
+        app_metadata=("slice:1", "slice:2", "slice:3"),
+    )
+    sliced_batches =
+        collect(Arrow.Flight.stream(sliced_messages; include_app_metadata=true))
+    @test length(sliced_batches) == 3
+    @test length.(getproperty.(sliced_batches, :table)) == [2, 2, 1]
+    @test String.(getproperty.(sliced_batches, :app_metadata)) ==
+          ["slice:1", "slice:2", "slice:3"]
+    oversized_limit =
+        length(sliced_messages[2].data_header) + length(sliced_messages[2].data_body) - 1
+    oversized_error = try
+        Arrow.Flight.flightdata(
+            (id=collect(Int64, 1:5), payload=fill("bounded", 5));
+            max_rows_per_batch=2,
+            max_flightdata_bytes=oversized_limit,
+            app_metadata=("slice:1", "slice:2", "slice:3"),
+        )
+        nothing
+    catch error
+        error
+    end
+    @test oversized_error isa Arrow.Flight.FlightStatusError
+    @test oversized_error.code == Arrow.Flight.FLIGHT_STATUS_RESOURCE_EXHAUSTED
+    @test occursin("partition the source", oversized_error.message)
+
     # Encoding is genuinely incremental: the first batch reaches a bounded
     # downstream sink before the second source partition is even available.
     partitions = Channel{NamedTuple}(0)

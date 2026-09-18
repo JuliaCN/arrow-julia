@@ -23,6 +23,7 @@ module FacadeTests
 using Test
 using Tables
 using Dates
+using Sockets
 import DataAPI
 using Arrow
 using DataStrings
@@ -201,6 +202,32 @@ end
         @test length(s) == 2
         parts = collect(s)
         @test parts[1].x == [1, 2] && parts[2].x == [3, 4]
+        # A non-seekable stream yields before EOF. Keep the socket open after
+        # publishing complete messages and prove the first batch is available.
+        listener = Sockets.listen(ip"127.0.0.1", 0)
+        _, socket_port = getsockname(listener)
+        release_socket = Channel{Nothing}(1)
+        socket_writer = @async begin
+            connection = accept(listener)
+            write(connection, @view(bytes[1:(end - 8)]))
+            flush(connection)
+            take!(release_socket)
+            write(connection, @view(bytes[(end - 7):end]))
+            close(connection)
+        end
+        socket = connect(ip"127.0.0.1", socket_port)
+        socket_stream = Arrow.Stream(socket)
+        @test Base.IteratorSize(typeof(socket_stream)) isa Base.SizeUnknown
+        socket_first, socket_state = iterate(socket_stream)
+        @test socket_first.x == [1, 2]
+        @test !istaskdone(socket_writer)
+        put!(release_socket, nothing)
+        socket_second, socket_state = iterate(socket_stream, socket_state)
+        @test socket_second.x == [3, 4]
+        @test iterate(socket_stream, socket_state) === nothing
+        wait(socket_writer)
+        close(socket)
+        close(listener)
         # Stream is a Tables.partitions source: writing it re-partitions.
         io2 = IOBuffer()
         Arrow.write(io2, Arrow.Stream(bytes); file=false)

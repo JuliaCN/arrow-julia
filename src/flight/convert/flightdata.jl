@@ -62,13 +62,21 @@ mutable struct _FlightDataSink{S,M}
     app_metadata::M
     app_metadata_state::Any
     app_metadata_started::Bool
+    max_flightdata_bytes::Union{Nothing,Int}
 end
 
-function _FlightDataSink(sink, descriptor, app_metadata)
+function _FlightDataSink(sink, descriptor, app_metadata, max_flightdata_bytes)
     values =
         isnothing(app_metadata) ? nothing :
         _is_app_metadata_value(app_metadata) ? (app_metadata,) : app_metadata
-    return _FlightDataSink(sink, descriptor, values, nothing, false)
+    limit = if isnothing(max_flightdata_bytes)
+        nothing
+    else
+        max_flightdata_bytes > 0 ||
+            throw(ArgumentError("max_flightdata_bytes must be positive"))
+        Int(max_flightdata_bytes)
+    end
+    return _FlightDataSink(sink, descriptor, values, nothing, false, limit)
 end
 
 _emit_flightdata!(sink::AbstractVector, message::Protocol.FlightData) = push!(sink, message)
@@ -102,6 +110,17 @@ function _drain_flightdata!(sink::_FlightDataSink, bytes::Vector{UInt8})
     for part in _split_ipc_stream(bytes)
         part_metadata =
             part.kind isa ArrowParent.Meta.RecordBatch ? _next_app_metadata!(sink) : UInt8[]
+        payload_bytes = length(part.header) + length(part_metadata) + length(part.body)
+        if !isnothing(sink.max_flightdata_bytes) &&
+           payload_bytes > sink.max_flightdata_bytes
+            throw(
+                FlightStatusError(
+                    FLIGHT_STATUS_RESOURCE_EXHAUSTED,
+                    "encoded FlightData payload $(payload_bytes) bytes exceeds limit " *
+                    "$(sink.max_flightdata_bytes); partition the source into smaller record batches",
+                ),
+            )
+        end
         _emit_flightdata!(
             sink.sink,
             Protocol.FlightData(sink.descriptor, part.header, part_metadata, part.body),
@@ -109,6 +128,23 @@ function _drain_flightdata!(sink::_FlightDataSink, bytes::Vector{UInt8})
         sink.descriptor = nothing
     end
     return length(bytes)
+end
+
+function _flight_partition_slices(partition, max_rows_per_batch::Union{Nothing,Integer})
+    isnothing(max_rows_per_batch) && return (partition,)
+    max_rows_per_batch > 0 || throw(ArgumentError("max_rows_per_batch must be positive"))
+    nrows = Tables.rowcount(partition)
+    isnothing(nrows) && throw(
+        ArgumentError(
+            "max_rows_per_batch requires a Tables.jl source with a known row count",
+        ),
+    )
+    nrows == 0 && return (partition,)
+    step = Int(max_rows_per_batch)
+    return (
+        Tables.subset(partition, first:min(first + step - 1, nrows); viewhint=true) for
+        first = 1:step:nrows
+    )
 end
 
 function _putflightdata!(
@@ -120,11 +156,13 @@ function _putflightdata!(
     metadata=nothing,
     colmetadata=nothing,
     app_metadata=nothing,
+    max_rows_per_batch::Union{Nothing,Integer}=nothing,
+    max_flightdata_bytes::Union{Nothing,Integer}=nothing,
 )
     alignment == DEFAULT_IPC_ALIGNMENT ||
         throw(ArgumentError("Arrow 3 Flight IPC uses the standard 8-byte alignment"))
     source, app_metadata = _unwrap_app_metadata_source(source, app_metadata)
-    output = _FlightDataSink(sink, descriptor, app_metadata)
+    output = _FlightDataSink(sink, descriptor, app_metadata, max_flightdata_bytes)
     buffer = IOBuffer()
     writer = ArrowParent.Writer(
         buffer;
@@ -136,9 +174,11 @@ function _putflightdata!(
     try
         wrote_partition = false
         for partition in Tables.partitions(source)
-            ArrowParent.write(writer, partition)
-            _drain_flightdata!(output, take!(buffer))
-            wrote_partition = true
+            for slice in _flight_partition_slices(partition, max_rows_per_batch)
+                ArrowParent.write(writer, slice)
+                _drain_flightdata!(output, take!(buffer))
+                wrote_partition = true
+            end
         end
         wrote_partition || throw(ArgumentError("cannot encode an empty Flight source"))
         close(writer)
@@ -163,6 +203,8 @@ function _flightdata_messages(
     metadata=nothing,
     colmetadata=nothing,
     app_metadata=nothing,
+    max_rows_per_batch::Union{Nothing,Integer}=nothing,
+    max_flightdata_bytes::Union{Nothing,Integer}=nothing,
 )
     messages = Protocol.FlightData[]
     _putflightdata!(
@@ -174,6 +216,8 @@ function _flightdata_messages(
         metadata=metadata,
         colmetadata=colmetadata,
         app_metadata=app_metadata,
+        max_rows_per_batch=max_rows_per_batch,
+        max_flightdata_bytes=max_flightdata_bytes,
     )
     return messages
 end
@@ -183,6 +227,9 @@ end
 
 Encode a Tables.jl source with Arrow 3's canonical IPC writer, then expose its
 schema, dictionary, and record-batch messages as Flight `FlightData` values.
+Use `max_rows_per_batch` to bound outgoing record-batch geometry and
+`max_flightdata_bytes` to reject an encoded message before transport when it
+would exceed the configured gRPC policy.
 """
 flightdata(source; kwargs...) = _flightdata_messages(source; kwargs...)
 

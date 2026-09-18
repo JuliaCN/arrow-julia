@@ -241,4 +241,115 @@ function flight_server_core_test_transport_adapters(fixture)
     @test live_messages[1].data_body == echoed.data_body
     close(live_requests)
     wait(live_task)
+
+    runtime = Arrow.Flight.FlightServerRuntime(
+        max_active_calls=1,
+        max_reserved_bytes=64,
+        call_reservation_bytes=64,
+        cleanup_grace_seconds=0.02,
+    )
+    unary_entered = Channel{Nothing}(1)
+    unary_release = Channel{Nothing}(1)
+    governed_service = Arrow.Flight.Service(
+        getflightinfo=(ctx, descriptor) -> begin
+            put!(unary_entered, nothing)
+            take!(unary_release)
+            fixture.protocol.FlightInfo(
+                UInt8[],
+                descriptor,
+                fixture.protocol.FlightEndpoint[],
+                1,
+                8,
+                false,
+                UInt8[],
+            )
+        end,
+    )
+    governed_method = Arrow.Flight.lookuptransportmethod(
+        Arrow.Flight.transportdescriptor(governed_service),
+        "GetFlightInfo",
+    )
+    governed_task = @async Arrow.Flight.transport_unary_call(
+        governed_service,
+        fixture.context,
+        governed_method,
+        fixture.descriptor;
+        runtime=runtime,
+    )
+    take!(unary_entered)
+    rejected = try
+        Arrow.Flight.transport_unary_call(
+            governed_service,
+            fixture.context,
+            governed_method,
+            fixture.descriptor;
+            runtime=runtime,
+        )
+        nothing
+    catch error
+        error
+    end
+    @test rejected isa Arrow.Flight.FlightStatusError
+    @test rejected.code == Arrow.Flight.FLIGHT_STATUS_RESOURCE_EXHAUSTED
+    admitted_metrics = Arrow.Flight.flight_server_metrics(runtime)
+    @test admitted_metrics.active_calls == 1
+    @test admitted_metrics.reserved_bytes == 64
+    @test admitted_metrics.calls_rejected == 1
+    put!(unary_release, nothing)
+    wait(governed_task)
+    completed_metrics = Arrow.Flight.flight_server_metrics(runtime)
+    @test completed_metrics.active_calls == 0
+    @test completed_metrics.reserved_bytes == 0
+    @test completed_metrics.calls_completed == 1
+    @test completed_metrics.request_messages == 1
+    @test completed_metrics.response_messages == 1
+
+    cleanup_runtime = Arrow.Flight.FlightServerRuntime(
+        max_active_calls=1,
+        max_reserved_bytes=64,
+        call_reservation_bytes=64,
+        cleanup_grace_seconds=0.02,
+    )
+    handler_entered = Channel{Nothing}(1)
+    handler_release = Channel{Nothing}(1)
+    cancelled = Ref(false)
+    noncooperative_service = Arrow.Flight.Service(
+        doget=(ctx, ticket, response) -> begin
+            put!(handler_entered, nothing)
+            take!(handler_release)
+        end,
+    )
+    noncooperative_method = Arrow.Flight.lookuptransportmethod(
+        Arrow.Flight.transportdescriptor(noncooperative_service),
+        "DoGet",
+    )
+    noncooperative_context = Arrow.Flight.ServerCallContext(is_cancelled=() -> cancelled[])
+    transport_task = @async try
+        Arrow.Flight.transport_server_streaming_call(
+            noncooperative_service,
+            noncooperative_context,
+            noncooperative_method,
+            fixture.protocol.Ticket(b"blocked"),
+            _ -> nothing;
+            runtime=cleanup_runtime,
+        )
+        nothing
+    catch error
+        error
+    end
+    take!(handler_entered)
+    cancelled[] = true
+    @test timedwait(() -> istaskdone(transport_task), 1.0) !== :timed_out
+    cancelled_error = fetch(transport_task)
+    @test cancelled_error isa Arrow.Flight.FlightStatusError
+    @test cancelled_error.code == Arrow.Flight.FLIGHT_STATUS_CANCELLED
+    orphan_metrics = Arrow.Flight.flight_server_metrics(cleanup_runtime)
+    @test orphan_metrics.cleanup_timeouts == 1
+    @test orphan_metrics.orphan_tasks == 1
+    @test orphan_metrics.active_calls == 0
+    put!(handler_release, nothing)
+    @test timedwait(
+        () -> Arrow.Flight.flight_server_metrics(cleanup_runtime).orphan_tasks == 0,
+        1.0,
+    ) !== :timed_out
 end

@@ -39,6 +39,7 @@ function _unary_handler(service, method::Flight.MethodDescriptor)
             transport_method,
             request;
             on_status_error=_rethrow_flight_status_error,
+            runtime=configured.runtime,
         )
     end
 end
@@ -55,6 +56,7 @@ function _server_streaming_handler(service, method::Flight.MethodDescriptor)
             message -> gRPCServer.send!(stream, message);
             response_capacity=configured.response_capacity,
             on_status_error=_rethrow_flight_status_error,
+            runtime=configured.runtime,
         )
         gRPCServer.close!(stream)
         return nothing
@@ -72,6 +74,7 @@ function _client_streaming_handler(service, method::Flight.MethodDescriptor)
             stream;
             request_capacity=configured.request_capacity,
             on_status_error=_rethrow_flight_status_error,
+            runtime=configured.runtime,
         )
     end
 end
@@ -89,6 +92,7 @@ function _bidi_streaming_handler(service, method::Flight.MethodDescriptor)
             request_capacity=configured.request_capacity,
             response_capacity=configured.response_capacity,
             on_status_error=_rethrow_flight_status_error,
+            runtime=configured.runtime,
         )
         gRPCServer.close!(stream)
         return nothing

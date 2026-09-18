@@ -917,11 +917,12 @@ include("scan.jl")
 
 const _FILE_MAGIC = b"ARROW1"
 
-const _OpenedReader = Union{SourceFile,ArrowFile,IPCStream}
+const _OpenedReader = Union{SourceFile,ArrowFile,IPCStream,IncrementalIPCStream}
 
 _configuredlimits(source::SourceFile) = source.limits
 _configuredlimits(source::ArrowFile) = source.limits
 _configuredlimits(source::IPCStream) = source.limits
+_configuredlimits(source::IncrementalIPCStream) = source.limits
 _defaultreaderlimits(source) =
     source isa _OpenedReader ? _configuredlimits(source) : Limits()
 
@@ -1042,7 +1043,7 @@ _opensource(
     budget=nothing,
 ) = _openbytes(bytes; limits=limits, budget=budget)
 _opensource(
-    src::Union{IPCStream,ArrowFile};
+    src::Union{IPCStream,ArrowFile,IncrementalIPCStream};
     mmap::Bool=true,
     limits::Limits=_configuredlimits(src),
     budget=nothing,
@@ -1170,14 +1171,20 @@ function _tablefrom(src, plan::_ScanPlan, regions, fields, budget)
     )
 end
 
-function _corefields(source::Union{IPCStream,ArrowFile}, budget=nothing)
-    fields = source isa IPCStream ? source.corefields : source.fields
+function _corefields(
+    source::Union{IPCStream,ArrowFile,IncrementalIPCStream},
+    budget=nothing,
+)
+    fields =
+        source isa IPCStream ? source.corefields :
+        source isa IncrementalIPCStream ? source.decoder.corefields : source.fields
     _chargevector!(budget, AC.Field, length(fields), "source field list")
     return collect(AC.Field, fields)
 end
 
 _tableschema(s::IPCStream) = s.schema
 _tableschema(f::ArrowFile) = f.schema
+_tableschema(s::IncrementalIPCStream) = s.decoder.schema
 
 "Merge category snapshots while preserving every entry in the first snapshot."
 function _mergecategorypools(pools; widen::Bool=false, budget=nothing)
@@ -1404,15 +1411,17 @@ one `Stream` iterator, even after a batch is dropped; raise it explicitly for
 a trusted large file whose total decoded allocation exceeds the default.
 Every yielded `Table` shares the source lifetime: releasing a batch closes its
 parent `Stream`, while the batch's materialized columns remain usable.
-A STREAM-format source is read to the end and every batch is decoded when
-the `Stream` is constructed. A file-format `IO` or byte-vector input is read
+An IPC stream on a non-seekable `IO` is framed and decoded incrementally, so
+socket and FIFO consumers can receive a batch before EOF. A STREAM-format
+seekable source is read to the end when the `Stream` is constructed. A
+file-format `IO` or byte-vector input is read
 to the end too (the whole source stays in memory) but its record batches
 still decode lazily, one per iteration. `Arrow.write` itself is whole-buffer
 (it materializes every partition before writing), so it does not bound
 memory either.
 """
 struct Stream
-    src::Union{IPCStream,ArrowFile}
+    src::Union{IPCStream,ArrowFile,IncrementalIPCStream}
     regions::Vector{AC.OwnerRegion}
     budget::AllocationBudget
     closed::AC.ReleaseCell
@@ -1420,13 +1429,27 @@ struct Stream
     arrowtypeslock::ReentrantLock
 end
 
+function _stream_io_is_seekable(io::IO)
+    try
+        current = position(io)
+        seek(io, current)
+        return true
+    catch
+        return false
+    end
+end
+
 function Stream(source; mmap::Bool=true, limits::Limits=_defaultreaderlimits(source))
     readlimits = _readerlimits(source, limits)
     budget =
-        source isa IPCStream ? source.budget :
+        source isa Union{IPCStream,IncrementalIPCStream} ? source.budget :
         AllocationBudget(readlimits.max_total_allocated_bytes)
-    src = _opensource(source; mmap=mmap, limits=readlimits, budget=budget)
-    regions = _sourceregions(src, budget)
+    src = if source isa IO && !_stream_io_is_seekable(source)
+        IncrementalIPCStream(source, readlimits, budget)
+    else
+        _opensource(source; mmap=mmap, limits=readlimits, budget=budget)
+    end
+    regions = src isa IncrementalIPCStream ? AC.OwnerRegion[] : _sourceregions(src, budget)
     # The stream and every yielded partition share one lifetime authority.
     # Releasing either closes the same source region and makes later
     # iteration fail consistently for borrowed and decompressed columns.
@@ -1437,7 +1460,7 @@ function Stream(source; mmap::Bool=true, limits::Limits=_defaultreaderlimits(sou
         src,
         regions,
         budget,
-        only(regions).cell,
+        src isa IncrementalIPCStream ? AC.ReleaseCell() : only(regions).cell,
         _ArrowTypesContext(budget=budget),
         ReentrantLock(),
     )
@@ -1446,6 +1469,7 @@ end
 function AC.release!(s::Stream)
     AC.release!(getfield(s, :closed))
     foreach(AC.release!, getfield(s, :regions))
+    getfield(s, :src) isa IncrementalIPCStream && close(getfield(s, :src))
     return nothing
 end
 
@@ -1462,16 +1486,28 @@ function _batch(f::ArrowFile, i, budget)
 end
 _batchfields(s::IPCStream) = s.corefields
 _batchfields(f::ArrowFile) = f.fields
+_batchfields(s::IncrementalIPCStream) = s.decoder.corefields
 
-Base.length(s::Stream) = _nbatches(s.src)
+function Base.length(s::Stream)
+    s.src isa IncrementalIPCStream && throw(
+        ArgumentError("the length of a non-seekable Arrow.Stream is not known before EOF"),
+    )
+    return _nbatches(s.src)
+end
 Base.eltype(::Type{Stream}) = Table
+Base.IteratorSize(::Type{Stream}) = Base.SizeUnknown()
 
 function Base.iterate(s::Stream, i::Int=1)
     closed = getfield(s, :closed)
     (@atomic :acquire closed.closed) &&
         throw(InvalidStateException("the stream was released", :closed))
-    i > _nbatches(s.src) && return nothing
-    b = _batch(s.src, i, s.budget)
+    if s.src isa IncrementalIPCStream
+        b = AC.nextbatch!(s.src)
+        b === nothing && return nothing
+    else
+        i > _nbatches(s.src) && return nothing
+        b = _batch(s.src, i, s.budget)
+    end
     fields = _batchfields(s.src)
     names = _fieldnamesymbols(fields, s.budget)
     arrowtypes = getfield(s, :arrowtypes)
