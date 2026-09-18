@@ -35,7 +35,7 @@ function _unary_handler(service, method::Flight.MethodDescriptor)
     return function (context, request)
         return Flight.transport_unary_call(
             configured.service,
-            _call_context(context),
+            _call_context(context, configured.secure),
             transport_method,
             request;
             on_status_error=_rethrow_flight_status_error,
@@ -49,7 +49,7 @@ function _server_streaming_handler(service, method::Flight.MethodDescriptor)
     return function (context, request, stream)
         Flight.transport_server_streaming_call(
             configured.service,
-            _call_context(context),
+            _call_context(context, configured.secure),
             transport_method,
             request,
             message -> gRPCServer.send!(stream, message);
@@ -67,7 +67,7 @@ function _client_streaming_handler(service, method::Flight.MethodDescriptor)
     return function (context, stream)
         return Flight.transport_client_streaming_call(
             configured.service,
-            _call_context(context),
+            _call_context(context, configured.secure),
             transport_method,
             stream;
             request_capacity=configured.request_capacity,
@@ -82,7 +82,7 @@ function _bidi_streaming_handler(service, method::Flight.MethodDescriptor)
     return function (context, stream)
         Flight.transport_bidi_streaming_call(
             configured.service,
-            _call_context(context),
+            _call_context(context, configured.secure),
             transport_method,
             stream,
             message -> gRPCServer.send!(stream, message);

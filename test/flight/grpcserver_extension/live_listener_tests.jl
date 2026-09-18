@@ -29,12 +29,16 @@ function grpcserver_extension_test_live_listener(grpcserver, service, fixture)
         max_concurrent_requests=2,
         request_capacity=4,
         response_capacity=4,
+        max_message_size=8 * 1024 * 1024,
+        enable_health_check=true,
     )
 
     try
         @test isopen(flight_server)
         @test flight_server.port > 0
         @test flight_server.server.config.max_concurrent_requests == 2
+        @test flight_server.server.config.max_message_size == 8 * 1024 * 1024
+        @test flight_server.server.config.enable_health_check
         pyarrow_smoke_ran =
             flight_live_pyarrow_smoke(flight_server.host, flight_server.port, fixture)
         @test pyarrow_smoke_ran || isnothing(FlightTestSupport.pyarrow_flight_python())

@@ -19,14 +19,21 @@ struct GRPCServerFlightService
     service::Flight.Service
     request_capacity::Int
     response_capacity::Int
+    secure::Bool
 end
 
 function GRPCServerFlightService(
     service::Flight.Service,
     request_capacity::Integer,
     response_capacity::Integer,
+    secure::Bool=false,
 )
-    return GRPCServerFlightService(service, Int(request_capacity), Int(response_capacity))
+    return GRPCServerFlightService(
+        service,
+        Int(request_capacity),
+        Int(response_capacity),
+        secure,
+    )
 end
 
 mutable struct GRPCServerFlightServer
@@ -94,6 +101,7 @@ function Flight.grpcserver_flight_server(
     max_concurrent_requests::Integer=1024,
     request_capacity::Integer=Flight.DEFAULT_STREAM_BUFFER,
     response_capacity::Integer=Flight.DEFAULT_STREAM_BUFFER,
+    server_kwargs...,
 )
     max_concurrent_requests > 0 ||
         throw(ArgumentError("max_concurrent_requests must be positive"))
@@ -102,12 +110,17 @@ function Flight.grpcserver_flight_server(
 
     actual_host = String(host)
     actual_port = _grpcserver_bind_port(actual_host, port)
-    configured_service =
-        GRPCServerFlightService(service, Int(request_capacity), Int(response_capacity))
     grpc_server = gRPCServer.GRPCServer(
         actual_host,
         actual_port;
         max_concurrent_requests=Int(max_concurrent_requests),
+        server_kwargs...,
+    )
+    configured_service = GRPCServerFlightService(
+        service,
+        Int(request_capacity),
+        Int(response_capacity),
+        !isnothing(grpc_server.config.tls),
     )
     gRPCServer.register!(grpc_server, configured_service)
     gRPCServer.start!(grpc_server)
@@ -129,8 +142,8 @@ function Flight.grpcserver_flight_server(
     )
 end
 
-function Flight.stop!(server::GRPCServerFlightServer; force::Bool=false)
-    gRPCServer.stop!(server.server; force=force)
+function Flight.stop!(server::GRPCServerFlightServer; force::Bool=false, timeout::Real=0.0)
+    gRPCServer.stop!(server.server; force=force, timeout=Float64(timeout))
     return server
 end
 

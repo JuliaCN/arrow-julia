@@ -54,6 +54,39 @@ function flight_server_core_test_transport_adapters(fixture)
     @test unary_error isa ArgumentError
     @test occursin("not implemented", sprint(showerror, unary_error))
 
+    cancelled = Ref(true)
+    cancelled_context = Arrow.Flight.ServerCallContext(is_cancelled=() -> cancelled[])
+    cancelled_error = try
+        Arrow.Flight.transport_unary_call(
+            fixture.implemented,
+            cancelled_context,
+            getflightinfo,
+            fixture.descriptor;
+            on_status_error=error -> throw(ArgumentError("status $(error.code)")),
+        )
+        nothing
+    catch error
+        error
+    end
+    @test cancelled_error isa ArgumentError
+    @test occursin("status 1", sprint(showerror, cancelled_error))
+
+    deadline_context = Arrow.Flight.ServerCallContext(remaining_time=() -> 0.0)
+    deadline_error = try
+        Arrow.Flight.transport_unary_call(
+            fixture.implemented,
+            deadline_context,
+            getflightinfo,
+            fixture.descriptor;
+            on_status_error=error -> throw(ArgumentError("status $(error.code)")),
+        )
+        nothing
+    catch error
+        error
+    end
+    @test deadline_error isa ArgumentError
+    @test occursin("status 4", sprint(showerror, deadline_error))
+
     doget = Arrow.Flight.lookuptransportmethod(descriptor, "DoGet")
     doget_messages = fixture.protocol.FlightData[]
     @test isnothing(
@@ -66,6 +99,45 @@ function flight_server_core_test_transport_adapters(fixture)
         ),
     )
     @test length(doget_messages) == 1
+
+    cancel_after_first = Ref(false)
+    streaming_context =
+        Arrow.Flight.ServerCallContext(is_cancelled=() -> cancel_after_first[])
+    streaming_service = Arrow.Flight.Service(
+        doget=(ctx, ticket, response) -> begin
+            put!(response, fixture.protocol.FlightData(nothing, UInt8[], UInt8[0x01], UInt8[]))
+            put!(
+                response,
+                fixture.protocol.FlightData(nothing, UInt8[], UInt8[0x02], UInt8[]),
+            )
+            close(response)
+        end,
+    )
+    streaming_method = Arrow.Flight.lookuptransportmethod(
+        Arrow.Flight.transportdescriptor(streaming_service),
+        "DoGet",
+    )
+    streamed = fixture.protocol.FlightData[]
+    streaming_error = try
+        Arrow.Flight.transport_server_streaming_call(
+            streaming_service,
+            streaming_context,
+            streaming_method,
+            fixture.protocol.Ticket(b"cancel"),
+            message -> begin
+                push!(streamed, message)
+                cancel_after_first[] = true
+            end;
+            response_capacity=2,
+            on_status_error=error -> throw(ArgumentError("status $(error.code)")),
+        )
+        nothing
+    catch error
+        error
+    end
+    @test length(streamed) == 1
+    @test streaming_error isa ArgumentError
+    @test occursin("status 1", sprint(showerror, streaming_error))
 
     listactions = Arrow.Flight.lookuptransportmethod(descriptor, "ListActions")
     actions = fixture.protocol.ActionType[]

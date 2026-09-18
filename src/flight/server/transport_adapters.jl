@@ -102,6 +102,15 @@ function _transport_handler_result(task::Task, producer::Union{Nothing,Task}=not
     return nothing
 end
 
+function _transport_task_result(task::Task)
+    try
+        wait(task)
+    catch
+    end
+    istaskfailed(task) && throw(task.exception)
+    return fetch(task)
+end
+
 function _transport_cleanup_task(task::Union{Nothing,Task})
     isnothing(task) && return nothing
     istaskdone(task) && return nothing
@@ -121,11 +130,13 @@ function _transport_close_request!(request::Channel)
     return nothing
 end
 
-function _pump_transport_messages!(request::Channel, messages)
+function _pump_transport_messages!(request::Channel, messages, context::ServerCallContext)
     try
         for message in messages
+            checkcall(context)
             put!(request, message)
         end
+        checkcall(context)
     finally
         close(request)
     end
@@ -144,7 +155,10 @@ function transport_unary_call(
     on_status_error::Function=_default_transport_status_error,
 )
     try
-        return dispatch(service, context, method.method, request)
+        checkcall(context)
+        result = dispatch(service, context, method.method, request)
+        checkcall(context)
+        return result
     catch error
         _rethrow_transport_status_error(error, on_status_error)
     end
@@ -162,6 +176,7 @@ function transport_server_streaming_call(
     response = Channel{method.method.response_type}(response_capacity)
     task = _transport_spawn() do
         try
+            checkcall(context)
             if method.method.handler_field === :listactions
                 listactions(service, context, response)
             else
@@ -175,10 +190,14 @@ function transport_server_streaming_call(
     end
     try
         for message in response
+            checkcall(context)
             emit(message)
         end
         _transport_handler_result(task)
+        checkcall(context)
         return nothing
+    catch error
+        _rethrow_transport_status_error(error, on_status_error)
     finally
         isopen(response) && close(response)
         _transport_cleanup_task(task)
@@ -195,20 +214,29 @@ function transport_client_streaming_call(
 )
     request = Channel{method.method.request_type}(request_capacity)
     producer = _transport_spawn() do
-        _pump_transport_messages!(request, messages)
+        _pump_transport_messages!(request, messages, context)
     end
     task = _transport_spawn() do
         try
-            dispatch(service, context, method.method, request)
+            checkcall(context)
+            result = dispatch(service, context, method.method, request)
+            checkcall(context)
+            result
         catch error
             _rethrow_transport_status_error(error, on_status_error)
         end
     end
     try
-        return fetch(task)
+        result = _transport_task_result(task)
+        _transport_handler_result(task, producer)
+        checkcall(context)
+        return result
+    catch error
+        _rethrow_transport_status_error(error, on_status_error)
     finally
         _transport_close_request!(request)
-        _transport_handler_result(task, producer)
+        _transport_cleanup_task(task)
+        _transport_cleanup_task(producer)
     end
 end
 
@@ -221,15 +249,23 @@ function transport_client_streaming_live_call(
 ) where {T}
     task = _transport_spawn() do
         try
-            dispatch(service, context, method.method, request)
+            checkcall(context)
+            result = dispatch(service, context, method.method, request)
+            checkcall(context)
+            result
         catch error
             _rethrow_transport_status_error(error, on_status_error)
         end
     end
     try
-        return fetch(task)
-    finally
+        result = _transport_task_result(task)
         _transport_handler_result(task)
+        checkcall(context)
+        return result
+    catch error
+        _rethrow_transport_status_error(error, on_status_error)
+    finally
+        _transport_cleanup_task(task)
     end
 end
 
@@ -246,10 +282,11 @@ function transport_bidi_streaming_call(
     request = Channel{method.method.request_type}(request_capacity)
     response = Channel{method.method.response_type}(response_capacity)
     producer = _transport_spawn() do
-        _pump_transport_messages!(request, messages)
+        _pump_transport_messages!(request, messages, context)
     end
     task = _transport_spawn() do
         try
+            checkcall(context)
             dispatch(service, context, method.method, request, response)
         catch error
             _rethrow_transport_status_error(error, on_status_error)
@@ -259,11 +296,15 @@ function transport_bidi_streaming_call(
     end
     try
         for message in response
+            checkcall(context)
             emit(message)
         end
         _transport_close_request!(request)
         _transport_handler_result(task, producer)
+        checkcall(context)
         return nothing
+    catch error
+        _rethrow_transport_status_error(error, on_status_error)
     finally
         _transport_close_request!(request)
         isopen(response) && close(response)
@@ -284,6 +325,7 @@ function transport_bidi_streaming_live_call(
     response = Channel{method.method.response_type}(response_capacity)
     task = _transport_spawn() do
         try
+            checkcall(context)
             dispatch(service, context, method.method, request, response)
         catch error
             _rethrow_transport_status_error(error, on_status_error)
@@ -293,10 +335,14 @@ function transport_bidi_streaming_live_call(
     end
     try
         for message in response
+            checkcall(context)
             emit(message)
         end
         _transport_handler_result(task)
+        checkcall(context)
         return nothing
+    catch error
+        _rethrow_transport_status_error(error, on_status_error)
     finally
         isopen(response) && close(response)
         _transport_cleanup_task(task)

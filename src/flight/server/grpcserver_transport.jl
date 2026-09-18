@@ -18,7 +18,11 @@
 """
     grpcserver_flight_server(service::Service; kwargs...)
 
-Start an Arrow Flight server on the packaged `gRPCServer.jl` backend.
+Start an Arrow Flight server on the official `gRPCServer.jl` backend. Flight
+owns `request_capacity` and `response_capacity`; all other server keywords are
+forwarded to `gRPCServer.GRPCServer`, including TLS, message-size, concurrency,
+queueing, timeout, health, reflection, compression, and HTTP/2 settings where
+the selected backend supports them.
 Load `gRPCServer` in the active Julia session to activate the extension.
 """
 function grpcserver_flight_server(args...; kwargs...)
@@ -30,11 +34,11 @@ function grpcserver_flight_server(args...; kwargs...)
 end
 
 """
-    stop!(server; force = false)
+    stop!(server; force=false, timeout=0.0)
 
 Stop one Arrow Flight listener backend instance.
 """
-function stop!(server; force::Bool=false)
+function stop!(server; force::Bool=false, timeout::Real=0.0)
     throw(MethodError(stop!, (server,)))
 end
 

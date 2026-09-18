@@ -138,4 +138,30 @@ using Tables
         messages[2].data_body[1:(end - 1)],
     )
     @test_throws ArgumentError Arrow.Flight.table(damaged)
+
+    @test_throws Arrow.ValidationError Arrow.Flight.streambytes(
+        messages;
+        limits=Arrow.Limits(max_messages=2),
+    )
+    @test_throws Arrow.ValidationError Arrow.Flight.streambytes(
+        messages;
+        limits=Arrow.Limits(max_body_bytes=length(messages[2].data_body) - 1),
+    )
+    @test_throws Arrow.ValidationError Arrow.Flight.streambytes(
+        messages;
+        limits=Arrow.Limits(max_metadata_bytes=length(messages[1].data_header) - 1),
+    )
+    @test_throws Arrow.AllocationLimitError Arrow.Flight.streambytes(
+        messages;
+        limits=Arrow.Limits(max_total_allocated_bytes=length(bytes) - 1),
+    )
+    @test_throws Arrow.AllocationLimitError Arrow.Flight.table(
+        messages;
+        limits=Arrow.Limits(max_total_allocated_bytes=length(bytes)),
+    )
+    limited = Arrow.Flight.table(
+        messages;
+        limits=Arrow.Limits(max_total_allocated_bytes=4 * 1024 * 1024),
+    )
+    @test limited.id == [1, 2, 3]
 end

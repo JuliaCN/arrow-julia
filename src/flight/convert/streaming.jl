@@ -17,6 +17,56 @@
 
 streambytes(message::Protocol.FlightData; kwargs...) = streambytes((message,); kwargs...)
 
+function _validate_flight_message_limits(message::Protocol.FlightData, limits)
+    header_bytes = length(message.data_header)
+    header_bytes <= limits.max_metadata_bytes || throw(
+        ArrowParent.ValidationError(
+            "FlightData IPC header length $(header_bytes) exceeds limit $(limits.max_metadata_bytes)",
+        ),
+    )
+    body_bytes = length(message.data_body)
+    body_bytes <= limits.max_body_bytes || throw(
+        ArrowParent.ValidationError(
+            "FlightData body length $(body_bytes) exceeds limit $(limits.max_body_bytes)",
+        ),
+    )
+    app_metadata_bytes = length(message.app_metadata)
+    app_metadata_bytes <= limits.max_metadata_bytes || throw(
+        ArrowParent.ValidationError(
+            "FlightData application metadata length $(app_metadata_bytes) exceeds limit $(limits.max_metadata_bytes)",
+        ),
+    )
+    return nothing
+end
+
+function _charge_rebuilt_stream!(budget, amount::Integer, what::AbstractString)
+    ArrowParent._charge!(budget, Int64(amount), what)
+    return nothing
+end
+
+function _write_budgeted_schema!(io::IO, schema, alignment, budget)
+    bytes = schemaipc(schema; alignment=alignment)
+    _charge_rebuilt_stream!(budget, length(bytes), "rebuilt Flight schema")
+    Base.write(io, bytes)
+    return nothing
+end
+
+function _write_budgeted_flight_message!(
+    io::IO,
+    header,
+    body,
+    alignment,
+    ipc_message,
+    budget,
+)
+    padded_header_bytes = length(header) + _padding_length(length(header), alignment)
+    _charge_rebuilt_stream!(budget, 8, "rebuilt Flight IPC prefix")
+    _charge_rebuilt_stream!(budget, padded_header_bytes, "rebuilt Flight IPC metadata")
+    _charge_rebuilt_stream!(budget, length(body), "rebuilt Flight IPC body")
+    _write_framed_message(io, header, body, alignment, ipc_message)
+    return nothing
+end
+
 function _missing_schema_message()
     return join(
         [
@@ -34,12 +84,23 @@ function _rebuild_stream(
     alignment::Integer=DEFAULT_IPC_ALIGNMENT,
     end_marker::Bool=true,
     capture_metadata::Bool=false,
+    limits=ArrowParent.Limits(),
 )
+    ArrowParent._validatelimits(limits)
     io = IOBuffer()
     metadata = Vector{Vector{UInt8}}()
+    budget = ArrowParent.AllocationBudget(limits.max_total_allocated_bytes)
+    message_count = 0
     has_schema = false
     injected_schema = false
     for message in messages
+        message_count < limits.max_messages || throw(
+            ArrowParent.ValidationError(
+                "Flight message count exceeds limit $(limits.max_messages)",
+            ),
+        )
+        message_count += 1
+        _validate_flight_message_limits(message, limits)
         if isempty(message.data_header)
             isempty(message.data_body) || throw(
                 ArgumentError("FlightData message has a body but no Arrow IPC header"),
@@ -53,20 +114,36 @@ function _rebuild_stream(
             has_schema = true
         elseif !has_schema && !injected_schema
             schema === nothing && throw(ArgumentError(_missing_schema_message()))
-            Base.write(io, schemaipc(schema; alignment=alignment))
+            _write_budgeted_schema!(io, schema, alignment, budget)
             injected_schema = true
         end
-        _write_framed_message(io, header, message.data_body, alignment, ipc_message)
+        _write_budgeted_flight_message!(
+            io,
+            header,
+            message.data_body,
+            alignment,
+            ipc_message,
+            budget,
+        )
         if capture_metadata && kind isa ArrowParent.Meta.RecordBatch
+            ArrowParent._chargevector!(
+                budget,
+                UInt8,
+                length(message.app_metadata),
+                "retained Flight application metadata",
+            )
             push!(metadata, Vector{UInt8}(message.app_metadata))
         end
     end
     if !has_schema && !injected_schema
         schema === nothing && throw(ArgumentError(_missing_schema_message()))
-        Base.write(io, schemaipc(schema; alignment=alignment))
+        _write_budgeted_schema!(io, schema, alignment, budget)
     end
-    end_marker && _write_end_marker(io)
-    return take!(io), metadata
+    if end_marker
+        _charge_rebuilt_stream!(budget, 8, "rebuilt Flight IPC end marker")
+        _write_end_marker(io)
+    end
+    return take!(io), metadata, budget
 end
 
 function streambytes(
@@ -74,9 +151,15 @@ function streambytes(
     schema=nothing,
     alignment::Integer=DEFAULT_IPC_ALIGNMENT,
     end_marker::Bool=true,
+    limits=ArrowParent.Limits(),
 )
-    bytes, _ =
-        _rebuild_stream(messages; schema=schema, alignment=alignment, end_marker=end_marker)
+    bytes, _, _ = _rebuild_stream(
+        messages;
+        schema=schema,
+        alignment=alignment,
+        end_marker=end_marker,
+        limits=limits,
+    )
     return bytes
 end
 
@@ -138,15 +221,18 @@ function _flight_stream(
     schema=nothing,
     alignment::Integer=DEFAULT_IPC_ALIGNMENT,
     end_marker::Bool=true,
+    limits=ArrowParent.Limits(),
 )
-    bytes, metadata = _rebuild_stream(
+    bytes, metadata, budget = _rebuild_stream(
         messages;
         schema=schema,
         alignment=alignment,
         end_marker=end_marker,
         capture_metadata=true,
+        limits=limits,
     )
-    stream = ArrowParent.Stream(bytes; mmap=false)
+    opened = ArrowParent._openbytes(bytes; limits=limits, budget=budget)
+    stream = ArrowParent.Stream(opened; mmap=false, limits=limits)
     table_schema = _stream_schema(stream)
     length(metadata) == length(stream) || throw(
         ArgumentError(
@@ -157,11 +243,14 @@ function _flight_stream(
 end
 
 """
-    Arrow.Flight.stream(messages; schema=nothing, convert=true, include_app_metadata=false)
+    Arrow.Flight.stream(messages; schema=nothing, convert=true,
+                        include_app_metadata=false, limits=Arrow.Limits())
 
 Decode Flight `FlightData` through Arrow 3's validated IPC stream reader. The
 Flight layer owns only framing and application metadata; schema, dictionary,
 compression, ownership, and materialization semantics come from Arrow 3.
+`limits` governs both Flight framing and the delegated Arrow IPC decode with
+one cumulative allocation budget.
 """
 function stream(
     messages;
@@ -170,19 +259,28 @@ function stream(
     include_app_metadata::Bool=false,
     alignment::Integer=DEFAULT_IPC_ALIGNMENT,
     end_marker::Bool=true,
+    limits=ArrowParent.Limits(),
 )
     convert ||
         @warn "Arrow 3 Flight always returns public-domain materialized values" maxlog = 1
-    value =
-        _flight_stream(messages; schema=schema, alignment=alignment, end_marker=end_marker)
+    value = _flight_stream(
+        messages;
+        schema=schema,
+        alignment=alignment,
+        end_marker=end_marker,
+        limits=limits,
+    )
     return include_app_metadata ? FlightStreamWithAppMetadata(value) : value
 end
 
 """
-    Arrow.Flight.table(messages; schema=nothing, convert=true, include_app_metadata=false)
+    Arrow.Flight.table(messages; schema=nothing, convert=true,
+                       include_app_metadata=false, limits=Arrow.Limits())
 
 Materialize Flight `FlightData` through Arrow 3's validated `Arrow.Table`
 facade. Optional Flight application metadata is returned batch-for-batch.
+`limits` governs both Flight framing and the delegated Arrow IPC decode with
+one cumulative allocation budget.
 """
 function table(
     messages;
@@ -191,16 +289,19 @@ function table(
     include_app_metadata::Bool=false,
     alignment::Integer=DEFAULT_IPC_ALIGNMENT,
     end_marker::Bool=true,
+    limits=ArrowParent.Limits(),
 )
     convert ||
         @warn "Arrow 3 Flight always returns public-domain materialized values" maxlog = 1
-    bytes, metadata = _rebuild_stream(
+    bytes, metadata, budget = _rebuild_stream(
         messages;
         schema=schema,
         alignment=alignment,
         end_marker=end_marker,
         capture_metadata=include_app_metadata,
+        limits=limits,
     )
-    value = ArrowParent.Table(bytes; mmap=false)
+    opened = ArrowParent._openbytes(bytes; limits=limits, budget=budget)
+    value = ArrowParent.Table(opened; mmap=false, limits=limits)
     return include_app_metadata ? (table=value, app_metadata=metadata) : value
 end

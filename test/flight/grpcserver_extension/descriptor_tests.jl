@@ -53,5 +53,30 @@ function grpcserver_extension_test_descriptor(grpcserver, service)
           grpcserver.MethodType.BIDI_STREAMING
     @test grpc_descriptor.methods["DoGet"].input_type == "arrow.flight.protocol.Ticket"
     @test grpc_descriptor.methods["DoGet"].output_type == "arrow.flight.protocol.FlightData"
+
+    native_context = grpcserver.ServerContext(
+        method="/arrow.flight.protocol.FlightService/GetFlightInfo",
+        authority="flight.example.test",
+        metadata=grpcserver_extension_metadata(),
+        trace_context=UInt8[0x01, 0x02],
+        payload=:transport_payload,
+    )
+    extension = Base.get_extension(Arrow, :ArrowgRPCServerExt)
+    context = extension._call_context(native_context, true)
+    @test context.request_id == string(native_context.request_id)
+    @test context.method == native_context.method
+    @test context.authority == "flight.example.test"
+    @test context.peer == "0.0.0.0:0"
+    @test context.secure
+    @test context.trace_context == UInt8[0x01, 0x02]
+    @test context.payload === :transport_payload
+    @test !Arrow.Flight.iscallcancelled(context)
+    @test isnothing(Arrow.Flight.callremainingtime(context))
+    Arrow.Flight.setresponseheader!(context, "x-request-id", "request-1")
+    Arrow.Flight.setresponsetrailer!(context, "result-bin", UInt8[0x03, 0x04])
+    @test native_context.response_headers["x-request-id"] == "request-1"
+    @test native_context.trailers["result-bin"] == UInt8[0x03, 0x04]
+    grpcserver.cancel!(native_context)
+    @test Arrow.Flight.iscallcancelled(context)
     return grpc_descriptor
 end
