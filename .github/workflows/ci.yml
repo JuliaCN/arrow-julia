@@ -126,6 +126,43 @@ jobs:
       - uses: codecov/codecov-action@v7
         with:
           files: lcov.info
+  flight-pyarrow:
+    name: Flight interop - PyArrow 25 - Julia stable
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: test/requirements-flight.txt
+      - name: Install PyArrow Flight compatibility oracle
+        run: |
+          python -m pip install --disable-pip-version-check -r test/requirements-flight.txt
+          echo "ARROW_FLIGHT_PYTHON=$(python -c 'import sys; print(sys.executable)')" >> "$GITHUB_ENV"
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: '1'
+          project: '.'
+      - uses: actions/cache@v6
+        env:
+          cache-name: cache-artifacts
+        with:
+          path: ~/.julia/artifacts
+          key: ${{ runner.os }}-flight-pyarrow-${{ env.cache-name }}-${{ hashFiles('**/Project.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-flight-pyarrow-${{ env.cache-name }}-
+            ${{ runner.os }}-test-${{ env.cache-name }}-
+            ${{ runner.os }}-
+      - name: Dev local subpackages
+        shell: julia --project=. {0}
+        run: |
+          using Pkg
+          Pkg.develop([PackageSpec(path="src/ArrowTypes")])
+      - uses: julia-actions/julia-buildpkg@v1.6
+      - name: Run required PyArrow Flight compatibility suite
+        run: julia --project=test test/flight_pyarrow.jl
   # The subpackages' own suites: one job each, on the package's minimum
   # supported Julia. The full Arrow.jl matrix above exercises both packages'
   # code on every version, OS, and thread count.
