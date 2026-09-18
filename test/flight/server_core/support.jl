@@ -17,13 +17,7 @@
 
 function _flight_metadata_table(table; metadata=nothing, colmetadata=nothing)
     io = IOBuffer()
-    Arrow.write(
-        io,
-        table;
-        file=false,
-        metadata=metadata,
-        colmetadata=colmetadata,
-    )
+    Arrow.write(io, table; file=false, metadata=metadata, colmetadata=colmetadata)
     return Arrow.Table(take!(io); mmap=false)
 end
 

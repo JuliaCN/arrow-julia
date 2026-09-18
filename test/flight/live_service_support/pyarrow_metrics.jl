@@ -135,7 +135,7 @@ function flight_live_pyarrow_reused_doput_metric(
         timeout_sec=_flight_live_command_timeout_sec(),
         label="pyarrow Flight reused-client DoPut benchmark",
     )
-    result = JSON3.read(output)
+    result = JSON.parse(output)
     total_requests = Int(result["total_requests"])
     wall_ns = Int(result["wall_ns"])
     request_bytes = fixture.message_bytes * total_requests
@@ -241,7 +241,7 @@ function flight_live_pyarrow_concurrent_doget(
         timeout_sec=_flight_live_command_timeout_sec(),
         label="pyarrow Flight concurrent DoGet benchmark",
     )
-    return JSON3.read(output)
+    return JSON.parse(output)
 end
 
 function flight_live_pyarrow_concurrent_doget_metric(
@@ -319,7 +319,7 @@ function flight_live_pyarrow_concurrent_doput(
         timeout_sec=_flight_live_command_timeout_sec(),
         label="pyarrow Flight concurrent DoPut benchmark",
     )
-    return JSON3.read(output)
+    return JSON.parse(output)
 end
 
 function flight_live_pyarrow_concurrent_doput_metric(
@@ -400,7 +400,7 @@ function flight_live_pyarrow_concurrent_doexchange(
         timeout_sec=_flight_live_command_timeout_sec(),
         label="pyarrow Flight concurrent DoExchange benchmark",
     )
-    return JSON3.read(output)
+    return JSON.parse(output)
 end
 
 function flight_live_pyarrow_concurrent_doexchange_metric(
@@ -451,4 +451,35 @@ function flight_live_pyarrow_concurrent_doexchange_metric(
         request_max_ns=request_max_ns,
         request_max_ms=request_max_ns / 1.0e6,
     )
+end
+
+function flight_live_pyarrow_cancellation_soak(
+    host::AbstractString,
+    port::Integer,
+    fixture;
+    rounds::Integer,
+)
+    rounds > 0 || throw(ArgumentError("cancellation soak rounds must be positive"))
+    python = FlightTestSupport.pyarrow_flight_python()
+    isnothing(python) && return nothing
+    output = _flight_live_readchomp_with_timeout(
+        Cmd([
+            python,
+            "-c",
+            FLIGHT_LIVE_PYARROW_CANCELLATION_SOAK,
+            host,
+            string(port),
+            string(rounds),
+            fixture.descriptor.path...,
+        ]);
+        timeout_sec=max(_flight_live_command_timeout_sec(), 60.0),
+        label="pyarrow Flight cancellation soak",
+    )
+    result = JSON.parse(output)
+    Int(result["cancelled_streams"]) == rounds ||
+        error("Flight cancellation soak did not cancel every stream")
+    Int(result["health_records"]) == fixture.total_records || error(
+        "Flight cancellation soak post-cancel health probe returned wrong record count",
+    )
+    return result
 end

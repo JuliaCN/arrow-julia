@@ -16,6 +16,7 @@
 # under the License.
 
 using Tables
+using JSON
 
 include("flight/support.jl")
 include("flight/live_service_support.jl")

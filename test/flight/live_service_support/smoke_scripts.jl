@@ -25,12 +25,17 @@ host = sys.argv[1]
 port = int(sys.argv[2])
 username = sys.argv[3]
 password = sys.argv[4]
-path = sys.argv[5:]
+tls_cert = sys.argv[5]
+path = sys.argv[6:]
 
-client = fl.FlightClient(
-    f"grpc://{host}:{port}",
-    generic_options=[("grpc.http2.lookahead_bytes", 0)],
-)
+client_kwargs = {"generic_options": [("grpc.http2.lookahead_bytes", 0)]}
+scheme = "grpc"
+if tls_cert:
+    scheme = "grpc+tls"
+    with open(tls_cert, "rb") as cert_file:
+        client_kwargs["tls_root_certs"] = cert_file.read()
+    client_kwargs["override_hostname"] = "localhost"
+client = fl.FlightClient(f"{scheme}://{host}:{port}", **client_kwargs)
 basic_auth = base64.b64encode(f"{username}:{password}".encode("utf-8"))
 options = fl.FlightCallOptions(
     timeout=30,

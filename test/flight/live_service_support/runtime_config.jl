@@ -154,6 +154,21 @@ function _flight_live_pyarrow_reused_doput_min_throughput_mib_per_sec()
     )
 end
 
+function _flight_live_pyarrow_max_tail_latency_ms(percentile::Integer)
+    percentile in (95, 99) || throw(ArgumentError("tail percentile must be 95 or 99"))
+    env_name = "ARROW_FLIGHT_PYARROW_MAX_P$(percentile)_MS"
+    raw_value = get(ENV, env_name, "Inf")
+    maximum_ms = tryparse(Float64, raw_value)
+    isnothing(maximum_ms) && throw(
+        ArgumentError(
+            "$env_name must parse as a non-negative number; got $(repr(raw_value))",
+        ),
+    )
+    maximum_ms >= 0 ||
+        throw(ArgumentError("$env_name must be non-negative; got $(repr(raw_value))"))
+    return maximum_ms
+end
+
 function _flight_live_command_output_excerpt(output::AbstractString; limit::Integer=2_000)
     stripped = strip(output)
     isempty(stripped) && return "(empty)"

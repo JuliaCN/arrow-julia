@@ -16,6 +16,7 @@
 # under the License.
 
 include("server/types.jl")
+include("server/runtime.jl")
 include("server/descriptors.jl")
 include("server/handlers.jl")
 include("server/grpc_wire.jl")

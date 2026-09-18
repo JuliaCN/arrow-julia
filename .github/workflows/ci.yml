@@ -126,6 +126,81 @@ jobs:
       - uses: codecov/codecov-action@v7
         with:
           files: lcov.info
+  flight-pyarrow:
+    name: Flight interop - PyArrow ${{ matrix.pyarrow }} - Julia stable
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - pyarrow: '14.0.2 (minimum)'
+            python: '3.11'
+            requirements: test/requirements-flight-min.txt
+            production_soak: false
+          - pyarrow: '25.0.1 (latest)'
+            python: '3.12'
+            requirements: test/requirements-flight.txt
+            production_soak: true
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: ${{ matrix.requirements }}
+      - name: Install PyArrow Flight compatibility oracle
+        run: |
+          python -m pip install --disable-pip-version-check -r "${{ matrix.requirements }}"
+          echo "ARROW_FLIGHT_PYTHON=$(python -c 'import sys; print(sys.executable)')" >> "$GITHUB_ENV"
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: '1'
+          project: '.'
+      - uses: actions/cache@v6
+        env:
+          cache-name: cache-artifacts
+        with:
+          path: ~/.julia/artifacts
+          key: ${{ runner.os }}-flight-pyarrow-${{ env.cache-name }}-${{ hashFiles('**/Project.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-flight-pyarrow-${{ env.cache-name }}-
+            ${{ runner.os }}-test-${{ env.cache-name }}-
+            ${{ runner.os }}-
+      - name: Dev local subpackages
+        shell: julia --project=. {0}
+        run: |
+          using Pkg
+          Pkg.develop([PackageSpec(path="src/ArrowTypes")])
+      - uses: julia-actions/julia-buildpkg@v1.6
+      - name: Instantiate Flight test environment
+        shell: julia --project=test {0}
+        run: |
+          using Pkg
+          root = pwd()
+          Pkg.develop([
+              PackageSpec(path=root),
+              PackageSpec(path=joinpath(root, "src", "ArrowTypes")),
+          ])
+          Pkg.instantiate()
+      - name: Run required PyArrow Flight compatibility suite
+        run: julia --project=test test/flight_pyarrow.jl
+      - name: Run fixed-workload Flight production soak
+        if: matrix.production_soak
+        run: julia --project=test bench/flight_soak.jl
+        env:
+          JULIA_NUM_THREADS: '4'
+          ARROW_FLIGHT_SOAK_ROUNDS: '3'
+          ARROW_FLIGHT_PYARROW_CONCURRENT_CLIENTS: '8'
+          ARROW_FLIGHT_PYARROW_REQUESTS_PER_CLIENT: '8'
+          ARROW_FLIGHT_CANCEL_SOAK_ROUNDS: '50'
+          ARROW_FLIGHT_SOAK_BATCHES: '4'
+          ARROW_FLIGHT_SOAK_ROWS_PER_BATCH: '256'
+          ARROW_FLIGHT_SOAK_PAYLOAD_BYTES: '1024'
+          ARROW_FLIGHT_PYARROW_MAX_P95_MS: '5000'
+          ARROW_FLIGHT_PYARROW_MAX_P99_MS: '10000'
+          ARROW_FLIGHT_SOAK_MAX_RSS_MIB: '2048'
+          ARROW_FLIGHT_PYARROW_BENCHMARK_TIMEOUT_SEC: '120'
   # The subpackages' own suites: one job each, on the package's minimum
   # supported Julia. The full Arrow.jl matrix above exercises both packages'
   # code on every version, OS, and thread count.
@@ -206,7 +281,7 @@ jobs:
         run: >
           julia --color=yes --project=monorepo -e 'using Pkg; Pkg.test("Arrow")'
   test_min_arrowtypes:
-    name: Arrow.jl - ArrowTypes 2.0 compatibility
+    name: Arrow.jl 3 - minimum supported ArrowTypes 2.0
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

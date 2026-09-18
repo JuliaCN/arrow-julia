@@ -54,6 +54,39 @@ function flight_server_core_test_transport_adapters(fixture)
     @test unary_error isa ArgumentError
     @test occursin("not implemented", sprint(showerror, unary_error))
 
+    cancelled = Ref(true)
+    cancelled_context = Arrow.Flight.ServerCallContext(is_cancelled=() -> cancelled[])
+    cancelled_error = try
+        Arrow.Flight.transport_unary_call(
+            fixture.implemented,
+            cancelled_context,
+            getflightinfo,
+            fixture.descriptor;
+            on_status_error=error -> throw(ArgumentError("status $(error.code)")),
+        )
+        nothing
+    catch error
+        error
+    end
+    @test cancelled_error isa ArgumentError
+    @test occursin("status 1", sprint(showerror, cancelled_error))
+
+    deadline_context = Arrow.Flight.ServerCallContext(remaining_time=() -> 0.0)
+    deadline_error = try
+        Arrow.Flight.transport_unary_call(
+            fixture.implemented,
+            deadline_context,
+            getflightinfo,
+            fixture.descriptor;
+            on_status_error=error -> throw(ArgumentError("status $(error.code)")),
+        )
+        nothing
+    catch error
+        error
+    end
+    @test deadline_error isa ArgumentError
+    @test occursin("status 4", sprint(showerror, deadline_error))
+
     doget = Arrow.Flight.lookuptransportmethod(descriptor, "DoGet")
     doget_messages = fixture.protocol.FlightData[]
     @test isnothing(
@@ -66,6 +99,45 @@ function flight_server_core_test_transport_adapters(fixture)
         ),
     )
     @test length(doget_messages) == 1
+
+    cancel_after_first = Ref(false)
+    streaming_context =
+        Arrow.Flight.ServerCallContext(is_cancelled=() -> cancel_after_first[])
+    streaming_service = Arrow.Flight.Service(
+        doget=(ctx, ticket, response) -> begin
+            put!(response, fixture.protocol.FlightData(nothing, UInt8[], UInt8[0x01], UInt8[]))
+            put!(
+                response,
+                fixture.protocol.FlightData(nothing, UInt8[], UInt8[0x02], UInt8[]),
+            )
+            close(response)
+        end,
+    )
+    streaming_method = Arrow.Flight.lookuptransportmethod(
+        Arrow.Flight.transportdescriptor(streaming_service),
+        "DoGet",
+    )
+    streamed = fixture.protocol.FlightData[]
+    streaming_error = try
+        Arrow.Flight.transport_server_streaming_call(
+            streaming_service,
+            streaming_context,
+            streaming_method,
+            fixture.protocol.Ticket(b"cancel"),
+            message -> begin
+                push!(streamed, message)
+                cancel_after_first[] = true
+            end;
+            response_capacity=2,
+            on_status_error=error -> throw(ArgumentError("status $(error.code)")),
+        )
+        nothing
+    catch error
+        error
+    end
+    @test length(streamed) == 1
+    @test streaming_error isa ArgumentError
+    @test occursin("status 1", sprint(showerror, streaming_error))
 
     listactions = Arrow.Flight.lookuptransportmethod(descriptor, "ListActions")
     actions = fixture.protocol.ActionType[]
@@ -169,4 +241,151 @@ function flight_server_core_test_transport_adapters(fixture)
     @test live_messages[1].data_body == echoed.data_body
     close(live_requests)
     wait(live_task)
+
+    runtime = Arrow.Flight.FlightServerRuntime(
+        max_active_calls=1,
+        max_reserved_bytes=64,
+        call_reservation_bytes=64,
+        cleanup_grace_seconds=0.02,
+    )
+    unary_entered = Channel{Nothing}(1)
+    unary_release = Channel{Nothing}(1)
+    governed_service = Arrow.Flight.Service(
+        getflightinfo=(ctx, descriptor) -> begin
+            put!(unary_entered, nothing)
+            take!(unary_release)
+            fixture.protocol.FlightInfo(
+                UInt8[],
+                descriptor,
+                fixture.protocol.FlightEndpoint[],
+                1,
+                8,
+                false,
+                UInt8[],
+            )
+        end,
+    )
+    governed_method = Arrow.Flight.lookuptransportmethod(
+        Arrow.Flight.transportdescriptor(governed_service),
+        "GetFlightInfo",
+    )
+    governed_task = @async Arrow.Flight.transport_unary_call(
+        governed_service,
+        fixture.context,
+        governed_method,
+        fixture.descriptor;
+        runtime=runtime,
+    )
+    take!(unary_entered)
+    rejected = try
+        Arrow.Flight.transport_unary_call(
+            governed_service,
+            fixture.context,
+            governed_method,
+            fixture.descriptor;
+            runtime=runtime,
+        )
+        nothing
+    catch error
+        error
+    end
+    @test rejected isa Arrow.Flight.FlightStatusError
+    @test rejected.code == Arrow.Flight.FLIGHT_STATUS_RESOURCE_EXHAUSTED
+    admitted_metrics = Arrow.Flight.flight_server_metrics(runtime)
+    @test admitted_metrics.active_calls == 1
+    @test admitted_metrics.reserved_bytes == 64
+    @test admitted_metrics.calls_rejected == 1
+    put!(unary_release, nothing)
+    wait(governed_task)
+    completed_metrics = Arrow.Flight.flight_server_metrics(runtime)
+    @test completed_metrics.active_calls == 0
+    @test completed_metrics.reserved_bytes == 0
+    @test completed_metrics.calls_completed == 1
+    @test completed_metrics.request_messages == 1
+    @test completed_metrics.response_messages == 1
+    @test runtime.request_messages isa Threads.Atomic{Int64}
+    @test runtime.response_messages isa Threads.Atomic{Int64}
+
+    cleanup_runtime = Arrow.Flight.FlightServerRuntime(
+        max_active_calls=1,
+        max_reserved_bytes=64,
+        call_reservation_bytes=64,
+        cleanup_grace_seconds=0.02,
+    )
+    handler_entered = Channel{Nothing}(1)
+    handler_release = Channel{Nothing}(1)
+    cancelled = Ref(false)
+    cancellation_checks = Threads.Atomic{Int}(0)
+    noncooperative_service = Arrow.Flight.Service(
+        doget=(ctx, ticket, response) -> begin
+            put!(handler_entered, nothing)
+            take!(handler_release)
+        end,
+    )
+    noncooperative_method = Arrow.Flight.lookuptransportmethod(
+        Arrow.Flight.transportdescriptor(noncooperative_service),
+        "DoGet",
+    )
+    noncooperative_context = Arrow.Flight.ServerCallContext(
+        is_cancelled=() -> begin
+            Threads.atomic_add!(cancellation_checks, 1)
+            cancelled[]
+        end,
+    )
+    transport_task = @async try
+        Arrow.Flight.transport_server_streaming_call(
+            noncooperative_service,
+            noncooperative_context,
+            noncooperative_method,
+            fixture.protocol.Ticket(b"blocked"),
+            _ -> nothing;
+            runtime=cleanup_runtime,
+        )
+        nothing
+    catch error
+        error
+    end
+    take!(handler_entered)
+    checks_before_idle = cancellation_checks[]
+    sleep(0.12)
+    idle_checks = cancellation_checks[] - checks_before_idle
+    @test 1 <= idle_checks <= 5
+    cancelled[] = true
+    @test timedwait(() -> istaskdone(transport_task), 1.0) !== :timed_out
+    cancelled_error = fetch(transport_task)
+    @test cancelled_error isa Arrow.Flight.FlightStatusError
+    @test cancelled_error.code == Arrow.Flight.FLIGHT_STATUS_CANCELLED
+    orphan_metrics = Arrow.Flight.flight_server_metrics(cleanup_runtime)
+    @test orphan_metrics.cleanup_timeouts == 1
+    @test orphan_metrics.orphan_tasks == 1
+    @test orphan_metrics.active_calls == 1
+    @test orphan_metrics.reserved_bytes == 64
+    rejected_while_orphaned = try
+        Arrow.Flight.transport_server_streaming_call(
+            noncooperative_service,
+            Arrow.Flight.ServerCallContext(),
+            noncooperative_method,
+            fixture.protocol.Ticket(b"rejected-while-orphaned"),
+            _ -> nothing;
+            runtime=cleanup_runtime,
+        )
+        nothing
+    catch error
+        error
+    end
+    @test rejected_while_orphaned isa Arrow.Flight.FlightStatusError
+    @test rejected_while_orphaned.code == Arrow.Flight.FLIGHT_STATUS_RESOURCE_EXHAUSTED
+    @test Arrow.Flight.flight_server_metrics(cleanup_runtime).calls_rejected == 1
+    put!(handler_release, nothing)
+    @test timedwait(
+        () -> begin
+            metrics = Arrow.Flight.flight_server_metrics(cleanup_runtime)
+            metrics.orphan_tasks == 0 &&
+                metrics.active_calls == 0 &&
+                metrics.reserved_bytes == 0
+        end,
+        1.0,
+    ) !== :timed_out
+    released_metrics = Arrow.Flight.flight_server_metrics(cleanup_runtime)
+    @test released_metrics.calls_failed == 1
 end

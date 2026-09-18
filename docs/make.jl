@@ -35,6 +35,7 @@ makedocs(;
         "Home" => "index.md",
         "User Manual" => "manual.md",
         "Arrow Flight" => "flight.md",
+        "Flight client design" => "flight-client-design.md",
         "Migrating from 2.x" => "migration.md",
         "API Reference" => "reference.md",
     ],

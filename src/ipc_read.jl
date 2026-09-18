@@ -1288,159 +1288,25 @@ readstream(bytes::Vector{UInt8}; limits::Limits=Limits()) =
 
 function _readstream(bytes::Vector{UInt8}, limits::Limits, budget::AllocationBudget)
     region = heapregion(bytes)
-    msgs = _framemessages(region, limits, Base.ENDIAN_BOM, budget)
-    isempty(msgs) && throw(ValidationError("empty IPC stream"))
-    first(msgs).header_type == 1 || # Schema
-        throw(ValidationError("first IPC message must be a schema"))
-    msgs[1].msg.header isa Meta.Schema ||
-        throw(ValidationError("first IPC message must be a schema"))
-    metaschema = msgs[1].msg.header
-    msgs[1].body.len == 0 ||
-        throw(ValidationError("schema message must have an empty body"))
-    endian = something(metaschema.endianness, Meta.Endianness.Little)
-    endian == Meta.Endianness.Little || throw(
-        ValidationError("big-endian IPC is not supported (no endianness normalization)"),
-    )
-    dictids = Dict{Int64,Meta.Field}()
-    fielddictids = IdDict{Field,Int64}()   # adapter-side id table
-    fields = Field[
-        corefield(f, dictids, fielddictids) for
-        f in something(metaschema.fields, Meta.Field[])
-    ]
-    foreach(validateschemafield, fields)
-    dictvaluefields = validatedictionaryids(fields, fielddictids)
-    sch = Schema(
-        fields;
-        metadata=coremetadata(metaschema.custom_metadata),
-        endianness=AC.LittleEndian,
-    )
-    dicts = Dict{Int64,ArrayData}()
-    # One codec context per reader, shared by every compressed batch in the
-    # stream and explicitly finalized on every exit path.
-    state = DecodeState(budget)
-    validated_dictionaries = AC._ValidatedDictionaries()
-    batchslots = Union{Nothing,AC.RecordBatch}[]
-    pending = PendingRecord[]
-    schemaversion = msgs[1].version
+    messages = _framemessages(region, limits, Base.ENDIAN_BOM, budget)
+    isempty(messages) && throw(ValidationError("empty IPC stream"))
+    decoder = IPCMessageDecoder(first(messages), limits, budget)
     try
-        for fm in msgs[2:end]
-            fm.version == schemaversion ||
-                throw(ValidationError("IPC metadata version changes within the stream"))
-            # Legacy V4 compression marker: see rejectexperimentalcompression.
-            rejectexperimentalcompression(fm)
-            header = fm.msg.header
-            if header isa Meta.DictionaryBatch
-                rb = header.data
-                codec = _batchcodec(rb.compression, fm.version)
-                haskey(dictids, header.id) ||
-                    throw(ValidationError("dictionary batch has unknown id $(header.id)"))
-                replacement = haskey(dicts, header.id)
-                _dictionarytransition(header.id, header.isDelta, replacement)
-                # A dictionary batch's payload is a one-column record batch of
-                # the VALUE type, so the generic decoder handles it. Pool
-                # nullability is independent of the encoded index field.
-                haskey(dictvaluefields, header.id) ||
-                    throw(ValidationError("dictionary batch has unknown id $(header.id)"))
-                # Value fields were built once from the Core schema; reusing
-                # them avoids repeated metadata-string/container allocation on
-                # dictionary replacement messages.
-                vf = dictvaluefields[header.id]
-                rblen = something(rb.length, Int64(0))
-                0 <= rblen <= limits.max_array_length ||
-                    throw(ValidationError("dictionary batch length $rblen exceeds limit"))
-                cursor = DecodeCursor(
-                    rb.nodes,
-                    rb.buffers,
-                    fm.body,
-                    limits;
-                    codec=codec,
-                    state=state,
-                    variadics=variadiccounts(rb),
-                )
-                decoded = decodefield(vf, cursor, dicts, fielddictids)
-                finishcursor!(cursor)
-                decoded.len == rblen || throw(
-                    ValidationError(
-                        "dictionary RecordBatch length does not match its field node",
-                    ),
-                )
-                decoded = _updatedictionary!(
-                    dicts,
-                    validated_dictionaries,
-                    header.id,
-                    header.isDelta,
-                    vf,
-                    decoded,
-                    limits,
-                    budget,
-                )
-
-                # The IPC spec permits an all-null dictionary column before its
-                # first DictionaryBatch. Resolve only the missing dictionary;
-                # preserve every dictionary snapshot already visible at the
-                # record's wire position.
-                if !replacement
-                    stillpending = PendingRecord[]
-                    for p in pending
-                        if header.id in p.missing
-                            p.dictionaries[header.id] = decoded
-                            delete!(p.missing, header.id)
-                        end
-                        if isempty(p.missing)
-                            batchslots[p.slot] = decoderecord(
-                                p.fm,
-                                fields,
-                                sch,
-                                p.dictionaries,
-                                fielddictids,
-                                limits,
-                                validated_dictionaries,
-                                state,
-                            )
-                        else
-                            push!(stillpending, p)
-                        end
-                    end
-                    pending = stillpending
-                end
-            elseif header isa Meta.RecordBatch
-                missing = missingdicts(fields, header.nodes, dicts, fielddictids)
-                push!(batchslots, nothing)
-                slot = length(batchslots)
-                if isempty(missing)
-                    batchslots[slot] = decoderecord(
-                        fm,
-                        fields,
-                        sch,
-                        dicts,
-                        fielddictids,
-                        limits,
-                        validated_dictionaries,
-                        state,
-                    )
-                else
-                    push!(pending, PendingRecord(fm, copy(dicts), missing, slot))
-                end
-            else
-                throw(ValidationError("unsupported IPC message header $(typeof(header))"))
-            end
-        end
-        isempty(pending) || throw(
-            ValidationError("stream ended before required dictionary batches arrived"),
-        )
-        batches = AC.RecordBatch[b::AC.RecordBatch for b in batchslots]
+        foreach(message -> pushmessage!(decoder, message), @view(messages[2:end]))
+        finish!(decoder)
+        batches = AC.RecordBatch[batch::AC.RecordBatch for batch in decoder.batchslots]
         return IPCStream(
-            sch,
-            AC.FrozenVector{Field}(fields),
+            decoder.schema,
+            decoder.corefields,
             batches,
             region,
             1,
             false,
-            fielddictids,
+            decoder.fielddictids,
             budget,
             limits,
         )
     finally
-        close(state)
+        close(decoder)
     end
 end

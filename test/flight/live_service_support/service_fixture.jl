@@ -272,6 +272,31 @@ function flight_live_pyarrow_smoke(host::AbstractString, port::Integer, fixture)
             string(port),
             fixture.handshake_username,
             fixture.handshake_password,
+            "",
+            fixture.descriptor.path...,
+        ]),
+    )
+    return true
+end
+
+function flight_live_pyarrow_tls_smoke(
+    host::AbstractString,
+    port::Integer,
+    cert_path::AbstractString,
+    fixture,
+)
+    python = FlightTestSupport.pyarrow_flight_python()
+    isnothing(python) && return false
+    run(
+        Cmd([
+            python,
+            "-c",
+            FLIGHT_LIVE_PYARROW_SMOKE,
+            host,
+            string(port),
+            fixture.handshake_username,
+            fixture.handshake_password,
+            cert_path,
             fixture.descriptor.path...,
         ]),
     )

@@ -20,11 +20,7 @@ function _rethrow_flight_status_error(error::Flight.FlightStatusError)
 end
 
 function _configured_service(service::Flight.Service)
-    return GRPCServerFlightService(
-        service,
-        STREAM_BUFFER_SIZE,
-        STREAM_BUFFER_SIZE,
-    )
+    return GRPCServerFlightService(service, STREAM_BUFFER_SIZE, STREAM_BUFFER_SIZE)
 end
 
 _configured_service(service::GRPCServerFlightService) = service
@@ -39,10 +35,11 @@ function _unary_handler(service, method::Flight.MethodDescriptor)
     return function (context, request)
         return Flight.transport_unary_call(
             configured.service,
-            _call_context(context),
+            _call_context(context, configured.secure),
             transport_method,
             request;
             on_status_error=_rethrow_flight_status_error,
+            runtime=configured.runtime,
         )
     end
 end
@@ -53,12 +50,13 @@ function _server_streaming_handler(service, method::Flight.MethodDescriptor)
     return function (context, request, stream)
         Flight.transport_server_streaming_call(
             configured.service,
-            _call_context(context),
+            _call_context(context, configured.secure),
             transport_method,
             request,
             message -> gRPCServer.send!(stream, message);
             response_capacity=configured.response_capacity,
             on_status_error=_rethrow_flight_status_error,
+            runtime=configured.runtime,
         )
         gRPCServer.close!(stream)
         return nothing
@@ -71,11 +69,12 @@ function _client_streaming_handler(service, method::Flight.MethodDescriptor)
     return function (context, stream)
         return Flight.transport_client_streaming_call(
             configured.service,
-            _call_context(context),
+            _call_context(context, configured.secure),
             transport_method,
             stream;
             request_capacity=configured.request_capacity,
             on_status_error=_rethrow_flight_status_error,
+            runtime=configured.runtime,
         )
     end
 end
@@ -86,13 +85,14 @@ function _bidi_streaming_handler(service, method::Flight.MethodDescriptor)
     return function (context, stream)
         Flight.transport_bidi_streaming_call(
             configured.service,
-            _call_context(context),
+            _call_context(context, configured.secure),
             transport_method,
             stream,
             message -> gRPCServer.send!(stream, message);
             request_capacity=configured.request_capacity,
             response_capacity=configured.response_capacity,
             on_status_error=_rethrow_flight_status_error,
+            runtime=configured.runtime,
         )
         gRPCServer.close!(stream)
         return nothing

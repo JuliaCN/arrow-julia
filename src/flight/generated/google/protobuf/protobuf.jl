@@ -17,7 +17,7 @@
 
 module protobuf
 
-include("descriptor_pb.jl")
 include("timestamp_pb.jl")
+include("descriptor_pb.jl")
 
 end # module protobuf

@@ -56,20 +56,63 @@ using Tables
     @test DataAPI.metadata(result.table, "dataset") == "flight"
     @test DataAPI.colmetadata(result.table, :label, "lang") == "en"
 
+    one_pass = (message for message in messages)
+    one_pass_result = Arrow.Flight.table(one_pass; include_app_metadata=true)
+    @test one_pass_result.table.id == [1, 2, 3]
+    @test String.(one_pass_result.app_metadata) == ["batch:0", "batch:1"]
+
+    message_channel = Channel{Arrow.Flight.Protocol.FlightData}(1) do channel
+        for message in messages
+            put!(channel, message)
+        end
+    end
+    @test [batch.id for batch in Arrow.Flight.stream(message_channel)] == [[1, 2], [3]]
+
+    # Receive decoding is genuinely incremental too: construction consumes
+    # only the schema. Each record message is requested by the corresponding
+    # partition pull instead of rebuilding/opening a response-sized buffer.
+    received = Ref(0)
+    lazy_messages = ((received[] += 1; message) for message in messages)
+    lazy_stream = Arrow.Flight.stream(lazy_messages)
+    @test received[] == 1
+    @test Base.IteratorSize(typeof(lazy_stream)) isa Base.SizeUnknown
+    first_lazy, lazy_state = iterate(lazy_stream)
+    @test first_lazy.id == [1, 2]
+    @test received[] == 2
+    second_lazy, lazy_state = iterate(lazy_stream, lazy_state)
+    @test second_lazy.id == [3]
+    @test received[] == 3
+    @test iterate(lazy_stream, lazy_state) === nothing
+
+    many_parts = Tables.partitioner(((id=Int64[index],) for index = 1:70))
+    many_messages =
+        Arrow.Flight.flightdata(many_parts; app_metadata=("batch:$index" for index = 1:70))
+    bounded_stream = Arrow.Flight.stream(many_messages; include_app_metadata=true)
+    bounded_batches = collect(bounded_stream)
+    @test only(last(bounded_batches).table.id) == 70
+    @test String(last(bounded_batches).app_metadata) == "batch:70"
+    bounded_source = bounded_stream.stream.stream
+    @test length(bounded_source.decoder.batchslots) < 64
+    @test isempty(bounded_source.app_metadata)
+
+    abandoned_stream = Arrow.Flight.stream(messages)
+    @test first(abandoned_stream).id == [1, 2]
+    close(abandoned_stream)
+    @test iterate(abandoned_stream) === nothing
+    @test isempty(abandoned_stream.stream.decoder.batchslots)
+    @test isempty(abandoned_stream.stream.decoder.dictionaries)
+
     schema_bytes = Arrow.Flight.schemaipc(first(messages))
     schema = Arrow.Flight.Protocol.SchemaResult(schema_bytes)
     separated = Arrow.Flight.table(messages[2:end]; schema=schema)
     @test separated.id == [1, 2, 3]
     @test separated.label == ["one", "two", "three"]
+    empty_separated = Arrow.Flight.table((); schema=schema)
+    @test isempty(empty_separated.id)
 
-    wrapped = Arrow.Flight.withappmetadata(
-        source;
-        app_metadata=("wrapped:0", "wrapped:1"),
-    )
-    wrapped_result = Arrow.Flight.table(
-        Arrow.Flight.flightdata(wrapped);
-        include_app_metadata=true,
-    )
+    wrapped = Arrow.Flight.withappmetadata(source; app_metadata=("wrapped:0", "wrapped:1"))
+    wrapped_result =
+        Arrow.Flight.table(Arrow.Flight.flightdata(wrapped); include_app_metadata=true)
     @test String.(wrapped_result.app_metadata) == ["wrapped:0", "wrapped:1"]
 
     channel = Channel{Arrow.Flight.Protocol.FlightData}(8)
@@ -78,10 +121,76 @@ using Tables
     wait(task)
     @test Arrow.Flight.table(channel_messages).id == [1, 2, 3]
 
-    dictionary_messages = Arrow.Flight.flightdata((
-        value=Arrow.DictEncode(["alpha", "beta", "alpha"]),
-    ))
+    sliced_messages = Arrow.Flight.flightdata(
+        (id=collect(Int64, 1:5), payload=fill("bounded", 5));
+        max_rows_per_batch=2,
+        app_metadata=("slice:1", "slice:2", "slice:3"),
+    )
+    sliced_batches =
+        collect(Arrow.Flight.stream(sliced_messages; include_app_metadata=true))
+    @test length(sliced_batches) == 3
+    @test length.(getproperty.(sliced_batches, :table)) == [2, 2, 1]
+    @test String.(getproperty.(sliced_batches, :app_metadata)) ==
+          ["slice:1", "slice:2", "slice:3"]
+    oversized_limit =
+        length(sliced_messages[2].data_header) + length(sliced_messages[2].data_body) - 1
+    oversized_error = try
+        Arrow.Flight.flightdata(
+            (id=collect(Int64, 1:5), payload=fill("bounded", 5));
+            max_rows_per_batch=2,
+            max_flightdata_bytes=oversized_limit,
+            app_metadata=("slice:1", "slice:2", "slice:3"),
+        )
+        nothing
+    catch error
+        error
+    end
+    @test oversized_error isa Arrow.Flight.FlightStatusError
+    @test oversized_error.code == Arrow.Flight.FLIGHT_STATUS_RESOURCE_EXHAUSTED
+    @test occursin("partition the source", oversized_error.message)
+
+    # Encoding is genuinely incremental: the first batch reaches a bounded
+    # downstream sink before the second source partition is even available.
+    partitions = Channel{NamedTuple}(0)
+    streamed = Channel{Arrow.Flight.Protocol.FlightData}(1)
+    streaming_task = @async Arrow.Flight.putflightdata!(
+        streamed,
+        Tables.partitioner(partitions);
+        close=true,
+    )
+    put!(partitions, (id=Int64[10], label=["ten"]))
+    schema_message = take!(streamed)
+    first_batch = take!(streamed)
+    @test Arrow.Flight.table([schema_message, first_batch]).id == [10]
+    @test !istaskdone(streaming_task)
+    put!(partitions, (id=Int64[20], label=["twenty"]))
+    close(partitions)
+    remaining = collect(streamed)
+    wait(streaming_task)
+    @test Arrow.Flight.table([schema_message, first_batch, remaining...]).id == [10, 20]
+
+    failed_stream = Channel{Arrow.Flight.Protocol.FlightData}(4)
+    failed_task = @async Arrow.Flight.putflightdata!(
+        failed_stream,
+        Tables.partitioner(((id=Int64[1],), (different=Int64[2],)));
+        close=true,
+    )
+    partial = collect(failed_stream)
+    @test length(partial) == 2 # schema plus the valid first record batch
+    @test istaskfailed(failed_task)
+    @test_throws TaskFailedException wait(failed_task)
+
+    dictionary_messages =
+        Arrow.Flight.flightdata((value=Arrow.DictEncode(["alpha", "beta", "alpha"]),))
     @test Arrow.Flight.table(dictionary_messages).value == ["alpha", "beta", "alpha"]
+    dictionary_stream = Arrow.Flight.flightdata(
+        Tables.partitioner((
+            (value=Arrow.DictEncode(["alpha", "beta", "alpha"]),),
+            (value=Arrow.DictEncode(["alpha", "beta", "beta"]),),
+        )),
+    )
+    dictionary_batches = collect(Arrow.Flight.stream(dictionary_stream))
+    @test [batch.value for batch in dictionary_batches] == [["alpha", "beta", "alpha"], ["alpha", "beta", "beta"]]
 
     @test_throws ArgumentError Arrow.Flight.table(Arrow.Flight.Protocol.FlightData[])
     @test_throws ArgumentError Arrow.Flight.flightdata(source; alignment=64)
@@ -99,4 +208,32 @@ using Tables
         messages[2].data_body[1:(end - 1)],
     )
     @test_throws ArgumentError Arrow.Flight.table(damaged)
+    damaged_stream = Arrow.Flight.stream(damaged)
+    @test_throws ArgumentError iterate(damaged_stream)
+
+    @test_throws Arrow.ValidationError Arrow.Flight.streambytes(
+        messages;
+        limits=Arrow.Limits(max_messages=2),
+    )
+    @test_throws Arrow.ValidationError Arrow.Flight.streambytes(
+        messages;
+        limits=Arrow.Limits(max_body_bytes=length(messages[2].data_body) - 1),
+    )
+    @test_throws Arrow.ValidationError Arrow.Flight.streambytes(
+        messages;
+        limits=Arrow.Limits(max_metadata_bytes=length(messages[1].data_header) - 1),
+    )
+    @test_throws Arrow.AllocationLimitError Arrow.Flight.streambytes(
+        messages;
+        limits=Arrow.Limits(max_total_allocated_bytes=length(bytes) - 1),
+    )
+    @test_throws Arrow.AllocationLimitError Arrow.Flight.table(
+        messages;
+        limits=Arrow.Limits(max_total_allocated_bytes=length(bytes)),
+    )
+    limited = Arrow.Flight.table(
+        messages;
+        limits=Arrow.Limits(max_total_allocated_bytes=4 * 1024 * 1024),
+    )
+    @test limited.id == [1, 2, 3]
 end

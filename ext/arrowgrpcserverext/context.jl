@@ -24,7 +24,7 @@ function _method_type(method::Flight.MethodDescriptor)
            gRPCServer.MethodType.UNARY
 end
 
-function _call_context(context::gRPCServer.ServerContext)
+function _call_context(context::gRPCServer.ServerContext, secure::Bool=false)
     headers = Flight.HeaderPair[
         String(name) => (value isa String ? value : Vector{UInt8}(value)) for
         (name, value) in pairs(context.metadata)
@@ -32,8 +32,19 @@ function _call_context(context::gRPCServer.ServerContext)
     peer = string(context.peer.address, ":", context.peer.port)
     return Flight.ServerCallContext(
         headers=headers,
+        request_id=string(context.request_id),
+        method=context.method,
+        authority=context.authority,
         peer=peer,
-        secure=(context.peer.certificate !== nothing),
+        secure=secure,
+        deadline=context.deadline,
+        trace_context=isnothing(context.trace_context) ? nothing :
+                      copy(context.trace_context),
+        payload=context.payload,
+        is_cancelled=() -> gRPCServer.is_cancelled(context),
+        remaining_time=() -> gRPCServer.remaining_time(context),
+        set_response_header=(name, value) -> gRPCServer.set_header!(context, name, value),
+        set_response_trailer=(name, value) -> gRPCServer.set_trailer!(context, name, value),
     )
 end
 

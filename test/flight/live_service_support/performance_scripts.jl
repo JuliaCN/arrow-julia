@@ -607,3 +607,35 @@ print(json.dumps({
     "request_max_ns": max(samples),
 }))
 """
+
+const FLIGHT_LIVE_PYARROW_CANCELLATION_SOAK = raw"""
+import json
+import pyarrow.flight as fl
+import sys
+
+host = sys.argv[1]
+port = int(sys.argv[2])
+rounds = int(sys.argv[3])
+path = sys.argv[4:]
+
+client = fl.FlightClient(
+    f"grpc://{host}:{port}",
+    generic_options=[("grpc.http2.lookahead_bytes", 0)],
+)
+options = fl.FlightCallOptions(timeout=30)
+descriptor = fl.FlightDescriptor.for_path(*path)
+info = client.get_flight_info(descriptor, options=options)
+
+cancelled = 0
+for _ in range(rounds):
+    reader = client.do_get(info.endpoints[0].ticket, options=options)
+    first = reader.read_chunk()
+    assert first.data.num_rows > 0
+    reader.cancel()
+    cancelled += 1
+
+# Prove that repeated cancellation did not poison the connection or listener.
+health = client.get_flight_info(descriptor, options=options)
+assert health.total_records == info.total_records
+print(json.dumps({"cancelled_streams": cancelled, "health_records": health.total_records}))
+"""
