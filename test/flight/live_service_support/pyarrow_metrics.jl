@@ -135,7 +135,7 @@ function flight_live_pyarrow_reused_doput_metric(
         timeout_sec=_flight_live_command_timeout_sec(),
         label="pyarrow Flight reused-client DoPut benchmark",
     )
-    result = JSON3.read(output)
+    result = JSON.parse(output)
     total_requests = Int(result["total_requests"])
     wall_ns = Int(result["wall_ns"])
     request_bytes = fixture.message_bytes * total_requests
@@ -241,7 +241,7 @@ function flight_live_pyarrow_concurrent_doget(
         timeout_sec=_flight_live_command_timeout_sec(),
         label="pyarrow Flight concurrent DoGet benchmark",
     )
-    return JSON3.read(output)
+    return JSON.parse(output)
 end
 
 function flight_live_pyarrow_concurrent_doget_metric(
@@ -319,7 +319,7 @@ function flight_live_pyarrow_concurrent_doput(
         timeout_sec=_flight_live_command_timeout_sec(),
         label="pyarrow Flight concurrent DoPut benchmark",
     )
-    return JSON3.read(output)
+    return JSON.parse(output)
 end
 
 function flight_live_pyarrow_concurrent_doput_metric(
@@ -400,7 +400,7 @@ function flight_live_pyarrow_concurrent_doexchange(
         timeout_sec=_flight_live_command_timeout_sec(),
         label="pyarrow Flight concurrent DoExchange benchmark",
     )
-    return JSON3.read(output)
+    return JSON.parse(output)
 end
 
 function flight_live_pyarrow_concurrent_doexchange_metric(

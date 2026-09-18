@@ -48,6 +48,16 @@ function _flight_live_transport_measure(
     )
 end
 
+function _flight_live_enforce_throughput(metric, operation::Symbol; env_name=nothing)
+    minimum = _flight_live_pyarrow_min_throughput_mib_per_sec(operation; env_name=env_name)
+    metric.throughput_mib_per_sec >= minimum || error(
+        "$(metric.backend) $(metric.operation) throughput " *
+        "$(metric.throughput_mib_per_sec) MiB/s is below the configured minimum " *
+        "$(minimum) MiB/s",
+    )
+    return metric
+end
+
 function flight_live_transport_benchmark(
     protocol,
     transport;
@@ -81,7 +91,7 @@ function flight_live_transport_benchmark(
             if isnothing(doget_metric)
                 @test true
             else
-                push!(metrics, doget_metric)
+                push!(metrics, _flight_live_enforce_throughput(doget_metric, :doget))
             end
         end
         if :doput in operations
@@ -95,7 +105,7 @@ function flight_live_transport_benchmark(
             if isnothing(doput_metric)
                 @test true
             else
-                push!(metrics, doput_metric)
+                push!(metrics, _flight_live_enforce_throughput(doput_metric, :doput))
             end
         end
         if :doput_reused_client in operations
@@ -110,7 +120,14 @@ function flight_live_transport_benchmark(
             if isnothing(doput_reused_metric)
                 @test true
             else
-                push!(metrics, doput_reused_metric)
+                push!(
+                    metrics,
+                    _flight_live_enforce_throughput(
+                        doput_reused_metric,
+                        :doput_reused_client;
+                        env_name="ARROW_FLIGHT_PYARROW_REUSED_DOPUT_MIN_THROUGHPUT_MIB_PER_SEC",
+                    ),
+                )
             end
         end
         if :doexchange in operations
@@ -124,7 +141,10 @@ function flight_live_transport_benchmark(
             if isnothing(doexchange_metric)
                 @test true
             else
-                push!(metrics, doexchange_metric)
+                push!(
+                    metrics,
+                    _flight_live_enforce_throughput(doexchange_metric, :doexchange),
+                )
             end
         end
         return metrics
@@ -155,16 +175,22 @@ function flight_live_transport_concurrent_benchmark(
         transport.wait_for_server(server)
         host, port = transport.endpoint(server)
         if operation == :doget
-            return flight_live_pyarrow_concurrent_doget_metric(
+            metric = flight_live_pyarrow_concurrent_doget_metric(
                 host,
                 port,
                 fixture;
                 backend=transport.backend,
                 concurrent_clients=concurrent_clients,
                 requests_per_client=requests_per_client,
+            )
+            return isnothing(metric) ? nothing :
+                   _flight_live_enforce_throughput(
+                metric,
+                :doget;
+                env_name="ARROW_FLIGHT_PYARROW_CONCURRENT_DOGET_MIN_THROUGHPUT_MIB_PER_SEC",
             )
         elseif operation == :doput
-            return flight_live_pyarrow_concurrent_doput_metric(
+            metric = flight_live_pyarrow_concurrent_doput_metric(
                 host,
                 port,
                 fixture;
@@ -172,14 +198,26 @@ function flight_live_transport_concurrent_benchmark(
                 concurrent_clients=concurrent_clients,
                 requests_per_client=requests_per_client,
             )
+            return isnothing(metric) ? nothing :
+                   _flight_live_enforce_throughput(
+                metric,
+                :doput;
+                env_name="ARROW_FLIGHT_PYARROW_CONCURRENT_DOPUT_MIN_THROUGHPUT_MIB_PER_SEC",
+            )
         elseif operation == :doexchange
-            return flight_live_pyarrow_concurrent_doexchange_metric(
+            metric = flight_live_pyarrow_concurrent_doexchange_metric(
                 host,
                 port,
                 fixture;
                 backend=transport.backend,
                 concurrent_clients=concurrent_clients,
                 requests_per_client=requests_per_client,
+            )
+            return isnothing(metric) ? nothing :
+                   _flight_live_enforce_throughput(
+                metric,
+                :doexchange;
+                env_name="ARROW_FLIGHT_PYARROW_CONCURRENT_DOEXCHANGE_MIN_THROUGHPUT_MIB_PER_SEC",
             )
         end
         throw(ArgumentError("unsupported concurrent Flight operation: $(operation)"))

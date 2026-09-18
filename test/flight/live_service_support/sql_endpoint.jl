@@ -332,5 +332,5 @@ function flight_live_python_sql_endpoint_smoke(host::AbstractString, port::Integ
             fixture.password,
         ]),
     )
-    return JSON3.read(output)
+    return JSON.parse(output)
 end

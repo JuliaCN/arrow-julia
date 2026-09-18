@@ -35,14 +35,47 @@ service = Arrow.Flight.Service(
     end,
 )
 
-server = Arrow.Flight.grpcserver_flight_server(service; host="127.0.0.1", port=8815)
-# Arrow.Flight.stop!(server)
+server = Arrow.Flight.grpcserver_flight_server(
+    service;
+    host="127.0.0.1",
+    port=8815,
+    max_receive_message_length=64 * 1024 * 1024,
+    max_send_message_length=64 * 1024 * 1024,
+    max_concurrent_streams=128,
+    max_concurrent_requests=128,
+    idle_timeout=300.0,
+    request_capacity=4,
+    response_capacity=4,
+    enable_health_check=true,
+)
+# Arrow.Flight.stop!(server; timeout=30.0)
 ```
 
 `gRPCServer` is a weak dependency: load it to activate
 `ArrowgRPCServerExt`. Arrow.jl does not pin a transport fork or maintain a
 second HTTP/2 listener. Lifecycle, HTTP/2, streaming, cancellation, TLS, and
 gRPC status handling remain owned by `gRPCServer.jl`.
+
+All keywords other than `request_capacity` and `response_capacity` are passed
+to `gRPCServer.GRPCServer`. In particular, configure production TLS with its
+`tls` option and set explicit receive/send message limits: the transport's
+default message size can be smaller than a legitimate Arrow record batch.
+`gRPCServer` validates these options against the selected HTTP/2 backend and
+rejects unsupported settings instead of silently ignoring them; for example,
+the default HTTP.jl backend does not implement `max_queued_requests` or the
+configuration-level `drain_timeout` (use `stop!(server; timeout=...)`).
+Channel capacities bound queued decoded messages; increasing them may improve
+throughput but increases per-request memory by roughly the size of the queued
+record batches.
+
+Every handler receives an `Arrow.Flight.ServerCallContext` containing request
+metadata, request ID, method, authority, peer, TLS state, deadline, trace
+context, and the transport payload. Long-running handler loops should call
+`Arrow.Flight.checkcall(context)` between expensive units of work. This maps
+client cancellation and expired deadlines to the standard gRPC status codes;
+Julia tasks performing a blocking external operation still need that operation's
+own timeout. Handlers can publish response metadata with
+`setresponseheader!` and `setresponsetrailer!` before the stream closes.
 
 ## IPC conversion
 
@@ -67,13 +100,23 @@ and application-metadata extraction happen while the IPC byte buffer is
 rebuilt. Arrow 3's validated reader currently opens that complete IPC buffer,
 so receive-side byte storage is still proportional to the response; the Flight
 adapter no longer adds another response-sized layer of message retention.
+`stream`, `table`, and `streambytes` accept `limits=Arrow.Limits(...)`.
+Per-message header/body/application-metadata limits, message count, rebuilt IPC
+storage, retained application metadata, verification, decode, and
+materialization all share one cumulative allocation budget.
 
 ```julia
 source = Tables.partitioner(((id=[1, 2],), (id=[3],)))
 messages = Arrow.Flight.flightdata(source; app_metadata=("first", "second"))
 
 batches = collect(Arrow.Flight.stream(messages; include_app_metadata=true))
-table = Arrow.Flight.table(messages)
+limits = Arrow.Limits(
+    max_metadata_bytes=16 * 1024 * 1024,
+    max_body_bytes=64 * 1024 * 1024,
+    max_total_allocated_bytes=256 * 1024 * 1024,
+    max_messages=10_000,
+)
+table = Arrow.Flight.table(messages; limits=limits)
 ```
 
 Prefer `putflightdata!` in server handlers. `flightdata` intentionally retains
@@ -104,6 +147,23 @@ The first partition fixes the stream schema, following the Arrow 3 incremental
 writer contract. Later partitions must have the same names and compatible
 types. Explicit metadata avoids inferring stream-wide schema metadata from an
 arbitrary first partition.
+
+## Production performance receipt
+
+The live benchmark uses the official Julia `gRPCServer` listener and a PyArrow
+Flight client for `DoGet`, `DoPut`, reused-client `DoPut`, `DoExchange`, and
+concurrent-client runs:
+
+```sh
+julia --project=test bench/flight.jl
+```
+
+It fails rather than silently skipping when PyArrow is unavailable. Runner-
+specific throughput gates can be set with
+`ARROW_FLIGHT_PYARROW_<OPERATION>_MIN_THROUGHPUT_MIB_PER_SEC`; concurrent gates
+use `ARROW_FLIGHT_PYARROW_CONCURRENT_<OPERATION>_MIN_THROUGHPUT_MIB_PER_SEC`.
+Record the runner, Julia/Python versions, workload variables, and output before
+turning an observed baseline into a CI threshold.
 
 ## API reference
 
