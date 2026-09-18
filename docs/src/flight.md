@@ -88,22 +88,26 @@ allocation is therefore one source partition, rather than the whole response.
 `Arrow.Flight.flightdata` uses the same path but collects the messages for
 callers that explicitly need a vector.
 
-`Arrow.Flight.stream` and `Arrow.Flight.table` rebuild a standard IPC stream
-and delegate validation and materialization to `Arrow.Stream` and
-`Arrow.Table`. `Arrow.Flight.stream` derives its Tables.jl schema directly
-from the decoded IPC schema, so it does not parse and materialize a second
-`Arrow.Table` merely to discover column types.
+`Arrow.Flight.stream` incrementally admits each Flight IPC header/body pair to
+Arrow 3's message decoder. The Arrow core owns schema validation, immutable
+dictionary snapshots and deltas, compression state, semantic validation, and
+facade materialization; the Flight layer owns only transport framing and
+application metadata. Construction consumes only the schema message. Each
+record batch is requested and decoded by the corresponding iterator pull, so
+transport backpressure extends through receive-side decoding.
+Call `close(stream)` when abandoning iteration early to release decoder codec
+state, pending batches, dictionary snapshots, and retained application metadata
+deterministically; reaching end of stream performs the same cleanup.
 
 Incoming `FlightData` is consumed in one pass. Iterator and channel inputs are
-not first collected into a second message vector: framing, schema detection,
-and application-metadata extraction happen while the IPC byte buffer is
-rebuilt. Arrow 3's validated reader currently opens that complete IPC buffer,
-so receive-side byte storage is still proportional to the response; the Flight
-adapter no longer adds another response-sized layer of message retention.
-`stream`, `table`, and `streambytes` accept `limits=Arrow.Limits(...)`.
-Per-message header/body/application-metadata limits, message count, rebuilt IPC
-storage, retained application metadata, verification, decode, and
-materialization all share one cumulative allocation budget.
+not collected or rebuilt into a response-sized IPC byte buffer by `stream`.
+Already yielded record bodies are rooted by the returned batch values rather
+than by the stream. Current dictionary pools remain live for later batches, as
+required by IPC semantics. `table` is intentionally the eager convenience API
+and `streambytes` intentionally produces a contiguous IPC stream, so those two
+retain whole-result behavior. `stream`, `table`, and `streambytes` accept
+`limits=Arrow.Limits(...)`; each path uses one cumulative allocation budget for
+its framing, verification, decode, retained metadata, and materialization work.
 
 ```julia
 source = Tables.partitioner(((id=[1, 2],), (id=[3],)))

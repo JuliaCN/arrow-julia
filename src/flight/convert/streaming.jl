@@ -163,57 +163,40 @@ function streambytes(
     return bytes
 end
 
-function _stream_schema(stream::ArrowParent.Stream)
-    fields = ArrowParent._batchfields(getfield(stream, :src))
-    names = Symbol[Symbol(field.name) for field in fields]
-    types = Type[ArrowParent._declaredeltype(field) for field in fields]
-    return Tables.Schema(
-        names,
-        types;
-        stored=length(names) > ArrowParent._MAX_TYPED_SCHEMA_FIELDS,
-    )
-end
-
-struct FlightStream{S,M}
+struct FlightStream{S}
     stream::S
     schema::Tables.Schema
-    app_metadata::M
 end
 
 struct FlightStreamWithAppMetadata{S}
     stream::S
 end
 
-Base.IteratorSize(::Type{<:FlightStream}) = Base.HasLength()
-Base.IteratorSize(::Type{<:FlightStreamWithAppMetadata}) = Base.HasLength()
+Base.IteratorSize(::Type{<:FlightStream}) = Base.SizeUnknown()
+Base.IteratorSize(::Type{<:FlightStreamWithAppMetadata}) = Base.SizeUnknown()
 Base.eltype(::Type{<:FlightStream}) = ArrowParent.Table
 Base.eltype(::Type{<:FlightStreamWithAppMetadata}) = NamedTuple
-Base.length(x::FlightStream) = length(x.stream)
-Base.length(x::FlightStreamWithAppMetadata) = length(x.stream)
-Base.isdone(x::FlightStream, state...) = Base.isdone(x.stream, state...)
 Tables.partitions(x::FlightStream) = x
 Tables.partitions(x::FlightStreamWithAppMetadata) = x
 Tables.schema(x::FlightStream) = x.schema
 Tables.schema(x::FlightStreamWithAppMetadata) = Tables.schema(x.stream)
 Tables.columnnames(x::FlightStream) = x.schema.names
 Tables.columnnames(x::FlightStreamWithAppMetadata) = Tables.columnnames(x.stream)
+Base.close(x::FlightStream) = close(x.stream)
+Base.close(x::FlightStreamWithAppMetadata) = close(x.stream)
 
-Base.iterate(x::FlightStream) = iterate(x.stream)
-Base.iterate(x::FlightStream, state) = iterate(x.stream, state)
-
-function Base.iterate(x::FlightStreamWithAppMetadata)
-    item = iterate(x.stream.stream)
+function Base.iterate(x::FlightStream, state::Int=1)
+    item = _next_flight_batch!(x.stream)
     item === nothing && return nothing
-    table, state = item
-    return (table=table, app_metadata=x.stream.app_metadata[1]), (state, 2)
+    table, _ = item
+    return table, state + 1
 end
 
-function Base.iterate(x::FlightStreamWithAppMetadata, state)
-    stream_state, index = state
-    item = iterate(x.stream.stream, stream_state)
+function Base.iterate(x::FlightStreamWithAppMetadata, state::Int=1)
+    item = _next_flight_batch!(x.stream.stream)
     item === nothing && return nothing
-    table, next_state = item
-    return (table=table, app_metadata=x.stream.app_metadata[index]), (next_state, index + 1)
+    table, app_metadata = item
+    return (table=table, app_metadata=app_metadata), state + 1
 end
 
 function _flight_stream(
@@ -223,23 +206,68 @@ function _flight_stream(
     end_marker::Bool=true,
     limits=ArrowParent.Limits(),
 )
-    bytes, metadata, budget = _rebuild_stream(
-        messages;
-        schema=schema,
-        alignment=alignment,
-        end_marker=end_marker,
-        capture_metadata=true,
-        limits=limits,
+    ArrowParent._validatelimits(limits)
+    alignment == DEFAULT_IPC_ALIGNMENT ||
+        throw(ArgumentError("Arrow 3 Flight IPC uses the standard 8-byte alignment"))
+    cursor = FlightMessageCursor(messages)
+    budget = ArrowParent.AllocationBudget(limits.max_total_allocated_bytes)
+    first_message = nothing
+    first_framed = nothing
+    count = 0
+    schema_message = nothing
+    while true
+        message = _cursor_next!(cursor)
+        message === nothing && break
+        count < limits.max_messages || throw(
+            ArrowParent.ValidationError(
+                "Flight message count exceeds limit $(limits.max_messages)",
+            ),
+        )
+        count += 1
+        framed = _flight_framed_message(message, limits, budget)
+        framed === nothing && continue
+        if framed.msg.header isa ArrowParent.Meta.Schema
+            schema_message = framed
+        else
+            schema === nothing && throw(ArgumentError(_missing_schema_message()))
+            schema_message = _injected_schema_message(schema, alignment, limits, budget)
+            first_message = message
+            first_framed = framed
+        end
+        break
+    end
+    if schema_message === nothing
+        schema === nothing && throw(ArgumentError(_missing_schema_message()))
+        schema_message = _injected_schema_message(schema, alignment, limits, budget)
+    end
+    decoder = ArrowParent.IPCMessageDecoder(schema_message, limits, budget)
+    fields = decoder.corefields
+    names = ArrowParent._fieldnamesymbols(fields, budget)
+    types = Type[ArrowParent._declaredeltype(field) for field in fields]
+    table_schema = Tables.Schema(
+        names,
+        types;
+        stored=length(names) > ArrowParent._MAX_TYPED_SCHEMA_FIELDS,
     )
-    opened = ArrowParent._openbytes(bytes; limits=limits, budget=budget)
-    stream = ArrowParent.Stream(opened; mmap=false, limits=limits)
-    table_schema = _stream_schema(stream)
-    length(metadata) == length(stream) || throw(
-        ArgumentError(
-            "Flight record-batch metadata count does not match decoded Arrow batch count",
-        ),
+    source = FlightIPCSource(
+        cursor,
+        decoder,
+        count,
+        Dict{Int,Vector{UInt8}}(),
+        names,
+        table_schema,
+        ArrowParent._ArrowTypesContext(budget=budget),
+        ReentrantLock(),
+        false,
+        false,
     )
-    return FlightStream(stream, table_schema, metadata)
+    if first_framed !== nothing
+        if first_framed.msg.header isa ArrowParent.Meta.RecordBatch
+            _retain_app_metadata!(source, first_message)
+        end
+        ArrowParent.pushmessage!(decoder, first_framed)
+    end
+    return FlightStream(source, table_schema)
 end
 
 """

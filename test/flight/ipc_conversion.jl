@@ -68,6 +68,40 @@ using Tables
     end
     @test [batch.id for batch in Arrow.Flight.stream(message_channel)] == [[1, 2], [3]]
 
+    # Receive decoding is genuinely incremental too: construction consumes
+    # only the schema. Each record message is requested by the corresponding
+    # partition pull instead of rebuilding/opening a response-sized buffer.
+    received = Ref(0)
+    lazy_messages = ((received[] += 1; message) for message in messages)
+    lazy_stream = Arrow.Flight.stream(lazy_messages)
+    @test received[] == 1
+    @test Base.IteratorSize(typeof(lazy_stream)) isa Base.SizeUnknown
+    first_lazy, lazy_state = iterate(lazy_stream)
+    @test first_lazy.id == [1, 2]
+    @test received[] == 2
+    second_lazy, lazy_state = iterate(lazy_stream, lazy_state)
+    @test second_lazy.id == [3]
+    @test received[] == 3
+    @test iterate(lazy_stream, lazy_state) === nothing
+
+    many_parts = Tables.partitioner(((id=Int64[index],) for index = 1:70))
+    many_messages =
+        Arrow.Flight.flightdata(many_parts; app_metadata=("batch:$index" for index = 1:70))
+    bounded_stream = Arrow.Flight.stream(many_messages; include_app_metadata=true)
+    bounded_batches = collect(bounded_stream)
+    @test only(last(bounded_batches).table.id) == 70
+    @test String(last(bounded_batches).app_metadata) == "batch:70"
+    bounded_source = bounded_stream.stream.stream
+    @test length(bounded_source.decoder.batchslots) < 64
+    @test isempty(bounded_source.app_metadata)
+
+    abandoned_stream = Arrow.Flight.stream(messages)
+    @test first(abandoned_stream).id == [1, 2]
+    close(abandoned_stream)
+    @test iterate(abandoned_stream) === nothing
+    @test isempty(abandoned_stream.stream.decoder.batchslots)
+    @test isempty(abandoned_stream.stream.decoder.dictionaries)
+
     schema_bytes = Arrow.Flight.schemaipc(first(messages))
     schema = Arrow.Flight.Protocol.SchemaResult(schema_bytes)
     separated = Arrow.Flight.table(messages[2:end]; schema=schema)
@@ -121,6 +155,14 @@ using Tables
     dictionary_messages =
         Arrow.Flight.flightdata((value=Arrow.DictEncode(["alpha", "beta", "alpha"]),))
     @test Arrow.Flight.table(dictionary_messages).value == ["alpha", "beta", "alpha"]
+    dictionary_stream = Arrow.Flight.flightdata(
+        Tables.partitioner((
+            (value=Arrow.DictEncode(["alpha", "beta", "alpha"]),),
+            (value=Arrow.DictEncode(["alpha", "beta", "beta"]),),
+        )),
+    )
+    dictionary_batches = collect(Arrow.Flight.stream(dictionary_stream))
+    @test [batch.value for batch in dictionary_batches] == [["alpha", "beta", "alpha"], ["alpha", "beta", "beta"]]
 
     @test_throws ArgumentError Arrow.Flight.table(Arrow.Flight.Protocol.FlightData[])
     @test_throws ArgumentError Arrow.Flight.flightdata(source; alignment=64)
@@ -138,6 +180,8 @@ using Tables
         messages[2].data_body[1:(end - 1)],
     )
     @test_throws ArgumentError Arrow.Flight.table(damaged)
+    damaged_stream = Arrow.Flight.stream(damaged)
+    @test_throws ArgumentError iterate(damaged_stream)
 
     @test_throws Arrow.ValidationError Arrow.Flight.streambytes(
         messages;

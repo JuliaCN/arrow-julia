@@ -18,5 +18,6 @@
 include("convert/constants.jl")
 include("convert/framing.jl")
 include("convert/schema.jl")
+include("convert/receive_decoder.jl")
 include("convert/streaming.jl")
 include("convert/flightdata.jl")

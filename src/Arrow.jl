@@ -89,6 +89,7 @@ const AC = ArrowCore
 
 include("ipc_read.jl")
 include("ipc_dictionary.jl")
+include("ipc_message_decoder.jl")
 include("ipc_write.jl")
 include("cdata.jl")
 include("source.jl")
