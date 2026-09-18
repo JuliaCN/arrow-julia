@@ -75,6 +75,64 @@ lookuptransportmethod(service::Service, key::AbstractString) =
 
 _default_transport_status_error(error::FlightStatusError) = throw(error)
 
+# gRPCServer currently exposes cancellation as a query rather than a waitable
+# notification.  Transport completion and Channel delivery are event-driven;
+# this low-frequency timer is only the compatibility bridge that turns the
+# upstream query into a local notification.
+const TRANSPORT_CONTEXT_CHECK_SECONDS = 0.05
+
+mutable struct _TransportContextMonitor
+    event::Base.Event
+    errors::Channel{Any}
+    timer::Timer
+    task::Task
+    stopped::Threads.Atomic{Bool}
+end
+
+function _start_transport_context_monitor(
+    context::ServerCallContext;
+    on_abort::Function=() -> nothing,
+)
+    event = Base.Event()
+    errors = Channel{Any}(1)
+    timer = Timer(TRANSPORT_CONTEXT_CHECK_SECONDS; interval=TRANSPORT_CONTEXT_CHECK_SECONDS)
+    stopped = Threads.Atomic{Bool}(false)
+    task = errormonitor(@async begin
+        try
+            while !stopped[]
+                wait(timer)
+                stopped[] && break
+                try
+                    checkcall(context)
+                catch error
+                    put!(errors, error)
+                    try
+                        on_abort()
+                    catch
+                    end
+                    notify(event)
+                    break
+                end
+            end
+        catch error
+            error isa EOFError || rethrow()
+        finally
+            isopen(timer) && close(timer)
+        end
+    end)
+    return _TransportContextMonitor(event, errors, timer, task, stopped)
+end
+
+_transport_monitor_error(monitor::_TransportContextMonitor) =
+    isready(monitor.errors) ? fetch(monitor.errors) : nothing
+
+function _stop_transport_context_monitor!(monitor::_TransportContextMonitor)
+    Threads.atomic_xchg!(monitor.stopped, true)
+    isopen(monitor.timer) && close(monitor.timer)
+    notify(monitor.event)
+    return nothing
+end
+
 function _rethrow_transport_status_error(error, on_status_error::Function)
     error isa FlightStatusError && return on_status_error(error)
     rethrow()
@@ -103,10 +161,25 @@ function _transport_handler_result(task::Task, producer::Union{Nothing,Task}=not
 end
 
 function _transport_task_result(task::Task, context::ServerCallContext)
-    while !istaskdone(task)
-        checkcall(context)
-        sleep(0.001)
+    istaskdone(task) || begin
+        monitor = _start_transport_context_monitor(context)
+        errormonitor(@async begin
+            try
+                wait(task)
+            catch
+            finally
+                notify(monitor.event)
+            end
+        end)
+        try
+            wait(monitor.event)
+            monitor_error = _transport_monitor_error(monitor)
+            isnothing(monitor_error) || throw(monitor_error)
+        finally
+            _stop_transport_context_monitor!(monitor)
+        end
     end
+    checkcall(context)
     try
         wait(task)
     catch
@@ -115,12 +188,47 @@ function _transport_task_result(task::Task, context::ServerCallContext)
     return fetch(task)
 end
 
-function _take_transport_response!(response::Channel, context::ServerCallContext)
-    while true
-        checkcall(context)
-        isready(response) && return Some(take!(response))
-        !isopen(response) && return nothing
-        sleep(0.001)
+function _take_transport_response!(
+    response::Channel,
+    context::ServerCallContext,
+    monitor::_TransportContextMonitor,
+)
+    checkcall(context)
+    value = try
+        take!(response)
+    catch error
+        if error isa InvalidStateException && !isopen(response)
+            monitor_error = _transport_monitor_error(monitor)
+            isnothing(monitor_error) || throw(monitor_error)
+            checkcall(context)
+            return nothing
+        end
+        rethrow()
+    end
+    monitor_error = _transport_monitor_error(monitor)
+    isnothing(monitor_error) || throw(monitor_error)
+    checkcall(context)
+    return Some(value)
+end
+
+function _wait_for_transport_cleanup(task::Task, timeout::Real)
+    istaskdone(task) && return true
+    timeout <= 0 && return false
+    event = Base.Event()
+    errormonitor(@async begin
+        try
+            wait(task)
+        catch
+        finally
+            notify(event)
+        end
+    end)
+    timer = Timer(_ -> notify(event), Float64(timeout))
+    try
+        wait(event)
+        return istaskdone(task)
+    finally
+        isopen(timer) && close(timer)
     end
 end
 
@@ -131,12 +239,7 @@ function _transport_cleanup_task(
     isnothing(task) && return nothing
     istaskdone(task) && return nothing
     if runtime !== nothing
-        status = timedwait(
-            () -> istaskdone(task),
-            runtime.cleanup_grace_seconds;
-            pollint=min(0.01, max(runtime.cleanup_grace_seconds / 10, 0.001)),
-        )
-        if status === :timed_out
+        if !_wait_for_transport_cleanup(task, runtime.cleanup_grace_seconds)
             _observe_cleanup_timeout!(runtime)
             return task
         end
@@ -278,10 +381,16 @@ function transport_server_streaming_call(
             close(response)
         end
     end
+    monitor = _start_transport_context_monitor(
+        context;
+        on_abort=() -> begin
+            isopen(response) && close(response)
+        end,
+    )
     try
         _observe_flight_request!(runtime, request)
         while true
-            item = _take_transport_response!(response, context)
+            item = _take_transport_response!(response, context, monitor)
             item === nothing && break
             message = something(item)
             _observe_flight_response!(runtime, message)
@@ -294,6 +403,7 @@ function transport_server_streaming_call(
     catch error
         _rethrow_transport_status_error(error, on_status_error)
     finally
+        _stop_transport_context_monitor!(monitor)
         isopen(response) && close(response)
         orphan_tasks = _transport_cleanup_tasks(runtime, task)
         _finalize_flight_call!(lease, failed, orphan_tasks)
@@ -419,9 +529,15 @@ function transport_bidi_streaming_call(
             close(response)
         end
     end
+    monitor = _start_transport_context_monitor(
+        context;
+        on_abort=() -> begin
+            isopen(response) && close(response)
+        end,
+    )
     try
         while true
-            item = _take_transport_response!(response, context)
+            item = _take_transport_response!(response, context, monitor)
             item === nothing && break
             message = something(item)
             _observe_flight_response!(runtime, message)
@@ -435,6 +551,7 @@ function transport_bidi_streaming_call(
     catch error
         _rethrow_transport_status_error(error, on_status_error)
     finally
+        _stop_transport_context_monitor!(monitor)
         _transport_close_request!(request)
         isopen(response) && close(response)
         orphan_tasks = _transport_cleanup_tasks(runtime, task, producer)
@@ -470,9 +587,15 @@ function transport_bidi_streaming_live_call(
             close(response)
         end
     end
+    monitor = _start_transport_context_monitor(
+        context;
+        on_abort=() -> begin
+            isopen(response) && close(response)
+        end,
+    )
     try
         while true
-            item = _take_transport_response!(response, context)
+            item = _take_transport_response!(response, context, monitor)
             item === nothing && break
             message = something(item)
             _observe_flight_response!(runtime, message)
@@ -485,6 +608,7 @@ function transport_bidi_streaming_live_call(
     catch error
         _rethrow_transport_status_error(error, on_status_error)
     finally
+        _stop_transport_context_monitor!(monitor)
         isopen(response) && close(response)
         orphan_tasks = _transport_cleanup_tasks(runtime, task)
         _finalize_flight_call!(lease, failed, orphan_tasks)

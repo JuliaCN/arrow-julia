@@ -90,6 +90,17 @@ handler that ignored cancellation; the handler task is not force-killed, but is
 detached and reported through `cleanup_timeouts` and `orphan_tasks`. Its call
 slot and memory reservation remain charged until the orphan actually exits, so
 repeated cancellation cannot bypass the server-wide admission budget.
+Traffic counters use atomic updates, so per-message metrics do not acquire the
+admission lock. Stream delivery and handler completion wait on Channel/Event
+notifications rather than a 1ms polling loop. Until `gRPCServer` exposes a
+waitable cancellation notification, a 50ms monitor converts its
+`is_cancelled` query into a local event; handlers must still cooperate during
+blocking application work.
+
+For `port=0`, Arrow delegates ephemeral binding to the listener and reads the
+actual bound port after startup; it does not reserve and release a probe socket.
+Native constructor support is tracked in
+[JuliaIO/gRPCServer.jl#4](https://github.com/JuliaIO/gRPCServer.jl/issues/4).
 
 Every handler receives an `Arrow.Flight.ServerCallContext` containing request
 metadata, request ID, method, authority, peer, TLS state, deadline, trace
@@ -196,6 +207,16 @@ specific throughput gates can be set with
 use `ARROW_FLIGHT_PYARROW_CONCURRENT_<OPERATION>_MIN_THROUGHPUT_MIB_PER_SEC`.
 Record the runner, Julia/Python versions, workload variables, and output before
 turning an observed baseline into a CI threshold.
+
+The required CI compatibility job runs the full server suite against the
+declared minimum and latest PyArrow versions, including a real TLS listener.
+On the pinned production-soak runner, `bench/flight_soak.jl` additionally gates
+concurrent p95/p99 latency, server-process peak RSS, repeated cancellation and
+post-cancellation health.
+
+The Julia-native client is intentionally a separate delivery track. Its
+ownership boundaries and acceptance gates are specified in
+[Julia Flight client design](flight-client-design.md).
 
 ## API reference
 

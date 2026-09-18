@@ -49,32 +49,14 @@ mutable struct GRPCServerFlightServer
     runtime::Flight.FlightServerRuntime
 end
 
-function _grpcserver_bind_address(host::AbstractString)
-    if host == "0.0.0.0" || isempty(host)
-        return Sockets.IPv4(0)
-    elseif host == "::"
-        return Sockets.IPv6(0)
-    end
-
-    try
-        return parse(Sockets.IPv4, host)
-    catch
-        try
-            return parse(Sockets.IPv6, host)
-        catch
-            return Sockets.getaddrinfo(String(host))
-        end
-    end
-end
-
-function _grpcserver_bind_port(host::AbstractString, port::Integer)
+function _grpcserver_construct_port(port::Integer)
     0 <= port <= 65535 || throw(ArgumentError("port must be between 0 and 65535"))
-    port != 0 && return Int(port)
-
-    socket = Sockets.listen(_grpcserver_bind_address(host), 0)
-    _, actual_port = getsockname(socket)
-    close(socket)
-    return Int(actual_port)
+    # gRPCServer's current constructor rejects zero even though its HTTP
+    # backend and HTTP.port(::GRPCServer) support an ephemeral listener.  Use
+    # the upstream test-suite bridge until the constructor accepts port=0;
+    # unlike pre-binding a socket, this leaves no close/rebind race window.
+    # Upstream API request: https://github.com/JuliaIO/gRPCServer.jl/issues/4
+    return port == 0 ? 1 : Int(port)
 end
 
 function _wait_for_grpcserver_listener(
@@ -117,13 +99,14 @@ function Flight.grpcserver_flight_server(
     response_capacity > 0 || throw(ArgumentError("response_capacity must be positive"))
 
     actual_host = String(host)
-    actual_port = _grpcserver_bind_port(actual_host, port)
+    construct_port = _grpcserver_construct_port(port)
     grpc_server = gRPCServer.GRPCServer(
         actual_host,
-        actual_port;
+        construct_port;
         max_concurrent_requests=Int(max_concurrent_requests),
         server_kwargs...,
     )
+    port == 0 && (grpc_server.port = 0)
     reservation = if isnothing(call_reservation_bytes)
         Int64(grpc_server.config.max_receive_message_length) +
         Int64(grpc_server.config.max_send_message_length)
@@ -154,6 +137,7 @@ function Flight.grpcserver_flight_server(
             gRPCServer.stop!(grpc_server; force=true)
         rethrow(error)
     end
+    actual_port = Int(gRPCServer.HTTP.port(grpc_server))
     return GRPCServerFlightServer(
         service,
         grpc_server,

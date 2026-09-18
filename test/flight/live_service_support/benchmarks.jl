@@ -55,6 +55,18 @@ function _flight_live_enforce_throughput(metric, operation::Symbol; env_name=not
         "$(metric.throughput_mib_per_sec) MiB/s is below the configured minimum " *
         "$(minimum) MiB/s",
     )
+    if hasproperty(metric, :request_p95_ms)
+        maximum_p95 = _flight_live_pyarrow_max_tail_latency_ms(95)
+        metric.request_p95_ms <= maximum_p95 || error(
+            "$(metric.backend) $(metric.operation) request p95 " *
+            "$(metric.request_p95_ms) ms exceeds the configured maximum $(maximum_p95) ms",
+        )
+        maximum_p99 = _flight_live_pyarrow_max_tail_latency_ms(99)
+        metric.request_p99_ms <= maximum_p99 || error(
+            "$(metric.backend) $(metric.operation) request p99 " *
+            "$(metric.request_p99_ms) ms exceeds the configured maximum $(maximum_p99) ms",
+        )
+    end
     return metric
 end
 

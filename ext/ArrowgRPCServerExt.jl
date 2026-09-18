@@ -19,7 +19,6 @@ module ArrowgRPCServerExt
 
 using Arrow
 using gRPCServer
-using Sockets
 
 include("arrowgrpcserverext/constants.jl")
 include("arrowgrpcserverext/context.jl")

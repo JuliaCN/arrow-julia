@@ -303,6 +303,8 @@ function flight_server_core_test_transport_adapters(fixture)
     @test completed_metrics.calls_completed == 1
     @test completed_metrics.request_messages == 1
     @test completed_metrics.response_messages == 1
+    @test runtime.request_messages isa Threads.Atomic{Int64}
+    @test runtime.response_messages isa Threads.Atomic{Int64}
 
     cleanup_runtime = Arrow.Flight.FlightServerRuntime(
         max_active_calls=1,
@@ -313,6 +315,7 @@ function flight_server_core_test_transport_adapters(fixture)
     handler_entered = Channel{Nothing}(1)
     handler_release = Channel{Nothing}(1)
     cancelled = Ref(false)
+    cancellation_checks = Threads.Atomic{Int}(0)
     noncooperative_service = Arrow.Flight.Service(
         doget=(ctx, ticket, response) -> begin
             put!(handler_entered, nothing)
@@ -323,7 +326,12 @@ function flight_server_core_test_transport_adapters(fixture)
         Arrow.Flight.transportdescriptor(noncooperative_service),
         "DoGet",
     )
-    noncooperative_context = Arrow.Flight.ServerCallContext(is_cancelled=() -> cancelled[])
+    noncooperative_context = Arrow.Flight.ServerCallContext(
+        is_cancelled=() -> begin
+            Threads.atomic_add!(cancellation_checks, 1)
+            cancelled[]
+        end,
+    )
     transport_task = @async try
         Arrow.Flight.transport_server_streaming_call(
             noncooperative_service,
@@ -338,6 +346,10 @@ function flight_server_core_test_transport_adapters(fixture)
         error
     end
     take!(handler_entered)
+    checks_before_idle = cancellation_checks[]
+    sleep(0.12)
+    idle_checks = cancellation_checks[] - checks_before_idle
+    @test 1 <= idle_checks <= 5
     cancelled[] = true
     @test timedwait(() -> istaskdone(transport_task), 1.0) !== :timed_out
     cancelled_error = fetch(transport_task)

@@ -452,3 +452,34 @@ function flight_live_pyarrow_concurrent_doexchange_metric(
         request_max_ms=request_max_ns / 1.0e6,
     )
 end
+
+function flight_live_pyarrow_cancellation_soak(
+    host::AbstractString,
+    port::Integer,
+    fixture;
+    rounds::Integer,
+)
+    rounds > 0 || throw(ArgumentError("cancellation soak rounds must be positive"))
+    python = FlightTestSupport.pyarrow_flight_python()
+    isnothing(python) && return nothing
+    output = _flight_live_readchomp_with_timeout(
+        Cmd([
+            python,
+            "-c",
+            FLIGHT_LIVE_PYARROW_CANCELLATION_SOAK,
+            host,
+            string(port),
+            string(rounds),
+            fixture.descriptor.path...,
+        ]);
+        timeout_sec=max(_flight_live_command_timeout_sec(), 60.0),
+        label="pyarrow Flight cancellation soak",
+    )
+    result = JSON.parse(output)
+    Int(result["cancelled_streams"]) == rounds ||
+        error("Flight cancellation soak did not cancel every stream")
+    Int(result["health_records"]) == fixture.total_records || error(
+        "Flight cancellation soak post-cancel health probe returned wrong record count",
+    )
+    return result
+end
