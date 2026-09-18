@@ -138,21 +138,53 @@ function _transport_cleanup_task(
         )
         if status === :timed_out
             _observe_cleanup_timeout!(runtime)
-            errormonitor(@async begin
-                try
-                    wait(task)
-                catch
-                finally
-                    _observe_orphan_finished!(runtime)
-                end
-            end)
-            return nothing
+            return task
         end
     end
     try
         wait(task)
     catch
     end
+    return nothing
+end
+
+function _transport_cleanup_tasks(
+    runtime::Union{Nothing,FlightServerRuntime},
+    tasks::Task...,
+)
+    orphan_tasks = Task[]
+    for task in tasks
+        orphan_task = _transport_cleanup_task(task, runtime)
+        !isnothing(orphan_task) && push!(orphan_tasks, orphan_task)
+    end
+    return orphan_tasks
+end
+
+function _finalize_flight_call!(
+    lease::Union{Nothing,_FlightCallLease},
+    failed::Bool,
+    orphan_tasks::Vector{Task},
+)
+    isnothing(lease) && return nothing
+    if isempty(orphan_tasks)
+        _leave_flight_call!(lease, failed)
+        return nothing
+    end
+
+    runtime = lease.runtime
+    errormonitor(@async begin
+        @sync for orphan_task in orphan_tasks
+            @async begin
+                try
+                    wait(orphan_task)
+                catch
+                finally
+                    _observe_orphan_finished!(runtime)
+                end
+            end
+        end
+        _leave_flight_call!(lease, failed)
+    end)
     return nothing
 end
 
@@ -263,8 +295,8 @@ function transport_server_streaming_call(
         _rethrow_transport_status_error(error, on_status_error)
     finally
         isopen(response) && close(response)
-        _transport_cleanup_task(task, runtime)
-        lease !== nothing && _leave_flight_call!(lease, failed)
+        orphan_tasks = _transport_cleanup_tasks(runtime, task)
+        _finalize_flight_call!(lease, failed, orphan_tasks)
     end
 end
 
@@ -309,9 +341,8 @@ function transport_client_streaming_call(
         _rethrow_transport_status_error(error, on_status_error)
     finally
         _transport_close_request!(request)
-        _transport_cleanup_task(task, runtime)
-        _transport_cleanup_task(producer, runtime)
-        lease !== nothing && _leave_flight_call!(lease, failed)
+        orphan_tasks = _transport_cleanup_tasks(runtime, task, producer)
+        _finalize_flight_call!(lease, failed, orphan_tasks)
     end
 end
 
@@ -350,8 +381,8 @@ function transport_client_streaming_live_call(
     catch error
         _rethrow_transport_status_error(error, on_status_error)
     finally
-        _transport_cleanup_task(task, runtime)
-        lease !== nothing && _leave_flight_call!(lease, failed)
+        orphan_tasks = _transport_cleanup_tasks(runtime, task)
+        _finalize_flight_call!(lease, failed, orphan_tasks)
     end
 end
 
@@ -406,9 +437,8 @@ function transport_bidi_streaming_call(
     finally
         _transport_close_request!(request)
         isopen(response) && close(response)
-        _transport_cleanup_task(task, runtime)
-        _transport_cleanup_task(producer, runtime)
-        lease !== nothing && _leave_flight_call!(lease, failed)
+        orphan_tasks = _transport_cleanup_tasks(runtime, task, producer)
+        _finalize_flight_call!(lease, failed, orphan_tasks)
     end
 end
 
@@ -456,7 +486,7 @@ function transport_bidi_streaming_live_call(
         _rethrow_transport_status_error(error, on_status_error)
     finally
         isopen(response) && close(response)
-        _transport_cleanup_task(task, runtime)
-        lease !== nothing && _leave_flight_call!(lease, failed)
+        orphan_tasks = _transport_cleanup_tasks(runtime, task)
+        _finalize_flight_call!(lease, failed, orphan_tasks)
     end
 end

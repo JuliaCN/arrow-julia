@@ -346,10 +346,34 @@ function flight_server_core_test_transport_adapters(fixture)
     orphan_metrics = Arrow.Flight.flight_server_metrics(cleanup_runtime)
     @test orphan_metrics.cleanup_timeouts == 1
     @test orphan_metrics.orphan_tasks == 1
-    @test orphan_metrics.active_calls == 0
+    @test orphan_metrics.active_calls == 1
+    @test orphan_metrics.reserved_bytes == 64
+    rejected_while_orphaned = try
+        Arrow.Flight.transport_server_streaming_call(
+            noncooperative_service,
+            Arrow.Flight.ServerCallContext(),
+            noncooperative_method,
+            fixture.protocol.Ticket(b"rejected-while-orphaned"),
+            _ -> nothing;
+            runtime=cleanup_runtime,
+        )
+        nothing
+    catch error
+        error
+    end
+    @test rejected_while_orphaned isa Arrow.Flight.FlightStatusError
+    @test rejected_while_orphaned.code == Arrow.Flight.FLIGHT_STATUS_RESOURCE_EXHAUSTED
+    @test Arrow.Flight.flight_server_metrics(cleanup_runtime).calls_rejected == 1
     put!(handler_release, nothing)
     @test timedwait(
-        () -> Arrow.Flight.flight_server_metrics(cleanup_runtime).orphan_tasks == 0,
+        () -> begin
+            metrics = Arrow.Flight.flight_server_metrics(cleanup_runtime)
+            metrics.orphan_tasks == 0 &&
+                metrics.active_calls == 0 &&
+                metrics.reserved_bytes == 0
+        end,
         1.0,
     ) !== :timed_out
+    released_metrics = Arrow.Flight.flight_server_metrics(cleanup_runtime)
+    @test released_metrics.calls_failed == 1
 end

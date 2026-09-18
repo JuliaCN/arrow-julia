@@ -161,6 +161,16 @@ jobs:
           using Pkg
           Pkg.develop([PackageSpec(path="src/ArrowTypes")])
       - uses: julia-actions/julia-buildpkg@v1.6
+      - name: Instantiate Flight test environment
+        shell: julia --project=test {0}
+        run: |
+          using Pkg
+          root = pwd()
+          Pkg.develop([
+              PackageSpec(path=root),
+              PackageSpec(path=joinpath(root, "src", "ArrowTypes")),
+          ])
+          Pkg.instantiate()
       - name: Run required PyArrow Flight compatibility suite
         run: julia --project=test test/flight_pyarrow.jl
   # The subpackages' own suites: one job each, on the package's minimum

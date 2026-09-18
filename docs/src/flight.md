@@ -87,7 +87,9 @@ memory per admitted call by default. `max_inflight_bytes` and
 buffer geometry. A rejected call returns `RESOURCE_EXHAUSTED` before its Flight
 handler starts. Transport cleanup waits at most `cleanup_grace_seconds` for a
 handler that ignored cancellation; the handler task is not force-killed, but is
-detached and reported through `cleanup_timeouts` and `orphan_tasks`.
+detached and reported through `cleanup_timeouts` and `orphan_tasks`. Its call
+slot and memory reservation remain charged until the orphan actually exits, so
+repeated cancellation cannot bypass the server-wide admission budget.
 
 Every handler receives an `Arrow.Flight.ServerCallContext` containing request
 metadata, request ID, method, authority, peer, TLS state, deadline, trace
