@@ -86,7 +86,7 @@ jobs:
           --repro-dir "$FUZZ_REPRO_DIR"
       - name: Upload failure reproductions
         if: failure() && hashFiles('fuzz-reproductions/**') != ''
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: deterministic-fuzz-reproductions
           path: fuzz-reproductions
